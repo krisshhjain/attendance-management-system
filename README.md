@@ -13,7 +13,7 @@ git clone https://github.com/krisshhjain/attendance-management-system.git
 
 cd attendance-management-system
 
-2. GET THE LATEST MAIN BRANCH
+2. GET THE LATEST DEVELOP BRANCH
 
 git checkout main
 
@@ -181,7 +181,7 @@ If `main` is updated by another developer, keep your branch synchronized:
 6. Resolve conflicts in your editor, test locally, commit the resolution, and push.
 
 **Pull Requests:**
-- When your feature is done, push your branch and open a Pull Request (PR) on GitHub.
+- When your feature is done, push your branch and open a Pull Request (PR) to develop.
 - At least one approval is required to merge.
 - Automated CI checks must pass.
 

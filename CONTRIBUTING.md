@@ -314,8 +314,8 @@ Git will mark conflicts similar to:
 <<<<<<< HEAD
 your changes
 =======
-changes from main
->>>>>>> main
+changes from develop
+>>>>>>> develop
 ```
 
 Decide which code should remain, remove the conflict markers, and save the file.
@@ -329,7 +329,7 @@ git add .
 Complete the merge:
 
 ```bash
-git commit -m "Merge main into feature/your-feature-name"
+git commit -m "Merge develop into feature/your-feature-name"
 ```
 
 Run the application and tests.
@@ -571,7 +571,7 @@ The exact GitHub settings should be configured by the repository administrator.
 The standard development flow is:
 
 ```text
-                latest main
+             latest develop
                     │
                     ▼
           Create feature branch
@@ -597,10 +597,10 @@ The standard development flow is:
               PR approved
                     │
                     ▼
-             Merge into main
+            Merge into develop
                     │
                     ▼
-              Stable main
+          Integrated develop
 ```
 
 ---
@@ -662,7 +662,7 @@ main = stable code
 
 feature branch = your work
 
-Pull Request = bridge between your work and main
+Pull Request = bridge between your work and develop
 ```
 
 Never develop directly on `main`.
