@@ -15,9 +15,9 @@ cd attendance-management-system
 
 2. GET THE LATEST DEVELOP BRANCH
 
-git checkout main
+git checkout develop
 
-git pull origin main
+git pull origin develop
 
 3. SET UP ENVIRONMENT VARIABLES
 
