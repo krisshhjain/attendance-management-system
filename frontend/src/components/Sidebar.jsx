@@ -43,7 +43,7 @@ export function Sidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
     { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
     { text: "Attendance", icon: <AccessTimeIcon />, path: "/attendance" },
     { text: "Employees", icon: <PeopleIcon />, path: "/employees" },
-    { text: "Leave", icon: <EventNoteIcon />, path: "#", disabled: true },
+    { text: "Leave", icon: <EventNoteIcon />, path: "/leave" },
     { text: "Administration", icon: <SettingsApplicationsIcon />, path: "/administration" },
   ];
 
