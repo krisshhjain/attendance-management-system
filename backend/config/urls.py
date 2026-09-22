@@ -12,4 +12,5 @@ urlpatterns = [
     path("api/admin/", include("attendance.admin_urls")),
     path("api/admin/employees/", include("employees.urls")),
     path("api/admin/dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
+    path("api/leave/", include("leave_management.urls")),
 ]

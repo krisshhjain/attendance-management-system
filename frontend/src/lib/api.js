@@ -149,3 +149,87 @@ function safeJson(text) {
     return null;
   }
 }
+
+// Leave Management API functions
+export async function fetchLeaveTypes() {
+  return apiRequest("/leave/types/");
+}
+
+export async function fetchLeaveBalances(year) {
+  const query = year ? `?year=${year}` : "";
+  return apiRequest(`/leave/balances/${query}`);
+}
+
+export async function fetchLeaveRequests(status) {
+  const query = status ? `?status=${status}` : "";
+  return apiRequest(`/leave/requests/${query}`);
+}
+
+export async function submitLeaveRequest(data) {
+  return apiRequest("/leave/requests/", { method: "POST", body: data });
+}
+
+export async function cancelLeaveRequest(id) {
+  return apiRequest(`/leave/requests/${id}/cancel/`, { method: "POST" });
+}
+
+export async function estimateLeaveDuration(startDate, endDate, dayType = "FULL_DAY") {
+  return apiRequest("/leave/estimate-duration/", {
+    method: "POST",
+    body: { start_date: startDate, end_date: endDate, day_type: dayType },
+  });
+}
+
+// Admin Leave APIs
+export async function fetchAdminLeaveRequests(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return apiRequest(`/leave/admin/requests/${query ? `?${query}` : ""}`);
+}
+
+export async function approveLeaveRequest(id, remarks = "") {
+  return apiRequest(`/leave/admin/requests/${id}/approve/`, {
+    method: "POST",
+    body: { remarks },
+  });
+}
+
+export async function denyLeaveRequest(id, remarks) {
+  return apiRequest(`/leave/admin/requests/${id}/deny/`, {
+    method: "POST",
+    body: { remarks },
+  });
+}
+
+export async function cancelApprovedLeaveRequest(id) {
+  return apiRequest(`/leave/admin/requests/${id}/cancel/`, { method: "POST" });
+}
+
+export async function fetchAdminLeaveBalances(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return apiRequest(`/leave/admin/balances/${query ? `?${query}` : ""}`);
+}
+
+// Super Admin Configuration APIs
+export async function fetchLeaveTypesAll() {
+  return apiRequest("/leave/admin/types/");
+}
+
+export async function createLeaveType(data) {
+  return apiRequest("/leave/admin/types/", { method: "POST", body: data });
+}
+
+export async function updateLeaveType(id, data) {
+  return apiRequest(`/leave/admin/types/${id}/`, { method: "PATCH", body: data });
+}
+
+export async function fetchLeavePoliciesAll() {
+  return apiRequest("/leave/admin/policies/");
+}
+
+export async function createLeavePolicy(data) {
+  return apiRequest("/leave/admin/policies/", { method: "POST", body: data });
+}
+
+export async function updateLeavePolicy(id, data) {
+  return apiRequest(`/leave/admin/policies/${id}/`, { method: "PATCH", body: data });
+}

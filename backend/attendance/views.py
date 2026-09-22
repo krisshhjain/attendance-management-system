@@ -20,6 +20,26 @@ class CheckInView(APIView):
             date=today,
         )
 
+        if attendance.status == "LEAVE":
+            return Response(
+                {"error": "You cannot check in because you are on approved leave today."},
+                status=400,
+            )
+
+        from leave_management.models import LeaveRequest
+        has_approved_leave = LeaveRequest.objects.filter(
+            employee=employee,
+            status="APPROVED",
+            start_date__lte=today,
+            end_date__gte=today,
+        ).exists()
+
+        if has_approved_leave:
+            return Response(
+                {"error": "You cannot check in because you are on approved leave today."},
+                status=400,
+            )
+
         if not created and attendance.check_in is not None:
             return Response(
                 {"error": "Already checked in today"},
