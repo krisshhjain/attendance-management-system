@@ -135,6 +135,14 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
             </Typography>
           </Box>
         )}
+
+        {status === "LEAVE" && (
+          <Box sx={{ textAlign: "center", py: 1.5, bgcolor: "info.lighter", borderRadius: 2, color: "info.dark" }}>
+            <Typography variant="body2" fontWeight={600}>
+              🌴 You are on leave today. Enjoy your time off!
+            </Typography>
+          </Box>
+        )}
       </Box>
     </Paper>
   );

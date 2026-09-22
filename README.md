@@ -1,173 +1,193 @@
-ATTENDANCE MANAGEMENT SYSTEM
-LOCAL DEVELOPMENT SETUP
+ATTENDANCE MANAGEMENT SYSTEM — LOCAL DEVELOPMENT SETUP
+=======================================================
 
-Prerequisites:
+PREREQUISITES
+-------------
 - Git
 - Python 3.10+
-- Node.js
-- Docker Desktop
+- Node.js 22+
+- Docker Desktop (running)
+
+=======================================================
+QUICK START (All-in-One)
+=======================================================
 
 1. CLONE THE REPOSITORY
 
-git clone https://github.com/krisshhjain/attendance-management-system.git
-
-cd attendance-management-system
+   git clone https://github.com/krisshhjain/attendance-management-system.git
+   cd attendance-management-system
 
 2. GET THE LATEST DEVELOP BRANCH
 
-git checkout develop
+   git checkout develop
+   git pull origin develop
 
-git pull origin develop
+3. SET UP ENVIRONMENT FILES
 
-3. SET UP ENVIRONMENT VARIABLES
+   Root .env (for Django):
+     Copy-Item .env.example .env       (Windows PowerShell)
+     cp .env.example .env              (Linux / Mac / Git Bash)
 
-Copy the `.env.example` file to create your own local `.env` file:
-For Windows PowerShell:
-cp .env.example .env
-For Linux/Mac/Git Bash:
-cp .env.example .env
+   Frontend .env:
+     Copy-Item frontend\.env.example frontend\.env   (Windows PowerShell)
+     cp frontend/.env.example frontend/.env          (Linux / Mac / Git Bash)
 
-4. START POSTGRESQL USING DOCKER
+4. START POSTGRESQL VIA DOCKER
 
-Make sure Docker Desktop is running.
+   Make sure Docker Desktop is running, then:
 
-From the project root:
+     docker compose up -d db
 
-docker compose up -d
+   Verify the container is healthy:
 
-Check that the containers are running:
+     docker compose ps
 
-docker compose ps
+   You should see:
+     attendance_postgres   Up (healthy)   0.0.0.0:5434->5432/tcp
 
-You should see the PostgreSQL container running.
+5. SET UP PYTHON ENVIRONMENT
 
-Do NOT install PostgreSQL separately.
+   Navigate to the backend folder:
+     cd backend
 
-5. SET UP THE PYTHON VIRTUAL ENVIRONMENT
+   Create a virtual environment:
+     python -m venv venv
 
-Go into the backend:
+   Activate it:
+     Windows PowerShell:  .\venv\Scripts\Activate.ps1
+     Linux / Mac:         source venv/bin/activate
 
-cd backend
+   Install dependencies:
+     pip install -r requirements.txt
 
-Create a virtual environment:
+6. RUN DATABASE MIGRATIONS
 
-python -m venv venv
+     python manage.py migrate
 
-Activate it:
+7. SEED DEFAULT LEAVE DATA
 
-.\venv\Scripts\Activate.ps1
+     python manage.py seed_leave_data
 
-You should now see:
+8. CREATE YOUR ADMIN/SUPERUSER (First time only)
 
-(venv)
+     python manage.py createsuperuser
 
-at the beginning of your terminal.
+   Enter your email and password when prompted.
+   This account is used to log into the admin panel at /admin/
+   and into the application as Super Admin via /admin-login
 
-6. INSTALL BACKEND DEPENDENCIES
+9. VERIFY THE BACKEND
 
-Run:
+     python manage.py check
 
-pip install -r requirements.txt
+   Expected output:
+     System check identified no issues (0 silenced).
 
-7. RUN DATABASE MIGRATIONS
+10. START THE DJANGO BACKEND
 
-Run:
+     python manage.py runserver
 
-python manage.py migrate
+   Backend runs at: http://127.0.0.1:8000/
 
-8. CHECK THE BACKEND
+11. START THE FRONTEND (Open a NEW terminal)
 
-Run:
+   Navigate to the frontend folder from the project root:
+     cd frontend
 
-python manage.py check
+   Install Node dependencies (first time only):
+     npm install
 
-You should get:
+   Start the dev server:
+     npm run dev
 
-System check identified no issues (0 silenced).
+   Frontend runs at: http://localhost:5173/
 
-9. START DJANGO
+=======================================================
+APPLICATION URLS
+=======================================================
 
-Run:
+Frontend:        http://localhost:5173/
+Backend API:     http://127.0.0.1:8000/api/
+Django Admin:    http://127.0.0.1:8000/admin/
 
-python manage.py runserver
+Employee Login:  http://localhost:5173/login
+Admin Login:     http://localhost:5173/admin-login
 
-Django should start at:
+=======================================================
+KEY API ENDPOINTS
+=======================================================
 
-http://127.0.0.1:8000/
-
-10. TEST THE DJANGO ADMIN
-
-Open:
-
-http://127.0.0.1:8000/admin/
-
-The existing development superuser is not included in Git.
-
-If you need your own admin account for local testing, create one:
-
-python manage.py createsuperuser
-
-Enter your own email and password.
-
-DO NOT commit or share your password.
-
-11. BACKEND API
-
-The current APIs are:
-
-POST
-/api/auth/login/
-
-GET
-/api/attendance/today/
-
-POST
-/api/attendance/check-in/
-
-POST
-/api/attendance/check-out/
-
-GET
-/api/attendance/history/
-
-GET
-/api/admin/attendance/
-
-12. FRONTEND SETUP
-
-Open a NEW terminal.
-
-Go to the project root:
-
-cd attendance-management-system
-
-Go into frontend:
-
-cd frontend
-
-Install frontend dependencies:
-
-npm install
-
-Start the frontend:
-
-npm run dev
-
+Authentication:
+  POST  /api/auth/login/
+  POST  /api/auth/token/refresh/
+  GET   /api/auth/me/
+
+Attendance (Employee):
+  GET   /api/attendance/today/
+  POST  /api/attendance/check-in/
+  POST  /api/attendance/check-out/
+  GET   /api/attendance/history/
+
+Admin Attendance:
+  GET   /api/admin/attendance/
+  POST  /api/admin/force-checkout/
+  GET   /api/admin/dashboard/
+
+Leave Management (Employee):
+  GET   /api/leave/types/
+  GET   /api/leave/balances/
+  GET   /api/leave/requests/
+  POST  /api/leave/requests/
+  POST  /api/leave/requests/<id>/cancel/
+
+Leave Management (Admin):
+  GET   /api/leave/admin/requests/
+  POST  /api/leave/admin/requests/<id>/approve/
+  POST  /api/leave/admin/requests/<id>/deny/
+  GET   /api/leave/admin/balances/
+
+Leave Configuration (Super Admin only):
+  GET   /api/leave/admin/types/
+  POST  /api/leave/admin/types/
+  PATCH /api/leave/admin/types/<id>/
+  GET   /api/leave/admin/policies/
+  POST  /api/leave/admin/policies/
+  PATCH /api/leave/admin/policies/<id>/
+
+=======================================================
+DOCKER: FULL STACK MODE (Optional)
+=======================================================
+
+To run the entire stack (DB + Backend + Frontend) in Docker:
+
+  docker compose --profile full up --build -d
+
+This builds and starts all 3 containers. The backend entrypoint.sh
+automatically waits for PostgreSQL, runs migrations, and seeds data.
+
+Access at:
+  Frontend:   http://localhost:80
+  Backend:    http://localhost:8000
+
+=======================================================
 13. TEAM GIT WORKFLOW
+=======================================================
 
 Welcome to the team! Our primary goal is to ensure `main` always represents stable, working code.
 
 **First Day Setup Checklist:**
 - [ ] Clone the repository
-- [ ] Ensure you are on `main` branch (`git checkout main`)
-- [ ] Set up `.env` from `.env.example`
-- [ ] Start Docker Compose
-- [ ] Set up Python venv, install requirements, and run migrations
+- [ ] Checkout `develop` branch
+- [ ] Copy .env files from .env.example templates
+- [ ] Start Docker Compose (db only: `docker compose up -d db`)
+- [ ] Create Python venv, install requirements, run migrations
+- [ ] Run seed_leave_data command
+- [ ] Create superuser (python manage.py createsuperuser)
 - [ ] Install Node modules and run the frontend
 
 **Branching & Committing:**
 - NEVER work directly on `main`.
-- ALWAYS create a feature or fix branch from `main` (`git checkout -b feature/your-feature-name`).
+- ALWAYS create a feature or fix branch from `develop` (`git checkout -b feature/your-feature-name`).
 - NEVER push directly to `main`.
 - Use descriptive branch names: `feature/`, `fix/`, `refactor/`, `docs/`, `chore/`.
 
@@ -185,4 +205,4 @@ If `main` is updated by another developer, keep your branch synchronized:
 - At least one approval is required to merge.
 - Automated CI checks must pass.
 
-For detailed contribution rules, please refer to [CONTRIBUTING.md](CONTRIBUTING.md).
+For detailed contribution rules, please refer to CONTRIBUTING.md.

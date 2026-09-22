@@ -12,6 +12,7 @@ from .views import (
     EmployeeLeaveRequestsView,
     EmployeeLeaveTypesView,
     EstimateLeaveDurationView,
+    FileUploadView,
     SuperAdminLeavePoliciesListCreateView,
     SuperAdminLeavePolicyDetailView,
     SuperAdminLeaveTypeDetailView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("requests/<int:pk>/", EmployeeLeaveRequestDetailView.as_view(), name="leave-request-detail"),
     path("requests/<int:pk>/cancel/", EmployeeCancelLeaveRequestView.as_view(), name="leave-request-cancel"),
     path("estimate-duration/", EstimateLeaveDurationView.as_view(), name="leave-estimate-duration"),
+    path("upload/", FileUploadView.as_view(), name="file-upload"),
 
     # Admin endpoints
     path("admin/requests/", AdminLeaveRequestsView.as_view(), name="admin-leave-requests"),

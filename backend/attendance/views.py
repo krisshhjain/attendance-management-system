@@ -141,7 +141,9 @@ class TodayAttendanceView(APIView):
                 "working_duration": None,
             })
 
-        if attendance.check_out is not None:
+        if attendance.status == "LEAVE":
+            status = "LEAVE"
+        elif attendance.check_out is not None:
             status = "COMPLETED"
         else:
             status = "CHECKED_IN"
