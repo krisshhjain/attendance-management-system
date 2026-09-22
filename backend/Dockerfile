@@ -15,5 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Run gunicorn on port 8000
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "config.wsgi:application"]
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
