@@ -27,12 +27,21 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { AddEmployeeDialog } from "./AddEmployeeDialog.jsx";
 import { EditEmployeeDialog } from "./EditEmployeeDialog.jsx";
+import { ChangePasswordDialog } from "./ChangePasswordDialog.jsx";
+import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
+import { TextField, MenuItem, Select, FormControl, InputLabel, InputAdornment } from "@mui/material";
+import SearchIcon from "@mui/icons-material/Search";
 
 export function EmployeeTable() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editEmployee, setEditEmployee] = useState(null);
   const [deleteEmployee, setDeleteEmployee] = useState(null);
+  const [passwordEmployee, setPasswordEmployee] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
   const { data: employees, isLoading, isError, refetch } = useQuery({
     queryKey: ["employees"],
@@ -68,6 +77,20 @@ export function EmployeeTable() {
     return full || emp.email.split("@")[0];
   };
 
+  const filteredEmployees = employees?.filter((emp) => {
+    const matchesSearch = 
+      getDisplayName(emp).toLowerCase().includes(searchQuery.toLowerCase()) || 
+      emp.email.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesType = typeFilter === "ALL" || emp.employment_type === typeFilter;
+    
+    let matchesStatus = true;
+    if (statusFilter === "ACTIVE") matchesStatus = emp.is_active;
+    if (statusFilter === "INACTIVE") matchesStatus = !emp.is_active;
+
+    return matchesSearch && matchesType && matchesStatus;
+  });
+
   return (
     <Paper
       elevation={0}
@@ -101,6 +124,46 @@ export function EmployeeTable() {
         </Button>
       </Box>
 
+      {/* Filters */}
+      <Box sx={{ p: 2, display: "flex", gap: 2, flexWrap: "wrap", borderBottom: "1px solid", borderColor: "divider", bgcolor: "rgba(0,0,0,0.01)" }}>
+        <TextField
+          size="small"
+          placeholder="Search employees..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          InputProps={{
+            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+            sx: { borderRadius: "8px", bgcolor: "white" }
+          }}
+          sx={{ minWidth: 250, flexGrow: 1 }}
+        />
+        <FormControl size="small" sx={{ minWidth: 150 }}>
+          <Select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            displayEmpty
+            sx={{ borderRadius: "8px", bgcolor: "white" }}
+          >
+            <MenuItem value="ALL">All Types</MenuItem>
+            <MenuItem value="PERMANENT">Permanent</MenuItem>
+            <MenuItem value="CONTRACT">Contract</MenuItem>
+            <MenuItem value="INTERN">Intern</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 150 }}>
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            displayEmpty
+            sx={{ borderRadius: "8px", bgcolor: "white" }}
+          >
+            <MenuItem value="ALL">All Status</MenuItem>
+            <MenuItem value="ACTIVE">Active</MenuItem>
+            <MenuItem value="INACTIVE">Inactive</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
+
       {isLoading ? (
         <Box sx={{ p: 4, display: "flex", justifyContent: "center" }}>
           <CircularProgress size={32} />
@@ -112,9 +175,9 @@ export function EmployeeTable() {
             Retry
           </Button>
         </Box>
-      ) : !employees || employees.length === 0 ? (
+      ) : !filteredEmployees || filteredEmployees.length === 0 ? (
         <Box sx={{ p: 4, textAlign: "center" }}>
-          <Typography color="text.secondary">No employees found.</Typography>
+          <Typography color="text.secondary">No employees found matching the filters.</Typography>
         </Box>
       ) : (
         <TableContainer sx={{ overflowX: "auto" }}>
@@ -132,7 +195,7 @@ export function EmployeeTable() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {employees.map((emp) => {
+              {filteredEmployees.map((emp) => {
                 const initials = getDisplayName(emp).slice(0, 2).toUpperCase();
                 return (
                   <TableRow
@@ -198,6 +261,15 @@ export function EmployeeTable() {
                     </TableCell>
                     <TableCell align="right">
                       <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 0.5 }}>
+                        <Tooltip title="Reset Password">
+                          <IconButton
+                            size="small"
+                            onClick={() => setPasswordEmployee(emp)}
+                            sx={{ color: "text.secondary", "&:hover": { color: "warning.main", bgcolor: "rgba(237,108,2,0.06)" } }}
+                          >
+                            <VpnKeyOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Edit Employee">
                           <IconButton
                             size="small"
@@ -239,6 +311,14 @@ export function EmployeeTable() {
         employee={editEmployee}
         onClose={() => setEditEmployee(null)}
         onSuccess={() => { setEditEmployee(null); refetch(); }}
+      />
+
+      {/* Change Password Dialog */}
+      <ChangePasswordDialog
+        open={Boolean(passwordEmployee)}
+        employee={passwordEmployee}
+        onClose={() => setPasswordEmployee(null)}
+        onSuccess={() => { setPasswordEmployee(null); }}
       />
 
       {/* Delete Confirmation Dialog */}

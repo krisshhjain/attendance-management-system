@@ -39,6 +39,14 @@ function friendlyMessage(status, payload) {
     const candidate = payload.detail ?? payload.message ?? payload.error ?? payload.non_field_errors;
     if (typeof candidate === "string") return candidate;
     if (Array.isArray(candidate) && typeof candidate[0] === "string") return candidate[0];
+
+    for (const key of Object.keys(payload)) {
+      const val = payload[key];
+      if (typeof val === "string") return val;
+      if (Array.isArray(val) && typeof val[0] === "string") {
+        return key === "non_field_errors" ? val[0] : `${key.replace(/_/g, " ")}: ${val[0]}`;
+      }
+    }
   }
   if (status === 401) return "Your session has expired. Please sign in again.";
   if (status === 400) return "That request couldn't be completed.";

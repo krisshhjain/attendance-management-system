@@ -61,9 +61,6 @@ export function AttendanceCard({ onChanged }) {
     [onChanged],
   );
 
-  if (loading) return <LoadingState />;
-  if (loadError || !data) return <ErrorState onRetry={load} />;
-
   const status = data?.status;
   const [secondsRemaining, setSecondsRemaining] = useState(0);
 
@@ -85,6 +82,9 @@ export function AttendanceCard({ onChanged }) {
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [status, data?.check_in]);
+
+  if (loading) return <LoadingState />;
+  if (loadError || !data) return <ErrorState onRetry={load} />;
 
   return (
     <Card variant="outlined" sx={{ borderRadius: 2, boxShadow: "none" }}>

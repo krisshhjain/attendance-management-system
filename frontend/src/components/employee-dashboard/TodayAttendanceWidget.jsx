@@ -9,7 +9,29 @@ import { Box, Button, Typography, Paper, Grid2, CircularProgress } from "@mui/ma
 export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) {
   const [actionError, setActionError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(0);
   const inFlight = useRef(false);
+
+  const status = data?.status;
+
+  useEffect(() => {
+    if (status !== "CHECKED_IN" || !data?.check_in) {
+      setSecondsRemaining(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const checkInTime = new Date(data.check_in).getTime();
+      const now = Date.now();
+      const elapsed = Math.floor((now - checkInTime) / 1000);
+      const remaining = Math.max(0, 300 - elapsed);
+      setSecondsRemaining(remaining);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [status, data?.check_in]);
 
   const runAction = useCallback(
     async (action) => {
@@ -35,28 +57,6 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
 
   if (loading) return <Paper sx={{ p: 4, display: "flex", justifyContent: "center", borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none" }}><CircularProgress /></Paper>;
   if (loadError || !data) return <ErrorState onRetry={reloadData} />;
-
-  const status = data?.status;
-  const [secondsRemaining, setSecondsRemaining] = useState(0);
-
-  useEffect(() => {
-    if (status !== "CHECKED_IN" || !data?.check_in) {
-      setSecondsRemaining(0);
-      return;
-    }
-
-    const updateTimer = () => {
-      const checkInTime = new Date(data.check_in).getTime();
-      const now = Date.now();
-      const elapsed = Math.floor((now - checkInTime) / 1000);
-      const remaining = Math.max(0, 300 - elapsed);
-      setSecondsRemaining(remaining);
-    };
-
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [status, data?.check_in]);
 
   return (
     <Paper sx={{ p: 3, borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none", height: "100%", display: "flex", flexDirection: "column" }}>
