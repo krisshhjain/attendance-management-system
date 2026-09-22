@@ -7,6 +7,7 @@ const LABELS = {
   PRESENT: "Present",
   ABSENT: "Absent",
   HALF_DAY: "Half Day",
+  LEAVE: "On Leave",
 };
 
 const TONES = {
@@ -16,6 +17,7 @@ const TONES = {
   PRESENT: { bgcolor: "#e8f5e9", color: "#2e7d32", borderColor: "#a5d6a7" },
   ABSENT: { bgcolor: "#ffebee", color: "#c62828", borderColor: "#ef9a9a" },
   HALF_DAY: { bgcolor: "#fff3e0", color: "#ed6c02", borderColor: "#ffcc80" },
+  LEAVE: { bgcolor: "#f3e5f5", color: "#7b1fa2", borderColor: "#ce93d8" },
 };
 
 export function StatusBadge({ status }) {

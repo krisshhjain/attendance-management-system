@@ -76,17 +76,18 @@ function EmployeeDashboard() {
 function DashboardComponent() {
   const { user, loginType } = useAuth();
   
-  if (user?.is_superuser && loginType === "admin") {
-    return <SuperAdminDashboard />;
-  }
-  
-  if (user?.is_staff) {
-    return (
-      <Box sx={{ p: 4, textAlign: "center", bgcolor: "white", borderRadius: 4, border: "1px solid", borderColor: "divider" }}>
-        <Typography variant="h5" fontWeight={600} gutterBottom>Admin Dashboard</Typography>
-        <Typography color="text.secondary">This view is coming soon. Please check back later.</Typography>
-      </Box>
-    );
+  if (loginType === "admin") {
+    if (user?.is_superuser) {
+      return <SuperAdminDashboard />;
+    }
+    if (user?.is_staff) {
+      return (
+        <Box sx={{ p: 4, textAlign: "center", bgcolor: "white", borderRadius: 4, border: "1px solid", borderColor: "divider" }}>
+          <Typography variant="h5" fontWeight={600} gutterBottom>Admin Dashboard</Typography>
+          <Typography color="text.secondary">This view is coming soon. Please check back later.</Typography>
+        </Box>
+      );
+    }
   }
   
   return <EmployeeDashboard />;

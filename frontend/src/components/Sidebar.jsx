@@ -43,8 +43,8 @@ export function Sidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
     { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
     { text: "Attendance", icon: <AccessTimeIcon />, path: "/attendance" },
     { text: "Employees", icon: <PeopleIcon />, path: "/employees" },
-    { text: "Leave", icon: <EventNoteIcon />, path: "/leave" },
-    { text: "Administration", icon: <SettingsApplicationsIcon />, path: "/administration" },
+    { text: "My Leave", icon: <EventNoteIcon />, path: "/leave" },
+    { text: "Admin (Leave)", icon: <SettingsApplicationsIcon />, path: "/administration" },
   ];
 
   const drawerContent = (

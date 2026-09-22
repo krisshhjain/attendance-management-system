@@ -32,6 +32,9 @@ import {
   LinearProgress,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
+import AttachmentIcon from "@mui/icons-material/Attachment";
+import CloseIcon from "@mui/icons-material/Close";
 import EventBusyIcon from "@mui/icons-material/EventBusy";
 import BeachAccessIcon from "@mui/icons-material/BeachAccess";
 import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
@@ -40,12 +43,15 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import InfoIcon from "@mui/icons-material/Info";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorIcon from "@mui/icons-material/Error";
-import CloseIcon from "@mui/icons-material/Close";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import DownloadIcon from "@mui/icons-material/Download";
+import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import {
   fetchLeaveBalances,
   fetchLeaveRequests,
   fetchLeaveTypes,
   submitLeaveRequest,
+  uploadFile,
   cancelLeaveRequest,
   estimateLeaveDuration,
 } from "../lib/api.js";
@@ -136,9 +142,16 @@ function LeaveBalanceCard({ balance }) {
           <Typography variant="h4" fontWeight={700} color="primary.main">
             {available}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            of {totalPossible} days
-          </Typography>
+          <Box sx={{ textAlign: "right" }}>
+            <Typography variant="body2" color="text.secondary">
+              of {totalPossible} days
+            </Typography>
+            {entitlement > 0 && entitlement >= 12 && (
+              <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: -0.5 }}>
+                ≈ {Math.round(entitlement / 12)} days per month
+              </Typography>
+            )}
+          </Box>
         </Box>
         <LinearProgress
           variant="determinate"
@@ -173,6 +186,9 @@ function LeaveBalanceCard({ balance }) {
 }
 
 function Leave() {
+  const today = new Date();
+  const todayDateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
   const [balances, setBalances] = useState([]);
   const [requests, setRequests] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
@@ -195,11 +211,38 @@ function Leave() {
   const [dayType, setDayType] = useState("FULL_DAY");
   const [reason, setReason] = useState("");
   const [attachment, setAttachment] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [estimatedDuration, setEstimatedDuration] = useState(null);
   const [estimating, setEstimating] = useState(false);
 
   // Remarks modal
   const [remarksModal, setRemarksModal] = useState({ open: false, title: "", text: "" });
+  
+  // Document preview modal
+  const [documentModal, setDocumentModal] = useState({ open: false, url: "", title: "", fileName: "" });
+
+  const handleDownloadFile = (url, fileName) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName || 'document';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileExtension = (url) => {
+    return url.split('.').pop().toLowerCase();
+  };
+
+  const isImageFile = (url) => {
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+    return imageExtensions.includes(getFileExtension(url));
+  };
+
+  const isPdfFile = (url) => {
+    return getFileExtension(url) === 'pdf';
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -247,18 +290,40 @@ function Leave() {
   const handleOpenModal = () => {
     setFormError(null);
     setLeaveTypeId(leaveTypes.length > 0 ? leaveTypes[0].id : "");
-    const todayStr = new Date().toISOString().split("T")[0];
-    setStartDate(todayStr);
-    setEndDate(todayStr);
+    setStartDate(todayDateString);
+    setEndDate(todayDateString);
     setDayType("FULL_DAY");
     setReason("");
     setAttachment("");
+    setAttachmentFile(null);
     setEstimatedDuration(1.0);
     setOpenModal(true);
   };
 
   const handleCloseModal = () => {
     setOpenModal(false);
+  };
+
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Validate file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        setFormError("File size must be less than 5MB.");
+        return;
+      }
+      
+      // Validate file type
+      const allowedTypes = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'];
+      const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+      if (!allowedTypes.includes(fileExtension)) {
+        setFormError("File type not allowed. Please upload PDF, JPG, PNG, DOC, or DOCX files.");
+        return;
+      }
+      
+      setAttachmentFile(file);
+      setFormError(null);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -278,15 +343,41 @@ function Leave() {
       return;
     }
 
+    // Check if document is required for selected leave type
+    const selectedType = leaveTypes.find(t => t.id === leaveTypeId);
+    const selectedBalance = balances.find(b => b.leave_type_id === leaveTypeId);
+    const requiresDocument = selectedType?.requires_document || selectedBalance?.requires_document;
+    
+    if (requiresDocument && !attachment.trim() && !attachmentFile) {
+      setFormError("Supporting document is required for this leave type.");
+      return;
+    }
+
     setSubmitting(true);
     try {
+      let attachmentUrl = attachment.trim();
+      
+      // Upload file if provided
+      if (attachmentFile) {
+        setUploading(true);
+        try {
+          const uploadResponse = await uploadFile(attachmentFile);
+          attachmentUrl = uploadResponse.file_url;
+        } catch (uploadError) {
+          setFormError(uploadError.message || "Failed to upload file.");
+          return;
+        } finally {
+          setUploading(false);
+        }
+      }
+
       await submitLeaveRequest({
         leave_type: leaveTypeId,
         start_date: startDate,
         end_date: endDate,
         day_type: dayType,
         reason: reason.trim(),
-        attachment: attachment.trim(),
+        attachment: attachmentUrl,
       });
       setSuccessMsg("Leave request submitted successfully!");
       setOpenModal(false);
@@ -421,6 +512,7 @@ function Leave() {
                     <TableCell sx={{ fontWeight: 700 }}>Duration</TableCell>
                     <TableCell sx={{ fontWeight: 700 }}>Day Type</TableCell>
                     <TableCell sx={{ fontWeight: 700 }}>Reason</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Attachment</TableCell>
                     <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
                   </TableRow>
@@ -458,6 +550,51 @@ function Leave() {
                         <Typography variant="body2" noWrap title={req.reason}>
                           {req.reason}
                         </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {req.attachment ? (
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                            <AttachmentIcon fontSize="small" color="primary" />
+                            <Button
+                              size="small"
+                              variant="text"
+                              color="primary"
+                              onClick={() => {
+                                if (req.attachment.startsWith('http')) {
+                                  setDocumentModal({
+                                    open: true,
+                                    url: req.attachment,
+                                    title: `Document for ${req.leave_type_name} Leave`,
+                                    fileName: req.attachment.split('/').pop() || 'document'
+                                  });
+                                } else {
+                                  const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://127.0.0.1:8000';
+                                  const fullUrl = req.attachment.startsWith('/') ? 
+                                    `${baseUrl}${req.attachment}` : 
+                                    req.attachment;
+                                  setDocumentModal({
+                                    open: true,
+                                    url: fullUrl,
+                                    title: `Document for ${req.leave_type_name} Leave`,
+                                    fileName: req.attachment.split('/').pop() || 'document'
+                                  });
+                                }
+                              }}
+                              sx={{ 
+                                p: 0, 
+                                minWidth: 'auto', 
+                                textTransform: 'none',
+                                fontSize: '0.7rem'
+                              }}
+                            >
+                              View Document
+                            </Button>
+                          </Box>
+                        ) : (
+                          <Typography variant="caption" color="text.disabled">
+                            No attachment
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell>
                         <StatusChip status={req.status} />
@@ -530,8 +667,15 @@ function Leave() {
                     type="date"
                     label="Start Date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => {
+                      const nextStartDate = e.target.value < todayDateString ? todayDateString : e.target.value;
+                      setStartDate(nextStartDate);
+                      if (!endDate || endDate < nextStartDate) {
+                        setEndDate(nextStartDate);
+                      }
+                    }}
                     InputLabelProps={{ shrink: true }}
+                    inputProps={{ min: todayDateString }}
                     required
                   />
                 </Grid2>
@@ -541,8 +685,12 @@ function Leave() {
                     type="date"
                     label="End Date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={(e) => {
+                      const minimumEndDate = startDate || todayDateString;
+                      setEndDate(e.target.value < minimumEndDate ? minimumEndDate : e.target.value);
+                    }}
                     InputLabelProps={{ shrink: true }}
+                    inputProps={{ min: startDate || todayDateString }}
                     required
                   />
                 </Grid2>
@@ -594,23 +742,279 @@ function Leave() {
                 required
               />
 
-              <TextField
-                fullWidth
-                label="Supporting Document / Link (Optional)"
-                value={attachment}
-                onChange={(e) => setAttachment(e.target.value)}
-                placeholder="Attach document URL or notes if required..."
-              />
+              {/* Supporting Document Section */}
+              <Box>
+                {(() => {
+                  const selectedType = leaveTypes.find(t => t.id === leaveTypeId);
+                  const selectedBalance = balances.find(b => b.leave_type_id === leaveTypeId);
+                  const requiresDocument = selectedType?.requires_document || selectedBalance?.requires_document;
+                  
+                  return (
+                    <>
+                      <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+                        Supporting Document {requiresDocument ? "(Required)" : "(Optional)"}
+                      </Typography>
+                      
+                      {/* File Upload */}
+                      <Box sx={{ mb: 2 }}>
+                        <input
+                          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                          style={{ display: 'none' }}
+                          id="attachment-file-input"
+                          type="file"
+                          onChange={handleFileChange}
+                        />
+                        <label htmlFor="attachment-file-input">
+                          <Button
+                            variant="outlined"
+                            component="span"
+                            startIcon={<AttachFileIcon />}
+                            disabled={uploading}
+                            sx={{ mr: 1 }}
+                          >
+                            Choose File
+                          </Button>
+                        </label>
+                        {attachmentFile && (
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            Selected: {attachmentFile.name}
+                          </Typography>
+                        )}
+                      </Box>
+                      
+                      {/* URL Input as alternative */}
+                      <TextField
+                        fullWidth
+                        label="Or enter document URL/link"
+                        value={attachment}
+                        onChange={(e) => setAttachment(e.target.value)}
+                        placeholder="Enter document URL or notes..."
+                        size="small"
+                      />
+                      
+                      {requiresDocument && (
+                        <Typography variant="caption" color="warning.main" sx={{ mt: 0.5, display: 'block' }}>
+                          This leave type requires supporting documentation.
+                        </Typography>
+                      )}
+                    </>
+                  );
+                })()}
+              </Box>
             </DialogContent>
             <DialogActions sx={{ px: 3, py: 2 }}>
               <Button onClick={handleCloseModal} color="inherit">
                 Cancel
               </Button>
-              <Button type="submit" variant="contained" color="primary" disabled={submitting}>
-                {submitting ? <CircularProgress size={24} /> : "Submit Request"}
+              <Button type="submit" variant="contained" color="primary" disabled={submitting || uploading}>
+                {uploading ? (
+                  <>
+                    <CircularProgress size={16} sx={{ mr: 1 }} />
+                    Uploading...
+                  </>
+                ) : submitting ? (
+                  <>
+                    <CircularProgress size={16} sx={{ mr: 1 }} />
+                    Submitting...
+                  </>
+                ) : (
+                  "Submit Request"
+                )}
               </Button>
             </DialogActions>
           </form>
+        </Dialog>
+
+        {/* Document Preview Modal */}
+        <Dialog 
+          open={documentModal.open} 
+          onClose={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })} 
+          maxWidth="lg" 
+          fullWidth
+          PaperProps={{
+            sx: { height: '90vh', maxHeight: '90vh' }
+          }}
+        >
+          <DialogTitle sx={{ 
+            fontWeight: 700, 
+            display: "flex", 
+            justifyContent: "space-between", 
+            alignItems: "center",
+            borderBottom: 1,
+            borderColor: 'divider'
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AttachmentIcon color="primary" />
+              <Typography variant="h6" component="span">
+                {documentModal.title}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Tooltip title="Download Document">
+                <IconButton 
+                  size="small" 
+                  color="primary"
+                  onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
+                >
+                  <DownloadIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Open in New Tab">
+                <IconButton 
+                  size="small" 
+                  color="primary"
+                  onClick={() => window.open(documentModal.url, '_blank')}
+                >
+                  <OpenInNewIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Fullscreen">
+                <IconButton 
+                  size="small" 
+                  color="primary"
+                  onClick={() => {
+                    const elem = document.querySelector('[data-document-preview]');
+                    if (elem && elem.requestFullscreen) {
+                      elem.requestFullscreen();
+                    }
+                  }}
+                >
+                  <FullscreenIcon />
+                </IconButton>
+              </Tooltip>
+              <IconButton size="small" onClick={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })}>
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          </DialogTitle>
+          <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {documentModal.url && (
+              <Box 
+                sx={{ 
+                  flex: 1, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  backgroundColor: '#f5f5f5',
+                  position: 'relative'
+                }}
+                data-document-preview
+              >
+                {isImageFile(documentModal.url) ? (
+                  <Box sx={{ 
+                    flex: 1, 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    p: 2
+                  }}>
+                    <img
+                      src={documentModal.url}
+                      alt="Document preview"
+                      style={{ 
+                        maxWidth: '100%', 
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                      }}
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextElementSibling.style.display = 'flex';
+                      }}
+                    />
+                    <Box sx={{ 
+                      display: 'none', 
+                      flexDirection: 'column', 
+                      alignItems: 'center', 
+                      gap: 2,
+                      p: 4,
+                      textAlign: 'center'
+                    }}>
+                      <ErrorIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
+                      <Typography variant="body1" color="text.secondary">
+                        Unable to preview this image
+                      </Typography>
+                    </Box>
+                  </Box>
+                ) : isPdfFile(documentModal.url) ? (
+                  <iframe
+                    src={`${documentModal.url}#toolbar=1&navpanes=1&scrollbar=1`}
+                    width="100%"
+                    height="100%"
+                    style={{ border: 'none', flex: 1 }}
+                    title="PDF Preview"
+                    onError={() => {
+                      console.log('PDF preview failed');
+                    }}
+                  />
+                ) : (
+                  <Box sx={{ 
+                    flex: 1, 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    gap: 2,
+                    p: 4,
+                    textAlign: 'center'
+                  }}>
+                    <AttachmentIcon sx={{ fontSize: 64, color: 'primary.main' }} />
+                    <Typography variant="h6" color="text.primary">
+                      {documentModal.fileName}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Preview not available for this file type
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                      <Button
+                        variant="contained"
+                        startIcon={<DownloadIcon />}
+                        onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
+                      >
+                        Download File
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        startIcon={<OpenInNewIcon />}
+                        onClick={() => window.open(documentModal.url, '_blank')}
+                      >
+                        Open in Browser
+                      </Button>
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ 
+            borderTop: 1, 
+            borderColor: 'divider',
+            p: 2,
+            backgroundColor: 'grey.50'
+          }}>
+            <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+              File: {documentModal.fileName}
+            </Typography>
+            <Button 
+              onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
+              variant="contained"
+              startIcon={<DownloadIcon />}
+              sx={{ mr: 1 }}
+            >
+              Download
+            </Button>
+            <Button 
+              onClick={() => window.open(documentModal.url, '_blank')}
+              variant="outlined"
+              startIcon={<OpenInNewIcon />}
+              sx={{ mr: 1 }}
+            >
+              Open in New Tab
+            </Button>
+            <Button onClick={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })}>
+              Close
+            </Button>
+          </DialogActions>
         </Dialog>
 
         {/* Remarks Modal */}

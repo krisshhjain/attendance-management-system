@@ -36,8 +36,13 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ErrorIcon from "@mui/icons-material/Error";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
 import CloseIcon from "@mui/icons-material/Close";
 import InfoIcon from "@mui/icons-material/Info";
+import AttachmentIcon from "@mui/icons-material/Attachment";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import DownloadIcon from "@mui/icons-material/Download";
+import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import {
   fetchAdminLeaveRequests,
   approveLeaveRequest,
@@ -47,9 +52,11 @@ import {
   fetchLeaveTypesAll,
   createLeaveType,
   updateLeaveType,
+  deleteLeaveType,
   fetchLeavePoliciesAll,
   createLeavePolicy,
   updateLeavePolicy,
+  deleteLeavePolicy,
 } from "../lib/api.js";
 
 export const Route = createFileRoute("/administration")({
@@ -114,6 +121,31 @@ function Administration() {
   const [actionModal, setActionModal] = useState({ open: false, type: "", request: null, remarks: "" });
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState(null);
+
+  // Document preview modal
+  const [documentModal, setDocumentModal] = useState({ open: false, url: "", title: "", fileName: "" });
+
+  const handleDownloadFile = (url, fileName) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName || 'document';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileExtension = (url) => {
+    return url.split('.').pop().toLowerCase();
+  };
+
+  const isImageFile = (url) => {
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+    return imageExtensions.includes(getFileExtension(url));
+  };
+
+  const isPdfFile = (url) => {
+    return getFileExtension(url) === 'pdf';
+  };
 
   const loadLeaveRequests = async () => {
     setLoadingRequests(true);
@@ -376,6 +408,38 @@ function Administration() {
     }
   };
 
+  // Delete confirmation dialog
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, kind: "", id: null, name: "" });
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
+  const handleDeleteConfirm = (kind, id, name) => {
+    setDeleteConfirm({ open: true, kind, id, name });
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({ open: false, kind: "", id: null, name: "" });
+  };
+
+  const handleDeleteExecute = async () => {
+    setDeleteSubmitting(true);
+    try {
+      if (deleteConfirm.kind === "policy") {
+        await deleteLeavePolicy(deleteConfirm.id);
+        setSuccessMsg("Leave policy deactivated successfully.");
+      } else {
+        await deleteLeaveType(deleteConfirm.id);
+        setSuccessMsg("Leave type deactivated successfully.");
+      }
+      setDeleteConfirm({ open: false, kind: "", id: null, name: "" });
+      await loadPoliciesAndTypes();
+    } catch (err) {
+      setError(err.message || "Delete failed.");
+      setDeleteConfirm({ open: false, kind: "", id: null, name: "" });
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // TAB 3: EMPLOYEE BALANCES OVERVIEW
   // ---------------------------------------------------------------------------
@@ -532,9 +596,45 @@ function Administration() {
                               {req.reason}
                             </Typography>
                             {req.attachment && (
-                              <Typography variant="caption" color="primary.main" display="block">
-                                Doc: {req.attachment}
-                              </Typography>
+                              <Box sx={{ mt: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
+                                <AttachmentIcon fontSize="small" color="primary" />
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  color="primary"
+                                  startIcon={<OpenInNewIcon fontSize="small" />}
+                                  onClick={() => {
+                                    if (req.attachment.startsWith('http')) {
+                                      setDocumentModal({
+                                        open: true,
+                                        url: req.attachment,
+                                        title: `Document for ${req.employee_name} - ${req.leave_type_name} Leave`,
+                                        fileName: req.attachment.split('/').pop() || 'document'
+                                      });
+                                    } else {
+                                      const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://127.0.0.1:8000';
+                                      const fullUrl = req.attachment.startsWith('/') ? 
+                                        `${baseUrl}${req.attachment}` : 
+                                        req.attachment;
+                                      setDocumentModal({
+                                        open: true,
+                                        url: fullUrl,
+                                        title: `Document for ${req.employee_name} - ${req.leave_type_name} Leave`,
+                                        fileName: req.attachment.split('/').pop() || 'document'
+                                      });
+                                    }
+                                  }}
+                                  sx={{ 
+                                    p: 0, 
+                                    minWidth: 'auto', 
+                                    textTransform: 'none',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 500
+                                  }}
+                                >
+                                  View Document
+                                </Button>
+                              </Box>
                             )}
                           </TableCell>
                           <TableCell>
@@ -637,7 +737,7 @@ function Administration() {
                     <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
                       <TableRow>
                         <TableCell sx={{ fontWeight: 700 }}>Leave Type</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Annual Entitlement</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>Entitlement (Yr/Mo)</TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>Carry Forward</TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>Notice & Rules</TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>Effective From</TableCell>
@@ -658,8 +758,13 @@ function Administration() {
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2" fontWeight={700} color="primary.main">
-                              {pol.annual_entitlement} days / yr
+                              {pol.annual_entitlement} days per year
                             </Typography>
+                            {pol.annual_entitlement >= 12 && (
+                              <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                                ≈ {Math.round(pol.annual_entitlement / 12)} days per month
+                              </Typography>
+                            )}
                           </TableCell>
                           <TableCell>
                             {pol.allow_carry_forward ? (
@@ -693,9 +798,21 @@ function Administration() {
                             />
                           </TableCell>
                           <TableCell align="right">
-                            <IconButton size="small" color="primary" onClick={() => handleOpenPolicyModal(pol)}>
-                              <EditIcon fontSize="small" />
-                            </IconButton>
+                            <Tooltip title="Edit policy">
+                              <IconButton size="small" color="primary" onClick={() => handleOpenPolicyModal(pol)}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Deactivate policy">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleDeleteConfirm("policy", pol.id, `${pol.leave_type_name} (${pol.employee_type})`)}
+                                disabled={!pol.is_active}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -775,9 +892,21 @@ function Administration() {
                             <Chip label={t.is_active ? "Active" : "Inactive"} color={t.is_active ? "success" : "default"} size="small" />
                           </TableCell>
                           <TableCell align="right">
-                            <IconButton size="small" color="primary" onClick={() => handleOpenTypeModal(t)}>
-                              <EditIcon fontSize="small" />
-                            </IconButton>
+                            <Tooltip title="Edit leave type">
+                              <IconButton size="small" color="primary" onClick={() => handleOpenTypeModal(t)}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Deactivate leave type">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleDeleteConfirm("type", t.id, t.name)}
+                                disabled={!t.is_active}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -947,7 +1076,7 @@ function Administration() {
                     fullWidth
                     type="number"
                     step="0.5"
-                    label="Annual Entitlement (Days)"
+                    label="Annual Entitlement (days per year)"
                     value={polEntitlement}
                     onChange={(e) => setPolEntitlement(parseFloat(e.target.value))}
                     required
@@ -1108,6 +1237,229 @@ function Administration() {
               </Button>
             </DialogActions>
           </form>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteConfirm.open} onClose={handleDeleteCancel} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 1 }}>
+            <DeleteIcon color="error" />
+            Confirm Deactivation
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body1">
+              Are you sure you want to deactivate{" "}
+              <strong>{deleteConfirm.name}</strong>?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              This will mark it as inactive. Existing leave records will not be affected.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={handleDeleteCancel} color="inherit">
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon />}
+              onClick={handleDeleteExecute}
+              disabled={deleteSubmitting}
+            >
+              {deleteSubmitting ? "Deactivating..." : "Deactivate"}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Document Preview Modal */}
+        <Dialog 
+          open={documentModal.open} 
+          onClose={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })} 
+          maxWidth="lg" 
+          fullWidth
+          PaperProps={{
+            sx: { height: '90vh', maxHeight: '90vh' }
+          }}
+        >
+          <DialogTitle sx={{ 
+            fontWeight: 700, 
+            display: "flex", 
+            justifyContent: "space-between", 
+            alignItems: "center",
+            borderBottom: 1,
+            borderColor: 'divider'
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AttachmentIcon color="primary" />
+              <Typography variant="h6" component="span">
+                {documentModal.title}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Tooltip title="Download Document">
+                <IconButton 
+                  size="small" 
+                  color="primary"
+                  onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
+                >
+                  <DownloadIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Open in New Tab">
+                <IconButton 
+                  size="small" 
+                  color="primary"
+                  onClick={() => window.open(documentModal.url, '_blank')}
+                >
+                  <OpenInNewIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Fullscreen">
+                <IconButton 
+                  size="small" 
+                  color="primary"
+                  onClick={() => {
+                    const elem = document.querySelector('[data-document-preview]');
+                    if (elem.requestFullscreen) {
+                      elem.requestFullscreen();
+                    }
+                  }}
+                >
+                  <FullscreenIcon />
+                </IconButton>
+              </Tooltip>
+              <IconButton size="small" onClick={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })}>
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          </DialogTitle>
+          <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {documentModal.url && (
+              <Box 
+                sx={{ 
+                  flex: 1, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  backgroundColor: '#f5f5f5',
+                  position: 'relative'
+                }}
+                data-document-preview
+              >
+                {isImageFile(documentModal.url) ? (
+                  <Box sx={{ 
+                    flex: 1, 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    p: 2
+                  }}>
+                    <img
+                      src={documentModal.url}
+                      alt="Document preview"
+                      style={{ 
+                        maxWidth: '100%', 
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                      }}
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextElementSibling.style.display = 'flex';
+                      }}
+                    />
+                    <Box sx={{ 
+                      display: 'none', 
+                      flexDirection: 'column', 
+                      alignItems: 'center', 
+                      gap: 2,
+                      p: 4,
+                      textAlign: 'center'
+                    }}>
+                      <ErrorIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
+                      <Typography variant="body1" color="text.secondary">
+                        Unable to preview this image
+                      </Typography>
+                    </Box>
+                  </Box>
+                ) : isPdfFile(documentModal.url) ? (
+                  <iframe
+                    src={`${documentModal.url}#toolbar=1&navpanes=1&scrollbar=1`}
+                    width="100%"
+                    height="100%"
+                    style={{ border: 'none', flex: 1 }}
+                    title="PDF Preview"
+                    onError={() => {
+                      console.log('PDF preview failed');
+                    }}
+                  />
+                ) : (
+                  <Box sx={{ 
+                    flex: 1, 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    gap: 2,
+                    p: 4,
+                    textAlign: 'center'
+                  }}>
+                    <AttachmentIcon sx={{ fontSize: 64, color: 'primary.main' }} />
+                    <Typography variant="h6" color="text.primary">
+                      {documentModal.fileName}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Preview not available for this file type
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                      <Button
+                        variant="contained"
+                        startIcon={<DownloadIcon />}
+                        onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
+                      >
+                        Download File
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        startIcon={<OpenInNewIcon />}
+                        onClick={() => window.open(documentModal.url, '_blank')}
+                      >
+                        Open in Browser
+                      </Button>
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ 
+            borderTop: 1, 
+            borderColor: 'divider',
+            p: 2,
+            backgroundColor: 'grey.50'
+          }}>
+            <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+              File: {documentModal.fileName}
+            </Typography>
+            <Button 
+              onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
+              variant="contained"
+              startIcon={<DownloadIcon />}
+              sx={{ mr: 1 }}
+            >
+              Download
+            </Button>
+            <Button 
+              onClick={() => window.open(documentModal.url, '_blank')}
+              variant="outlined"
+              startIcon={<OpenInNewIcon />}
+              sx={{ mr: 1 }}
+            >
+              Open in New Tab
+            </Button>
+            <Button onClick={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })}>
+              Close
+            </Button>
+          </DialogActions>
         </Dialog>
       </Box>
     </RequireAuth>

@@ -222,6 +222,10 @@ export async function updateLeaveType(id, data) {
   return apiRequest(`/leave/admin/types/${id}/`, { method: "PATCH", body: data });
 }
 
+export async function deleteLeaveType(id) {
+  return apiRequest(`/leave/admin/types/${id}/`, { method: "DELETE" });
+}
+
 export async function fetchLeavePoliciesAll() {
   return apiRequest("/leave/admin/policies/");
 }
@@ -232,4 +236,32 @@ export async function createLeavePolicy(data) {
 
 export async function updateLeavePolicy(id, data) {
   return apiRequest(`/leave/admin/policies/${id}/`, { method: "PATCH", body: data });
+}
+
+export async function deleteLeavePolicy(id) {
+  return apiRequest(`/leave/admin/policies/${id}/`, { method: "DELETE" });
+}
+
+// File upload for leave attachments
+export async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/leave/upload/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${tokenStore.access}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new ApiError(
+      errorData.error || "Failed to upload file",
+      response.status
+    );
+  }
+
+  return response.json();
 }

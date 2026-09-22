@@ -1,5 +1,9 @@
+import os
+from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.files.storage import default_storage
 from rest_framework import status
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -403,3 +407,46 @@ class SuperAdminLeavePolicyDetailView(APIView):
         policy.is_active = False
         policy.save()
         return Response({"message": "Leave policy deactivated successfully."})
+
+
+class FileUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        if 'file' not in request.FILES:
+            return Response({"error": "No file provided."}, status=400)
+
+        file = request.FILES['file']
+        
+        # Validate file size (max 5MB)
+        max_size = 5 * 1024 * 1024
+        if file.size > max_size:
+            return Response({"error": "File size exceeds 5MB limit."}, status=400)
+
+        # Validate file extension
+        allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']
+        file_extension = os.path.splitext(file.name)[1].lower()
+        if file_extension not in allowed_extensions:
+            return Response({
+                "error": f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
+            }, status=400)
+
+        try:
+            # Save file with unique name
+            import uuid
+            unique_filename = f"{uuid.uuid4()}{file_extension}"
+            file_path = f"leave_attachments/{unique_filename}"
+            
+            saved_path = default_storage.save(file_path, file)
+            file_url = request.build_absolute_uri(settings.MEDIA_URL + saved_path)
+            
+            return Response({
+                "message": "File uploaded successfully.",
+                "file_url": file_url,
+                "file_path": saved_path,
+                "original_name": file.name
+            })
+            
+        except Exception as e:
+            return Response({"error": "Failed to upload file."}, status=500)
