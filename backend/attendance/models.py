@@ -6,6 +6,7 @@ class Attendance(models.Model):
     STATUS_CHOICES = [
         ("PRESENT", "Present"),
         ("INCOMPLETE", "Incomplete"),
+        ("LEAVE", "Leave"),
     ]
 
     employee = models.ForeignKey(
@@ -20,6 +21,13 @@ class Attendance(models.Model):
         max_length=20,
         choices=STATUS_CHOICES,
         default="INCOMPLETE",
+    )
+    leave_request = models.ForeignKey(
+        "leave_management.LeaveRequest",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="attendance_records",
     )
     working_duration = models.DurationField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
