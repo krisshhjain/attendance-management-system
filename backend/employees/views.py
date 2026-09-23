@@ -82,3 +82,30 @@ class EmployeeDetailView(APIView):
         user.delete()
 
         return Response({"message": "Employee deleted successfully."}, status=status.HTTP_200_OK)
+
+
+class AdminEmployeePasswordChangeView(APIView):
+    permission_classes = [IsAdminUser]
+
+    @transaction.atomic
+    def post(self, request, pk):
+        try:
+            employee = Employee.objects.select_related("user").get(pk=pk)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        new_password = request.data.get("new_password")
+        if not new_password:
+            return Response({"error": "new_password is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(new_password) < 8:
+            return Response({"error": "Password must be at least 8 characters long."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = employee.user
+        user.set_password(new_password)
+        user.save()
+
+        employee.must_change_password = True
+        employee.save(update_fields=["must_change_password"])
+
+        return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)

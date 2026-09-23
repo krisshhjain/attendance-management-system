@@ -29,7 +29,7 @@ import { AddEmployeeDialog } from "./AddEmployeeDialog.jsx";
 import { EditEmployeeDialog } from "./EditEmployeeDialog.jsx";
 import { ChangePasswordDialog } from "./ChangePasswordDialog.jsx";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
-import { TextField, MenuItem, Select, FormControl, InputLabel, InputAdornment } from "@mui/material";
+import { TextField, MenuItem, Select, FormControl, InputAdornment } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import { filterScopedRecords, useOrganizationScope } from "../../lib/organizationScope.jsx";
 

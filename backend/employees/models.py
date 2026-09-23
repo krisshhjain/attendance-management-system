@@ -21,7 +21,7 @@ class Employee(models.Model):
     )
     date_joined = models.DateField()
     is_active = models.BooleanField(default=True)
-    must_change_password = models.BooleanField(default=False)
+    must_change_password = models.BooleanField(default=True)
     section = models.CharField(max_length=10, blank=True, default="")
     subsection = models.CharField(max_length=10, blank=True, default="")
 

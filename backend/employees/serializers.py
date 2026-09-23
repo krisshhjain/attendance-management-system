@@ -42,6 +42,7 @@ class EmployeeCreateSerializer(serializers.Serializer):
 
         return Employee.objects.create(
             user=user,
+            must_change_password=True,
             **validated_data,
         )
 
