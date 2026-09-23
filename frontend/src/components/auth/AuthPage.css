@@ -1,0 +1,42 @@
+/* Full-viewport dark stage for the sign in pages. Scoped to this wrapper so
+   the rest of the app keeps its own background and scrolling behaviour. */
+.auth-page {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: #120f17;
+  font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+}
+
+/* Ambient depth behind the lines so the first frame is never flat. It fades
+   in over the first second while the hero ribbon is still on its way. */
+.auth-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 42%, #1c1526 0%, #120f17 58%, #0d0a11 100%);
+  opacity: 0;
+  animation: auth-page-ambient-in 1.4s ease-out forwards;
+}
+
+.auth-page > .floating-lines-container {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+@keyframes auth-page-ambient-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-page::before {
+    animation: none;
+    opacity: 1;
+  }
+}

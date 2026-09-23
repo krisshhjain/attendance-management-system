@@ -1,0 +1,294 @@
+.auth-card {
+  --card-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --card-accent: #e945f5;
+  --card-accent-hover: #ee5cf8;
+  --card-text: #f4eef8;
+  --card-text-muted: rgba(244, 238, 248, 0.62);
+  --card-text-faint: rgba(244, 238, 248, 0.42);
+  --card-surface: rgba(19, 14, 27, 0.6);
+  --card-field: rgba(255, 255, 255, 0.05);
+  --card-field-hover: rgba(255, 255, 255, 0.075);
+  --card-border: rgba(255, 255, 255, 0.1);
+  --card-border-strong: rgba(255, 255, 255, 0.18);
+
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: min(400px, calc(100vw - 32px));
+  padding: 36px 32px 30px;
+  box-sizing: border-box;
+
+  color: var(--card-text);
+  font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+
+  background: var(--card-surface);
+  border: 1px solid var(--card-border);
+  border-radius: 22px;
+  box-shadow:
+    0 40px 100px -20px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+
+  /* Hidden until the lines have finished entering. */
+  opacity: 0;
+  filter: blur(10px);
+  transform: translate(-50%, -50%) translateY(28px) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity 0.9s ease,
+    filter 0.9s ease,
+    transform 1.1s var(--card-ease-out);
+  will-change: opacity, transform, filter;
+}
+
+.auth-card.is-visible {
+  opacity: 1;
+  filter: blur(0);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+/* Rows inside the card follow the card in, one beat apart. */
+.auth-card__reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.6s ease,
+    transform 0.8s var(--card-ease-out);
+  transition-delay: calc(180ms + var(--i, 0) * 60ms);
+}
+
+.auth-card.is-visible .auth-card__reveal {
+  opacity: 1;
+  transform: none;
+}
+
+/* Brand row: badge plus product name and tagline. */
+.auth-card__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.auth-card__logo {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  color: #16101b;
+  background: var(--card-accent);
+  border-radius: 11px;
+  box-shadow: 0 8px 24px -8px rgba(233, 69, 245, 0.55);
+}
+
+.auth-card__brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.auth-card__brand-name {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.auth-card__brand-tagline {
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--card-text-muted);
+}
+
+.auth-card__header {
+  margin-bottom: 28px;
+}
+
+.auth-card__title {
+  margin: 0 0 8px;
+  font-size: 26px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.auth-card__subtitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--card-text-muted);
+}
+
+.auth-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-card__label {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--card-text-muted);
+}
+
+.auth-card__label--row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-card__label--row .auth-card__link {
+  font-weight: 400;
+}
+
+.auth-card__field input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 15px;
+  color: var(--card-text);
+  background: var(--card-field);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.auth-card__field input::placeholder {
+  color: var(--card-text-faint);
+}
+
+.auth-card__field input:hover {
+  background: var(--card-field-hover);
+  border-color: var(--card-border-strong);
+}
+
+.auth-card__field input:focus-visible {
+  border-color: rgba(233, 69, 245, 0.85);
+  background: var(--card-field-hover);
+  box-shadow: 0 0 0 3px rgba(233, 69, 245, 0.22);
+}
+
+.auth-card__submit {
+  width: 100%;
+  height: 46px;
+  margin-top: 6px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #16101b;
+  background: var(--card-accent);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px -8px rgba(233, 69, 245, 0.55);
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.auth-card__submit:hover {
+  background: var(--card-accent-hover);
+  box-shadow: 0 10px 28px -8px rgba(233, 69, 245, 0.7);
+}
+
+.auth-card__submit:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 14px -6px rgba(233, 69, 245, 0.5);
+}
+
+.auth-card__submit:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.auth-card__switch {
+  margin: 24px 0 0;
+  font-size: 13.5px;
+  text-align: center;
+  color: var(--card-text-muted);
+}
+
+.auth-card__link {
+  color: #f3a4fa;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.auth-card__link:hover {
+  color: #ffd0ff;
+  text-decoration: underline;
+}
+
+.auth-card__link:focus-visible {
+  outline: 2px solid rgba(233, 69, 245, 0.9);
+  outline-offset: 2px;
+}
+
+/* Show/Hide password toggle. Renders as a link inside the label row. */
+.auth-card__toggle {
+  padding: 0;
+  font: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 30px 22px 26px;
+    border-radius: 18px;
+  }
+
+  .auth-card__title {
+    font-size: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-card,
+  .auth-card__reveal {
+    transition: none;
+  }
+}
+/* Wiring added for the real app: plain error text and the submitting state. */
+.auth-card__error {
+  margin: -4px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #ff8a8a;
+}
+
+.auth-card__submit:disabled {
+  cursor: default;
+  opacity: 0.7;
+  transform: none;
+}
