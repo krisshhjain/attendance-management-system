@@ -4,6 +4,8 @@ import { Route as AttendanceRouteImport } from './routes/attendance.jsx'
 import { Route as DashboardRouteImport } from './routes/dashboard.jsx'
 import { Route as LoginRouteImport } from './routes/login.jsx'
 import { Route as AdminLoginRouteImport } from './routes/admin-login.jsx'
+import { Route as SystemAdminLoginRouteImport } from './routes/systemadmin-login.jsx'
+import { Route as HRCopilotRouteImport } from './routes/hr-copilot.jsx'
 import { Route as SettingsRouteImport } from './routes/settings.jsx'
 import { Route as LeaveRouteImport } from './routes/leave.jsx'
 import { Route as AdministrationRouteImport } from './routes/administration.jsx'
@@ -39,6 +41,18 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
   getParentRoute: () => rootRouteImport,
 })
 
+const SystemAdminLoginRoute = SystemAdminLoginRouteImport.update({
+  id: '/systemadmin-login',
+  path: '/systemadmin-login',
+  getParentRoute: () => rootRouteImport,
+})
+
+const HRCopilotRoute = HRCopilotRouteImport.update({
+  id: '/hr-copilot',
+  path: '/hr-copilot',
+  getParentRoute: () => rootRouteImport,
+})
+
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -69,6 +83,8 @@ const rootRouteChildren = {
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   AdminLoginRoute: AdminLoginRoute,
+  SystemAdminLoginRoute: SystemAdminLoginRoute,
+  HRCopilotRoute: HRCopilotRoute,
   SettingsRoute: SettingsRoute,
   LeaveRoute: LeaveRoute,
   AdministrationRoute: AdministrationRoute,

@@ -7,6 +7,7 @@ import { getHistory, getAdminAttendance, forceAdminCheckout } from "../lib/atten
 import { formatTime, formatDuration } from "../lib/date.js";
 import { StatusBadge } from "../components/StatusBadge.jsx";
 import { useAuth } from "../lib/auth.jsx";
+import { filterScopedRecords, useOrganizationScope } from "../lib/organizationScope.jsx";
 import {
   Box,
   Typography,
@@ -182,6 +183,7 @@ async function exportToExcel(records, date) {
 // ── Admin attendance page ─────────────────────────────────────────────────────
 
 function AdminAttendancePage() {
+  const { selectedScope } = useOrganizationScope();
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [records, setRecords] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -214,7 +216,7 @@ function AdminAttendancePage() {
   const handleExport = async () => {
     setExportError(null);
     try {
-      await exportToExcel(records, selectedDate);
+      await exportToExcel(filteredRecords, selectedDate);
     } catch {
       setExportError("Failed to generate Excel file. Please try again.");
     }
@@ -222,7 +224,15 @@ function AdminAttendancePage() {
 
   const handleForceCheckout = async (payload) => {
     try {
-      await forceAdminCheckout({ ...payload, date: selectedDate });
+      if (payload.all && (selectedScope.sectionId || selectedScope.subsectionId)) {
+        await Promise.all(
+          filteredRecords
+            .filter((record) => record.status === "INCOMPLETE")
+            .map((record) => forceAdminCheckout({ employee: record.employee, date: selectedDate })),
+        );
+      } else {
+        await forceAdminCheckout({ ...payload, date: selectedDate });
+      }
       load(selectedDate);
     } catch (err) {
       setExportError(err.message || "Failed to force checkout");
@@ -235,7 +245,8 @@ function AdminAttendancePage() {
     return () => window.removeEventListener("force-checkout", handler);
   }, [selectedDate, load]);
 
-  const hasRecords = !loading && !error && records && records.length > 0;
+  const filteredRecords = filterScopedRecords(records, selectedScope) || [];
+  const hasRecords = !loading && !error && filteredRecords.length > 0;
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -275,7 +286,7 @@ function AdminAttendancePage() {
             variant="outlined"
             color="warning"
             onClick={() => handleForceCheckout({ all: true })}
-            disabled={!hasRecords || !records.some(r => r.status === "INCOMPLETE")}
+            disabled={!hasRecords || !filteredRecords.some(r => r.status === "INCOMPLETE")}
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
           >
             Checkout All
@@ -300,7 +311,7 @@ function AdminAttendancePage() {
           </Typography>
         </Box>
       )}
-      {hasRecords && <AdminAttendanceTable records={records} />}
+      {hasRecords && <AdminAttendanceTable records={filteredRecords} />}
     </Box>
   );
 }
@@ -348,6 +359,6 @@ function EmployeeAttendancePage() {
 
 function AttendancePage() {
   const { user, loginType } = useAuth();
-  const isAdmin = (user?.is_superuser || user?.is_staff) && loginType === "admin";
+  const isAdmin = (user?.is_superuser || user?.is_staff) && (loginType === "admin" || loginType === "systemadmin");
   return isAdmin ? <AdminAttendancePage /> : <EmployeeAttendancePage />;
 }

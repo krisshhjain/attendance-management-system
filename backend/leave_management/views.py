@@ -10,7 +10,11 @@ from rest_framework.views import APIView
 
 from employees.models import Employee
 from .models import LeavePolicy, LeaveRequest, LeaveType
-from .permissions import IsAdminOrSuperAdmin, IsEmployee, IsSuperAdmin
+from .permissions import (
+    IsAdminOrSuperAdmin,
+    IsEmployee,
+    IsSystemAdminOrSuperAdminReadOnly,
+)
 from .serializers import (
     CreateLeaveRequestSerializer,
     LeavePolicySerializer,
@@ -314,7 +318,7 @@ class AdminEmployeeLeaveBalancesView(APIView):
 # ==============================================================================
 
 class SuperAdminLeaveTypesListCreateView(APIView):
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsSystemAdminOrSuperAdminReadOnly]
 
     def get(self, request):
         types = LeaveType.objects.all().order_by("name")
@@ -329,7 +333,7 @@ class SuperAdminLeaveTypesListCreateView(APIView):
 
 
 class SuperAdminLeaveTypeDetailView(APIView):
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsSystemAdminOrSuperAdminReadOnly]
 
     def get_object(self, pk):
         try:
@@ -362,7 +366,7 @@ class SuperAdminLeaveTypeDetailView(APIView):
 
 
 class SuperAdminLeavePoliciesListCreateView(APIView):
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsSystemAdminOrSuperAdminReadOnly]
 
     def get(self, request):
         policies = LeavePolicy.objects.select_related("leave_type").all().order_by("-effective_from", "employee_type")
@@ -377,7 +381,7 @@ class SuperAdminLeavePoliciesListCreateView(APIView):
 
 
 class SuperAdminLeavePolicyDetailView(APIView):
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsSystemAdminOrSuperAdminReadOnly]
 
     def get_object(self, pk):
         try:
