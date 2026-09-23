@@ -37,11 +37,14 @@ export function RequireAuth({ children }) {
   // reading both ensures we never render the wrong layout on a hot reload
   const effectiveLoginType = loginType || localStorage.getItem("loginType") || "employee";
   const isAdminSession = user?.is_superuser && effectiveLoginType === "admin";
+  const isSystemAdminSession = effectiveLoginType === "systemadmin";
 
   return (
     <>
       {user?.must_change_password && <ForcePasswordChangeModal open={true} />}
-      {isAdminSession ? (
+      {isSystemAdminSession ? (
+        <SuperAdminLayout>{children}</SuperAdminLayout>
+      ) : isAdminSession ? (
         <SuperAdminLayout>{children}</SuperAdminLayout>
       ) : (
         <EmployeeLayout>{children}</EmployeeLayout>
