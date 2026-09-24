@@ -27,7 +27,7 @@ export function FaceCheckInModal({ open, onClose, onSuccess }) {
       
       await apiRequest("/attendance/website-facial-check-in/", {
         method: "POST",
-        body: JSON.stringify({ image: base64Image }),
+        body: { image: base64Image },
       });
 
       setSuccess(true);

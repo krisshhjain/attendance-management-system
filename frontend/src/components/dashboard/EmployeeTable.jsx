@@ -92,7 +92,7 @@ export function EmployeeTable() {
         formData.append("images", blob, `face_${index}.jpg`);
       });
 
-      const token = localStorage.getItem("access_token");
+      const token = localStorage.getItem("sa_access_token");
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'}/admin/employees/${enrollEmployee.id}/enroll-face/`, {
         method: "POST",
         headers: {

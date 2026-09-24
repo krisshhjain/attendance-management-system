@@ -26,7 +26,7 @@ export function FaceVerificationModal({ open, onClose, onSuccess, actionType }) 
     try {
       await apiRequest(endpoint, {
         method: "POST",
-        body: JSON.stringify({ image: base64Image }),
+        body: { image: base64Image },
       });
 
       setSuccess(true);

@@ -38,7 +38,7 @@ def process_enrollment(images: List[Union[str, bytes]]) -> List[float]:
     b64_images = [_to_base64_string(img) for img in images]
     
     try:
-        response = requests.post(f"{settings.FACE_SERVICE_URL}/enroll", json={"images": b64_images}, timeout=15)
+        response = requests.post(f"{settings.FACE_SERVICE_URL}/enroll", json={"images": b64_images}, timeout=90)
     except requests.RequestException as e:
         logger.error(f"FR Service connection error: {e}")
         raise FaceExtractionError("Facial Recognition service is currently unavailable.")
@@ -86,7 +86,7 @@ def find_closest_match(query_image_data: Union[str, bytes], threshold: float = 0
             "candidates": candidates,
             "threshold": threshold
         }
-        response = requests.post(f"{settings.FACE_SERVICE_URL}/recognize", json=payload, timeout=15)
+        response = requests.post(f"{settings.FACE_SERVICE_URL}/recognize", json=payload, timeout=60)
     except requests.RequestException as e:
         logger.error(f"FR Service connection error: {e}")
         raise FaceExtractionError("Facial Recognition service is currently unavailable.")
