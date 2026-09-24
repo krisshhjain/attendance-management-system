@@ -4,12 +4,38 @@ import { ApiError } from "../../lib/api.js";
 import { formatDuration, formatTime } from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { ErrorState, LoadingState } from "../States.jsx";
-import { Box, Button, Typography, Paper, Grid2, CircularProgress } from "@mui/material";
+import { Box, Button, Typography, Paper, CircularProgress, Divider } from "@mui/material";
+import { FaceVerificationModal } from "./FaceVerificationModal.jsx";
+import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined';
 
 export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) {
   const [actionError, setActionError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(0);
+  const [faceModalOpen, setFaceModalOpen] = useState(false);
+  const [faceModalType, setFaceModalType] = useState("in");
   const inFlight = useRef(false);
+
+  const status = data?.status;
+
+  useEffect(() => {
+    if (status !== "CHECKED_IN" || !data?.check_in) {
+      setSecondsRemaining(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const checkInTime = new Date(data.check_in).getTime();
+      const now = Date.now();
+      const elapsed = Math.floor((now - checkInTime) / 1000);
+      const remaining = Math.max(0, 300 - elapsed);
+      setSecondsRemaining(remaining);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [status, data?.check_in]);
 
   const runAction = useCallback(
     async (action) => {
@@ -36,28 +62,6 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
   if (loading) return <Paper sx={{ p: 4, display: "flex", justifyContent: "center", borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none" }}><CircularProgress /></Paper>;
   if (loadError || !data) return <ErrorState onRetry={reloadData} />;
 
-  const status = data?.status;
-  const [secondsRemaining, setSecondsRemaining] = useState(0);
-
-  useEffect(() => {
-    if (status !== "CHECKED_IN" || !data?.check_in) {
-      setSecondsRemaining(0);
-      return;
-    }
-
-    const updateTimer = () => {
-      const checkInTime = new Date(data.check_in).getTime();
-      const now = Date.now();
-      const elapsed = Math.floor((now - checkInTime) / 1000);
-      const remaining = Math.max(0, 300 - elapsed);
-      setSecondsRemaining(remaining);
-    };
-
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [status, data?.check_in]);
-
   return (
     <Paper sx={{ p: 3, borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none", height: "100%", display: "flex", flexDirection: "column" }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 3 }}>
@@ -82,26 +86,53 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
 
       <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: "auto" }}>
         {status === "NOT_CHECKED_IN" && (
-          <Button
-            variant="contained"
-            color="primary"
-            disabled={pending}
-            onClick={() => runAction("in")}
-            fullWidth
-            sx={{ py: 1.5, fontWeight: 600, borderRadius: 2, textTransform: "none", fontSize: "1rem" }}
-          >
-            {pending ? "Checking in..." : "Check In Now"}
-          </Button>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+            <Button
+              variant="contained"
+              color="primary"
+              disabled={pending}
+              onClick={() => {
+                setFaceModalType("in");
+                setFaceModalOpen(true);
+              }}
+              fullWidth
+              startIcon={<CameraAltOutlinedIcon />}
+              sx={{ py: 1.5, fontWeight: 600, borderRadius: 2, textTransform: "none", fontSize: "1rem" }}
+            >
+              Face Check-In
+            </Button>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
+              <Divider sx={{ flexGrow: 1 }} />
+              <Typography variant="caption" sx={{ px: 2, fontWeight: 600 }}>OR</Typography>
+              <Divider sx={{ flexGrow: 1 }} />
+            </Box>
+
+            <Button
+              variant="outlined"
+              color="inherit"
+              disabled={pending}
+              onClick={() => runAction("in")}
+              fullWidth
+              sx={{ py: 1, fontWeight: 600, borderRadius: 2, textTransform: "none" }}
+            >
+              Manual Check-In
+            </Button>
+          </Box>
         )}
 
         {status === "CHECKED_IN" && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
             <Button
               variant="contained"
               color={secondsRemaining > 0 ? "inherit" : "primary"}
               disabled={pending || secondsRemaining > 0}
-              onClick={() => runAction("out")}
+              onClick={() => {
+                setFaceModalType("out");
+                setFaceModalOpen(true);
+              }}
               fullWidth
+              startIcon={<CameraAltOutlinedIcon />}
               sx={{
                 py: 1.5,
                 fontWeight: 600,
@@ -118,8 +149,26 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
                 ? "Checking out..."
                 : secondsRemaining > 0
                 ? `Check Out (${Math.floor(secondsRemaining / 60)}:${(secondsRemaining % 60).toString().padStart(2, "0")} resting period)`
-                : "Check Out"}
+                : "Face Check-Out"}
             </Button>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
+              <Divider sx={{ flexGrow: 1 }} />
+              <Typography variant="caption" sx={{ px: 2, fontWeight: 600 }}>OR</Typography>
+              <Divider sx={{ flexGrow: 1 }} />
+            </Box>
+
+            <Button
+              variant="outlined"
+              color="inherit"
+              disabled={pending || secondsRemaining > 0}
+              onClick={() => runAction("out")}
+              fullWidth
+              sx={{ py: 1, fontWeight: 600, borderRadius: 2, textTransform: "none" }}
+            >
+              Manual Check-Out
+            </Button>
+
             {secondsRemaining > 0 && (
               <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center", display: "block" }}>
                 🔒 5-minute safety period active before check-out unlocks.
@@ -128,10 +177,28 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
           </Box>
         )}
 
+        <FaceVerificationModal 
+          open={faceModalOpen}
+          actionType={faceModalType}
+          onClose={() => setFaceModalOpen(false)}
+          onSuccess={() => {
+            setFaceModalOpen(false);
+            reloadData();
+          }}
+        />
+
         {status === "COMPLETED" && (
           <Box sx={{ textAlign: "center", py: 1, bgcolor: "success.lighter", borderRadius: 2, color: "success.dark" }}>
             <Typography variant="body2" fontWeight={600}>
               Attendance completed for today.
+            </Typography>
+          </Box>
+        )}
+
+        {status === "LEAVE" && (
+          <Box sx={{ textAlign: "center", py: 1.5, bgcolor: "info.lighter", borderRadius: 2, color: "info.dark" }}>
+            <Typography variant="body2" fontWeight={600}>
+              🌴 You are on leave today. Enjoy your time off!
             </Typography>
           </Box>
         )}

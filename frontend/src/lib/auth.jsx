@@ -51,7 +51,10 @@ export function AuthProvider({ children }) {
   }, [fetchUser]);
 
   const login = useCallback(async (email, password, type = "employee") => {
-    const data = await apiRequest("/auth/login/", {
+    const loginEndpoint = type === "systemadmin"
+      ? "/auth/systemadmin-login/"
+      : "/auth/login/";
+    const data = await apiRequest(loginEndpoint, {
       method: "POST",
       auth: false,
       body: { email, password },

@@ -25,14 +25,32 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import CameraAltOutlinedIcon from "@mui/icons-material/CameraAltOutlined";
+import FaceIcon from "@mui/icons-material/Face";
 import { AddEmployeeDialog } from "./AddEmployeeDialog.jsx";
 import { EditEmployeeDialog } from "./EditEmployeeDialog.jsx";
+import { ChangePasswordDialog } from "./ChangePasswordDialog.jsx";
+import WebcamCapture from "../WebcamCapture.jsx";
+import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
+import { TextField, MenuItem, Select, FormControl, InputAdornment } from "@mui/material";
+import SearchIcon from "@mui/icons-material/Search";
+import { filterScopedRecords, useOrganizationScope } from "../../lib/organizationScope.jsx";
 
-export function EmployeeTable() {
+export function EmployeeTable({ scope }) {
+  const { selectedScope } = useOrganizationScope();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editEmployee, setEditEmployee] = useState(null);
   const [deleteEmployee, setDeleteEmployee] = useState(null);
+  const [passwordEmployee, setPasswordEmployee] = useState(null);
+  const [enrollEmployee, setEnrollEmployee] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [enrollLoading, setEnrollLoading] = useState(false);
+  const [enrollError, setEnrollError] = useState(null);
+  const [enrollSuccess, setEnrollSuccess] = useState(false);
+  
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
   const { data: employees, isLoading, isError, refetch } = useQuery({
     queryKey: ["employees"],
@@ -54,6 +72,55 @@ export function EmployeeTable() {
     }
   };
 
+  const handleEnrollFace = async (images) => {
+    if (!enrollEmployee) return;
+    setEnrollLoading(true);
+    setEnrollError(null);
+    setEnrollSuccess(false);
+    
+    try {
+      const formData = new FormData();
+      images.forEach((img, index) => {
+        // Convert base64 to blob
+        const split = img.split(',');
+        const byteString = atob(split[1]);
+        const mimeString = split[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        formData.append("images", blob, `face_${index}.jpg`);
+      });
+
+      const token = localStorage.getItem("sa_access_token");
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'}/admin/employees/${enrollEmployee.id}/enroll-face/`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        },
+        body: formData,
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to enroll face");
+      
+      setEnrollSuccess(true);
+      refetch();
+      
+      // Close dialog after showing success for 2 seconds
+      setTimeout(() => {
+        setEnrollEmployee(null);
+        setEnrollSuccess(false);
+      }, 2000);
+    } catch (err) {
+      setEnrollError(err.message);
+    } finally {
+      setEnrollLoading(false);
+    }
+  };
+
   const getTypeColor = (type) => {
     switch (type) {
       case "PERMANENT": return "success";
@@ -67,6 +134,21 @@ export function EmployeeTable() {
     const full = [emp.first_name, emp.last_name].filter(Boolean).join(" ");
     return full || emp.email.split("@")[0];
   };
+
+  const scopedEmployees = filterScopedRecords(employees, scope || selectedScope);
+  const filteredEmployees = scopedEmployees?.filter((emp) => {
+    const matchesSearch = 
+      getDisplayName(emp).toLowerCase().includes(searchQuery.toLowerCase()) || 
+      emp.email.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesType = typeFilter === "ALL" || emp.employment_type === typeFilter;
+    
+    let matchesStatus = true;
+    if (statusFilter === "ACTIVE") matchesStatus = emp.is_active;
+    if (statusFilter === "INACTIVE") matchesStatus = !emp.is_active;
+
+    return matchesSearch && matchesType && matchesStatus;
+  });
 
   return (
     <Paper
@@ -101,6 +183,46 @@ export function EmployeeTable() {
         </Button>
       </Box>
 
+      {/* Filters */}
+      <Box sx={{ p: 2, display: "flex", gap: 2, flexWrap: "wrap", borderBottom: "1px solid", borderColor: "divider", bgcolor: "rgba(0,0,0,0.01)" }}>
+        <TextField
+          size="small"
+          placeholder="Search employees..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          InputProps={{
+            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+            sx: { borderRadius: "8px", bgcolor: "white" }
+          }}
+          sx={{ minWidth: 250, flexGrow: 1 }}
+        />
+        <FormControl size="small" sx={{ minWidth: 150 }}>
+          <Select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            displayEmpty
+            sx={{ borderRadius: "8px", bgcolor: "white" }}
+          >
+            <MenuItem value="ALL">All Types</MenuItem>
+            <MenuItem value="PERMANENT">Permanent</MenuItem>
+            <MenuItem value="CONTRACT">Contract</MenuItem>
+            <MenuItem value="INTERN">Intern</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 150 }}>
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            displayEmpty
+            sx={{ borderRadius: "8px", bgcolor: "white" }}
+          >
+            <MenuItem value="ALL">All Status</MenuItem>
+            <MenuItem value="ACTIVE">Active</MenuItem>
+            <MenuItem value="INACTIVE">Inactive</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
+
       {isLoading ? (
         <Box sx={{ p: 4, display: "flex", justifyContent: "center" }}>
           <CircularProgress size={32} />
@@ -112,9 +234,9 @@ export function EmployeeTable() {
             Retry
           </Button>
         </Box>
-      ) : !employees || employees.length === 0 ? (
+      ) : !filteredEmployees || filteredEmployees.length === 0 ? (
         <Box sx={{ p: 4, textAlign: "center" }}>
-          <Typography color="text.secondary">No employees found.</Typography>
+          <Typography color="text.secondary">No employees found matching the filters.</Typography>
         </Box>
       ) : (
         <TableContainer sx={{ overflowX: "auto" }}>
@@ -128,11 +250,12 @@ export function EmployeeTable() {
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Sub</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Date Joined</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Biometrics</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }} align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {employees.map((emp) => {
+              {filteredEmployees.map((emp) => {
                 const initials = getDisplayName(emp).slice(0, 2).toUpperCase();
                 return (
                   <TableRow
@@ -196,8 +319,44 @@ export function EmployeeTable() {
                         }}
                       />
                     </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={emp.has_face_enrolled ? "Face Enrolled" : "Not Enrolled"}
+                        size="small"
+                        sx={{
+                          fontWeight: 600,
+                          borderRadius: "6px",
+                          fontSize: "0.7rem",
+                          height: 24,
+                          bgcolor: emp.has_face_enrolled ? "rgba(33, 150, 243, 0.1)" : "rgba(158, 158, 158, 0.1)",
+                          color: emp.has_face_enrolled ? "#2196f3" : "#9e9e9e",
+                        }}
+                      />
+                    </TableCell>
                     <TableCell align="right">
                       <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 0.5 }}>
+                        <Tooltip title={emp.has_face_enrolled ? "Re-enroll Face" : "Enroll Face"}>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              setEnrollEmployee(emp);
+                              setEnrollSuccess(false);
+                              setEnrollError(null);
+                            }}
+                            sx={{ color: emp.has_face_enrolled ? "success.main" : "text.secondary", "&:hover": { color: "success.dark", bgcolor: "rgba(46,125,50,0.06)" } }}
+                          >
+                            {emp.has_face_enrolled ? <FaceIcon fontSize="small" /> : <CameraAltOutlinedIcon fontSize="small" />}
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Reset Password">
+                          <IconButton
+                            size="small"
+                            onClick={() => setPasswordEmployee(emp)}
+                            sx={{ color: "text.secondary", "&:hover": { color: "warning.main", bgcolor: "rgba(237,108,2,0.06)" } }}
+                          >
+                            <VpnKeyOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Edit Employee">
                           <IconButton
                             size="small"
@@ -241,6 +400,14 @@ export function EmployeeTable() {
         onSuccess={() => { setEditEmployee(null); refetch(); }}
       />
 
+      {/* Change Password Dialog */}
+      <ChangePasswordDialog
+        open={Boolean(passwordEmployee)}
+        employee={passwordEmployee}
+        onClose={() => setPasswordEmployee(null)}
+        onSuccess={() => { setPasswordEmployee(null); }}
+      />
+
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={Boolean(deleteEmployee)}
@@ -271,6 +438,44 @@ export function EmployeeTable() {
             {deleteLoading ? <CircularProgress size={22} color="inherit" /> : "Delete"}
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* Face Enrollment Dialog */}
+      <Dialog
+        open={Boolean(enrollEmployee)}
+        onClose={enrollLoading ? undefined : () => setEnrollEmployee(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" fontWeight={600}>Enroll Face for {enrollEmployee ? getDisplayName(enrollEmployee) : ""}</Typography>
+        </DialogTitle>
+        <DialogContent>
+          {enrollError && (
+            <Box sx={{ mb: 2, p: 2, bgcolor: "error.light", color: "error.contrastText", borderRadius: 1 }}>
+              <Typography variant="body2">{enrollError}</Typography>
+            </Box>
+          )}
+          {enrollSuccess && (
+            <Box sx={{ mb: 2, p: 2, bgcolor: "success.light", color: "success.contrastText", borderRadius: 1 }}>
+              <Typography variant="body2">Successfully enrolled! Closing...</Typography>
+            </Box>
+          )}
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Please ensure the employee is facing the camera directly in good lighting. The system will automatically take 3 photos.
+          </Typography>
+          <Box sx={{ display: "flex", justifyContent: "center" }}>
+            {enrollEmployee && (
+              <WebcamCapture 
+                mode="burst"
+                onCapture={handleEnrollFace}
+                onCancel={() => setEnrollEmployee(null)}
+                isLoading={enrollLoading}
+              />
+            )}
+          </Box>
+        </DialogContent>
       </Dialog>
     </Paper>
   );

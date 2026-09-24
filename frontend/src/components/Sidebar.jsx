@@ -19,12 +19,13 @@ import EventNoteIcon from "@mui/icons-material/EventNote";
 import SettingsApplicationsIcon from "@mui/icons-material/SettingsApplications";
 import SettingsIcon from "@mui/icons-material/Settings";
 import LogoutIcon from "@mui/icons-material/Logout";
+import PsychologyAltIcon from "@mui/icons-material/PsychologyAlt";
 import { useAuth } from "../lib/auth.jsx";
 
 const DRAWER_WIDTH = 260;
 
 export function Sidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
-  const { logout } = useAuth();
+  const { logout, loginType } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -43,8 +44,9 @@ export function Sidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
     { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
     { text: "Attendance", icon: <AccessTimeIcon />, path: "/attendance" },
     { text: "Employees", icon: <PeopleIcon />, path: "/employees" },
-    { text: "Leave", icon: <EventNoteIcon />, path: "#", disabled: true },
-    { text: "Administration", icon: <SettingsApplicationsIcon />, path: "/administration" },
+    { text: "My Leave", icon: <EventNoteIcon />, path: "/leave" },
+    { text: "Admin (Leave)", icon: <SettingsApplicationsIcon />, path: "/administration" },
+    ...(loginType === "systemadmin" ? [{ text: "HR Copilot", icon: <PsychologyAltIcon />, path: "/hr-copilot" }] : []),
   ];
 
   const drawerContent = (

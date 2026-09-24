@@ -11,7 +11,7 @@ export const Route = createFileRoute("/employees")({
 function Employees() {
   const { user, loginType } = useAuth();
 
-  if (!user?.is_superuser || loginType !== "admin") {
+  if (!(user?.is_superuser && loginType === "admin") && loginType !== "systemadmin") {
     return (
       <RequireAuth>
         <Box sx={{ p: 4, textAlign: "center", bgcolor: "white", borderRadius: 4, border: "1px solid", borderColor: "divider" }}>

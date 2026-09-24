@@ -1,4 +1,4 @@
-import React from "react";
+import { useState } from "react";
 import { Box, AppBar, Toolbar, Typography, Avatar, IconButton, useTheme, useMediaQuery } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { EmployeeSidebar } from "./EmployeeSidebar.jsx";
@@ -20,7 +20,7 @@ export function EmployeeLayout({ children }) {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };

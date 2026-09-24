@@ -21,7 +21,7 @@ import { useAuth } from "../../lib/auth.jsx";
 const DRAWER_WIDTH = 240;
 
 export function EmployeeSidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -35,11 +35,12 @@ export function EmployeeSidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
     navigate({ to: "/login" });
   };
 
+  const appAccess = user?.app_access || { dashboard: true, attendance: true, leave: true };
   const mainNav = [
     { text: "Dashboard", icon: <DashboardOutlinedIcon />, path: "/dashboard" },
     { text: "Attendance", icon: <AccessTimeOutlinedIcon />, path: "/attendance" },
     { text: "Leave", icon: <EventAvailableOutlinedIcon />, path: "/leave" },
-  ];
+  ].filter((item) => appAccess[item.path.slice(1)] !== false);
 
   const bottomNav = [
     { text: "Settings", icon: <SettingsOutlinedIcon />, path: "/settings" },

@@ -42,6 +42,7 @@ class EmployeeCreateSerializer(serializers.Serializer):
 
         return Employee.objects.create(
             user=user,
+            must_change_password=True,
             **validated_data,
         )
 
@@ -55,6 +56,7 @@ class EmployeeUpdateSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(required=False)
     section = serializers.CharField(max_length=10, required=False, allow_blank=True)
     subsection = serializers.CharField(max_length=10, required=False, allow_blank=True)
+    app_access = serializers.DictField(child=serializers.BooleanField(), required=False)
 
     def update(self, instance, validated_data):
         # Update User fields
@@ -76,6 +78,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email")
     first_name = serializers.CharField(source="user.first_name")
     last_name = serializers.CharField(source="user.last_name")
+    has_face_enrolled = serializers.SerializerMethodField()
 
     class Meta:
         model = Employee
@@ -90,4 +93,12 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             "is_active",
             "section",
             "subsection",
+            "app_access",
+            "has_face_enrolled",
         ]
+
+    def get_has_face_enrolled(self, obj):
+        try:
+            return obj.face_profile.status == "ACTIVE"
+        except Employee.face_profile.RelatedObjectDoesNotExist:
+            return False

@@ -11,6 +11,11 @@ services:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attendance_user -d attendance_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   backend:
     build: ./backend
@@ -23,9 +28,12 @@ services:
       POSTGRES_USER: attendance_user
       POSTGRES_PASSWORD: attendance_password
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
+    profiles:
+      - full
 
   frontend:
     build: ./frontend
@@ -35,6 +43,8 @@ services:
       - "80:80"
     depends_on:
       - backend
+    profiles:
+      - full
 
 volumes:
   postgres_data:

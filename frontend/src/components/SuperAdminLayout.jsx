@@ -1,14 +1,15 @@
-import React from "react";
+import { useState } from "react";
 import { Box, AppBar, Toolbar, Typography, Avatar, IconButton, useTheme, useMediaQuery } from "@mui/material";
 import { Sidebar } from "./Sidebar.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import MenuIcon from "@mui/icons-material/Menu";
 import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
+import { SystemAdminChatWidget } from "./SystemAdminChatWidget.jsx";
 
 const DRAWER_WIDTH = 260;
 
 export function SuperAdminLayout({ children, title }) {
-  const { user } = useAuth();
+  const { user, loginType } = useAuth();
   const email = user?.email;
   const initials = (email ?? "U").slice(0, 2).toUpperCase();
 
@@ -20,7 +21,7 @@ export function SuperAdminLayout({ children, title }) {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const handleDrawerToggle = () => setMobileOpen((prev) => !prev);
 
   return (
@@ -99,6 +100,7 @@ export function SuperAdminLayout({ children, title }) {
           {children}
         </Box>
       </Box>
+      {loginType === "systemadmin" && <SystemAdminChatWidget />}
     </Box>
   );
 }

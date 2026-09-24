@@ -35,6 +35,8 @@ INSTALLED_APPS = [
     "accounts",
     "employees",
     "attendance",
+    "leave_management",
+    "hr_copilot",
     "rest_framework",
     "corsheaders",
     "django.contrib.admin",
@@ -142,3 +144,11 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Media files (Uploads)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Facial Recognition Service
+FACE_SERVICE_URL = os.environ.get('FACE_SERVICE_URL', 'http://host.docker.internal:8001')
+

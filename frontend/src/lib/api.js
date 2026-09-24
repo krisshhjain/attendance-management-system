@@ -39,6 +39,14 @@ function friendlyMessage(status, payload) {
     const candidate = payload.detail ?? payload.message ?? payload.error ?? payload.non_field_errors;
     if (typeof candidate === "string") return candidate;
     if (Array.isArray(candidate) && typeof candidate[0] === "string") return candidate[0];
+
+    for (const key of Object.keys(payload)) {
+      const val = payload[key];
+      if (typeof val === "string") return val;
+      if (Array.isArray(val) && typeof val[0] === "string") {
+        return key === "non_field_errors" ? val[0] : `${key.replace(/_/g, " ")}: ${val[0]}`;
+      }
+    }
   }
   if (status === 401) return "Your session has expired. Please sign in again.";
   if (status === 400) return "That request couldn't be completed.";
@@ -148,4 +156,120 @@ function safeJson(text) {
   } catch {
     return null;
   }
+}
+
+// Leave Management API functions
+export async function fetchLeaveTypes() {
+  return apiRequest("/leave/types/");
+}
+
+export async function fetchLeaveBalances(year) {
+  const query = year ? `?year=${year}` : "";
+  return apiRequest(`/leave/balances/${query}`);
+}
+
+export async function fetchLeaveRequests(status) {
+  const query = status ? `?status=${status}` : "";
+  return apiRequest(`/leave/requests/${query}`);
+}
+
+export async function submitLeaveRequest(data) {
+  return apiRequest("/leave/requests/", { method: "POST", body: data });
+}
+
+export async function cancelLeaveRequest(id) {
+  return apiRequest(`/leave/requests/${id}/cancel/`, { method: "POST" });
+}
+
+export async function estimateLeaveDuration(startDate, endDate, dayType = "FULL_DAY") {
+  return apiRequest("/leave/estimate-duration/", {
+    method: "POST",
+    body: { start_date: startDate, end_date: endDate, day_type: dayType },
+  });
+}
+
+// Admin Leave APIs
+export async function fetchAdminLeaveRequests(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return apiRequest(`/leave/admin/requests/${query ? `?${query}` : ""}`);
+}
+
+export async function approveLeaveRequest(id, remarks = "") {
+  return apiRequest(`/leave/admin/requests/${id}/approve/`, {
+    method: "POST",
+    body: { remarks },
+  });
+}
+
+export async function denyLeaveRequest(id, remarks) {
+  return apiRequest(`/leave/admin/requests/${id}/deny/`, {
+    method: "POST",
+    body: { remarks },
+  });
+}
+
+export async function cancelApprovedLeaveRequest(id) {
+  return apiRequest(`/leave/admin/requests/${id}/cancel/`, { method: "POST" });
+}
+
+export async function fetchAdminLeaveBalances(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return apiRequest(`/leave/admin/balances/${query ? `?${query}` : ""}`);
+}
+
+// Super Admin Configuration APIs
+export async function fetchLeaveTypesAll() {
+  return apiRequest("/leave/admin/types/");
+}
+
+export async function createLeaveType(data) {
+  return apiRequest("/leave/admin/types/", { method: "POST", body: data });
+}
+
+export async function updateLeaveType(id, data) {
+  return apiRequest(`/leave/admin/types/${id}/`, { method: "PATCH", body: data });
+}
+
+export async function deleteLeaveType(id) {
+  return apiRequest(`/leave/admin/types/${id}/`, { method: "DELETE" });
+}
+
+export async function fetchLeavePoliciesAll() {
+  return apiRequest("/leave/admin/policies/");
+}
+
+export async function createLeavePolicy(data) {
+  return apiRequest("/leave/admin/policies/", { method: "POST", body: data });
+}
+
+export async function updateLeavePolicy(id, data) {
+  return apiRequest(`/leave/admin/policies/${id}/`, { method: "PATCH", body: data });
+}
+
+export async function deleteLeavePolicy(id) {
+  return apiRequest(`/leave/admin/policies/${id}/`, { method: "DELETE" });
+}
+
+// File upload for leave attachments
+export async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/leave/upload/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${tokenStore.access}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new ApiError(
+      errorData.error || "Failed to upload file",
+      response.status
+    );
+  }
+
+  return response.json();
 }
