@@ -11,6 +11,20 @@ class LoginView(TokenObtainPairView):
     pass
 
 
+class SystemAdminLoginView(TokenObtainPairView):
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if not (serializer.user.is_system_admin or serializer.user.is_superuser):
+            return Response(
+                {"detail": "You do not have System Admin privileges."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
 

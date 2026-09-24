@@ -194,3 +194,65 @@ class LeaveManagementTestCase(TestCase):
                 end_date=date(2026, 10, 1),
                 reason="Overlap",
             )
+
+    def test_employee_cancel_pending_leave(self):
+        start = timezone.localdate() + timedelta(days=1)
+        end = start + timedelta(days=1)
+        req = LeaveRequest.objects.create(
+            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
+            duration_days=Decimal("2.0"), reason="Test", status="PENDING"
+        )
+        cancelled = cancel_leave_request(req, user=self.emp_user)
+        self.assertEqual(cancelled.status, "CANCELLED")
+
+    def test_employee_cancel_future_approved_leave(self):
+        start = timezone.localdate() + timedelta(days=2)
+        end = start + timedelta(days=2)
+        req = LeaveRequest.objects.create(
+            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
+            duration_days=Decimal("2.0"), reason="Test", status="APPROVED"
+        )
+        cancelled = cancel_leave_request(req, user=self.emp_user)
+        self.assertEqual(cancelled.status, "CANCELLED")
+
+    def test_employee_can_cancel_past_approved_leave(self):
+        start = timezone.localdate() - timedelta(days=2)
+        end = start + timedelta(days=2)
+        req = LeaveRequest.objects.create(
+            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
+            duration_days=Decimal("2.0"), reason="Test", status="APPROVED"
+        )
+        cancelled = cancel_leave_request(req, user=self.emp_user)
+        self.assertEqual(cancelled.status, "CANCELLED")
+
+    def test_cancel_already_cancelled(self):
+        start = timezone.localdate() + timedelta(days=2)
+        end = start + timedelta(days=2)
+        req = LeaveRequest.objects.create(
+            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
+            duration_days=Decimal("2.0"), reason="Test", status="CANCELLED"
+        )
+        with self.assertRaises(ValidationError):
+            cancel_leave_request(req, user=self.emp_user)
+
+    def test_cancel_removes_attendance(self):
+        # Admin approves, attendance created
+        start = timezone.localdate() + timedelta(days=2)
+        if start.weekday() in (5, 6):  # Ensure it's a weekday for attendance
+            start += timedelta(days=2)
+        end = start
+
+        req = LeaveRequest.objects.create(
+            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
+            duration_days=Decimal("1.0"), reason="Test", status="PENDING"
+        )
+        approved = approve_leave_request(req, reviewer_user=self.admin_user, remarks="OK")
+        
+        # Verify attendance exists
+        self.assertTrue(Attendance.objects.filter(leave_request=approved).exists())
+        
+        # Employee cancels future approved leave
+        cancel_leave_request(approved, user=self.emp_user)
+        
+        # Verify attendance removed
+        self.assertFalse(Attendance.objects.filter(leave_request=approved).exists())

@@ -77,6 +77,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email")
     first_name = serializers.CharField(source="user.first_name")
     last_name = serializers.CharField(source="user.last_name")
+    has_face_enrolled = serializers.SerializerMethodField()
 
     class Meta:
         model = Employee
@@ -91,4 +92,11 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             "is_active",
             "section",
             "subsection",
+            "has_face_enrolled",
         ]
+
+    def get_has_face_enrolled(self, obj):
+        try:
+            return obj.face_profile.status == "ACTIVE"
+        except Employee.face_profile.RelatedObjectDoesNotExist:
+            return False

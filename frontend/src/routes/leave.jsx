@@ -47,6 +47,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import DownloadIcon from "@mui/icons-material/Download";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import {
+  apiRequest,
   fetchLeaveBalances,
   fetchLeaveRequests,
   fetchLeaveTypes,
@@ -55,6 +56,8 @@ import {
   cancelLeaveRequest,
   estimateLeaveDuration,
 } from "../lib/api.js";
+import { useAuth } from "../lib/auth.jsx";
+import { filterScopedRecords, useOrganizationScope } from "../lib/organizationScope.jsx";
 
 export const Route = createFileRoute("/leave")({
   component: Leave,
@@ -186,11 +189,14 @@ function LeaveBalanceCard({ balance }) {
 }
 
 function Leave() {
+  const { loginType } = useAuth();
+  const { selectedScope } = useOrganizationScope();
   const today = new Date();
   const todayDateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
   const [balances, setBalances] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -218,6 +224,9 @@ function Leave() {
 
   // Remarks modal
   const [remarksModal, setRemarksModal] = useState({ open: false, title: "", text: "" });
+  
+  // Cancellation modal
+  const [cancelModal, setCancelModal] = useState({ open: false, id: null, status: "" });
   
   // Document preview modal
   const [documentModal, setDocumentModal] = useState({ open: false, url: "", title: "", fileName: "" });
@@ -266,6 +275,11 @@ function Leave() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (loginType !== "systemadmin") return;
+    apiRequest("/admin/employees/list/").then((data) => setEmployees(Array.isArray(data) ? data : [])).catch(() => setEmployees([]));
+  }, [loginType]);
 
   // Recalculate duration when dates/dayType change
   useEffect(() => {
@@ -389,19 +403,30 @@ function Leave() {
     }
   };
 
-  const handleCancelRequest = async (id) => {
-    if (!window.confirm("Are you sure you want to cancel this pending leave request?")) return;
+  const handleCancelRequest = async (id, status) => {
+    setCancelModal({ open: true, id, status });
+  };
 
+  const confirmCancelRequest = async () => {
+    if (!cancelModal.id) return;
     try {
-      await cancelLeaveRequest(id);
+      await cancelLeaveRequest(cancelModal.id);
       setSuccessMsg("Leave request cancelled.");
       await loadData();
     } catch (err) {
       setError(err.message || "Failed to cancel request.");
+    } finally {
+      setCancelModal({ open: false, id: null, status: "" });
     }
   };
 
-  const filteredRequests = requests.filter((r) => {
+  const scopedRequests = loginType === "systemadmin" && (selectedScope.sectionId || selectedScope.subsectionId)
+    ? requests.filter((request) => {
+      const employee = employees.find((item) => item.email === request.employee_email);
+      return employee && filterScopedRecords([employee], selectedScope).length > 0;
+    })
+    : requests;
+  const filteredRequests = scopedRequests.filter((r) => {
     if (statusFilter === "ALL") return true;
     return r.status === statusFilter;
   });
@@ -612,12 +637,12 @@ function Leave() {
                               </IconButton>
                             </Tooltip>
                           )}
-                          {req.status === "PENDING" && (
+                          {(req.status === "PENDING" || req.status === "APPROVED") && (
                             <Button
                               size="small"
                               color="error"
                               variant="outlined"
-                              onClick={() => handleCancelRequest(req.id)}
+                              onClick={() => handleCancelRequest(req.id, req.status)}
                               sx={{ borderRadius: 1.5, textTransform: "none", fontSize: "0.75rem", py: 0.3 }}
                             >
                               Cancel
@@ -823,6 +848,31 @@ function Leave() {
               </Button>
             </DialogActions>
           </form>
+        </Dialog>
+
+        {/* Cancellation Confirmation Modal */}
+        <Dialog open={cancelModal.open} onClose={() => setCancelModal({ open: false, id: null, status: "" })} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700 }}>Confirm Cancellation</DialogTitle>
+          <DialogContent>
+            <Typography>
+              {cancelModal.status === "APPROVED" 
+                ? "Are you sure you want to cancel this approved leave?" 
+                : "Are you sure you want to cancel this pending leave request?"}
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={() => setCancelModal({ open: false, id: null, status: "" })} sx={{ borderRadius: 1.5, fontWeight: 600 }}>
+              Close
+            </Button>
+            <Button
+              onClick={confirmCancelRequest}
+              variant="contained"
+              color="error"
+              sx={{ borderRadius: 1.5, fontWeight: 600 }}
+            >
+              Confirm Cancellation
+            </Button>
+          </DialogActions>
         </Dialog>
 
         {/* Document Preview Modal */}

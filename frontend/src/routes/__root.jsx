@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
 import { AuthProvider } from "../lib/auth.jsx";
+import { OrganizationScopeProvider } from "../lib/organizationScope.jsx";
 import { Box, Typography, Button } from "@mui/material";
 
 function NotFoundComponent() {
@@ -71,7 +72,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Outlet />
+        <OrganizationScopeProvider>
+          <Outlet />
+        </OrganizationScopeProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

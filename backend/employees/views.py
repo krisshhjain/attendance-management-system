@@ -3,8 +3,9 @@ from rest_framework import status
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Employee
+from .models import Employee, FaceProfile
 from .serializers import EmployeeCreateSerializer, EmployeeListSerializer, EmployeeUpdateSerializer
+from attendance.face_service import process_enrollment, FaceExtractionError
 
 
 class EmployeeCreateView(APIView):
@@ -109,3 +110,50 @@ class AdminEmployeePasswordChangeView(APIView):
         employee.save(update_fields=["must_change_password"])
 
         return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
+
+
+class EmployeeFaceEnrollmentView(APIView):
+    permission_classes = [IsAdminUser]
+
+    @transaction.atomic
+    def post(self, request, pk):
+        try:
+            employee = Employee.objects.get(pk=pk)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        images = request.data.getlist("images") if hasattr(request.data, "getlist") else request.data.get("images", [])
+        
+        if len(images) != 3:
+            return Response({"error": "Exactly 3 images are required for enrollment."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Process images and extract template
+            # If images are files from multipart form data, read their content
+            image_bytes = []
+            for img in images:
+                if hasattr(img, 'read'):
+                    image_bytes.append(img.read())
+                else:
+                    image_bytes.append(img)
+            
+            template = process_enrollment(image_bytes)
+            
+            # Save template
+            FaceProfile.objects.update_or_create(
+                employee=employee,
+                defaults={
+                    "face_template": template,
+                    "status": "ACTIVE",
+                    "model_name": "ArcFace",
+                    "detector_backend": "retinaface",
+                    "version": "1.0"
+                }
+            )
+            
+            return Response({"message": "Face enrolled successfully."}, status=status.HTTP_200_OK)
+            
+        except FaceExtractionError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

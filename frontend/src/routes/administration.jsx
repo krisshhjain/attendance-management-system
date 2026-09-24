@@ -101,7 +101,10 @@ function StatusChip({ status }) {
 
 function Administration() {
   const { user, loginType } = useAuth();
+  const isSystemAdmin = loginType === "systemadmin";
   const isSuperUser = Boolean(user?.is_superuser || loginType === "admin");
+  const canManagePolicies = isSuperUser && !isSystemAdmin;
+  const canViewLeaveTypes = isSystemAdmin || isSuperUser;
   const isStaff = Boolean(user?.is_staff || isSuperUser);
 
   const [currentTab, setCurrentTab] = useState(0);
@@ -248,10 +251,10 @@ function Administration() {
   };
 
   useEffect(() => {
-    if (isSuperUser && currentTab === 1) {
+    if ((canManagePolicies || isSystemAdmin) && currentTab === 1) {
       loadPoliciesAndTypes();
     }
-  }, [currentTab, isSuperUser]);
+  }, [currentTab, canManagePolicies, isSystemAdmin]);
 
   const handleOpenPolicyModal = (policy = null) => {
     setPolicyError(null);
@@ -339,10 +342,10 @@ function Administration() {
   const [typeActive, setTypeActive] = useState(true);
 
   useEffect(() => {
-    if (isSuperUser && currentTab === 2) {
+    if (canViewLeaveTypes && currentTab === 2) {
       loadPoliciesAndTypes();
     }
-  }, [currentTab, isSuperUser]);
+  }, [currentTab, canViewLeaveTypes]);
 
   const handleOpenTypeModal = (typeObj = null) => {
     setTypeError(null);
@@ -518,8 +521,8 @@ function Administration() {
             sx={{ borderBottom: "1px solid", borderColor: "divider", px: 2 }}
           >
             <Tab label="Leave Requests" sx={{ fontWeight: 600, textTransform: "none" }} />
-            {isSuperUser && <Tab label="Leave Policies (Super Admin)" sx={{ fontWeight: 600, textTransform: "none" }} />}
-            {isSuperUser && <Tab label="Leave Types (Super Admin)" sx={{ fontWeight: 600, textTransform: "none" }} />}
+            {(canManagePolicies || isSystemAdmin) && <Tab label={isSystemAdmin ? "Leave Policies (View Only)" : "Leave Policies (Super Admin)"} sx={{ fontWeight: 600, textTransform: "none" }} />}
+            {canViewLeaveTypes && <Tab label={isSystemAdmin ? "Leave Types (View Only)" : "Leave Types (Super Admin)"} sx={{ fontWeight: 600, textTransform: "none" }} />}
             <Tab label="Employee Balances Overview" sx={{ fontWeight: 600, textTransform: "none" }} />
           </Tabs>
 
@@ -692,7 +695,7 @@ function Administration() {
           )}
 
           {/* TAB 1: LEAVE POLICIES (Super Admin) */}
-          {isSuperUser && currentTab === 1 && (
+          {(canManagePolicies || isSystemAdmin) && currentTab === 1 && (
             <Box sx={{ p: 3 }}>
               <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5, flexWrap: "wrap", gap: 1.5 }}>
                 <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
@@ -710,7 +713,7 @@ function Administration() {
                     />
                   ))}
                 </Box>
-                <Button
+                {!isSystemAdmin && <Button
                   variant="contained"
                   color="primary"
                   startIcon={<AddIcon />}
@@ -718,7 +721,7 @@ function Administration() {
                   sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
                 >
                   Configure New Policy
-                </Button>
+                </Button>}
               </Box>
 
               {loadingPolicies ? (
@@ -742,7 +745,7 @@ function Administration() {
                         <TableCell sx={{ fontWeight: 700 }}>Notice & Rules</TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>Effective From</TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+                        {!isSystemAdmin && <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -797,7 +800,7 @@ function Administration() {
                               size="small"
                             />
                           </TableCell>
-                          <TableCell align="right">
+                          {!isSystemAdmin && <TableCell align="right">
                             <Tooltip title="Edit policy">
                               <IconButton size="small" color="primary" onClick={() => handleOpenPolicyModal(pol)}>
                                 <EditIcon fontSize="small" />
@@ -813,7 +816,7 @@ function Administration() {
                                 <DeleteIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
-                          </TableCell>
+                          </TableCell>}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -824,13 +827,13 @@ function Administration() {
           )}
 
           {/* TAB 2: LEAVE TYPES (Super Admin) */}
-          {isSuperUser && currentTab === 2 && (
+          {canViewLeaveTypes && currentTab === 2 && (
             <Box sx={{ p: 3 }}>
               <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
                 <Typography variant="h6" fontWeight={700}>
                   System Leave Types Registry
                 </Typography>
-                <Button
+                {!isSystemAdmin && <Button
                   variant="contained"
                   color="primary"
                   startIcon={<AddIcon />}
@@ -838,7 +841,7 @@ function Administration() {
                   sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
                 >
                   Create Leave Type
-                </Button>
+                </Button>}
               </Box>
 
               {loadingPolicies ? (
@@ -855,7 +858,7 @@ function Administration() {
                         <TableCell sx={{ fontWeight: 700 }}>Half Day & Dates</TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>Notice & Docs</TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+                        {!isSystemAdmin && <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -891,7 +894,7 @@ function Administration() {
                           <TableCell>
                             <Chip label={t.is_active ? "Active" : "Inactive"} color={t.is_active ? "success" : "default"} size="small" />
                           </TableCell>
-                          <TableCell align="right">
+                          {!isSystemAdmin && <TableCell align="right">
                             <Tooltip title="Edit leave type">
                               <IconButton size="small" color="primary" onClick={() => handleOpenTypeModal(t)}>
                                 <EditIcon fontSize="small" />
@@ -907,7 +910,7 @@ function Administration() {
                                 <DeleteIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
-                          </TableCell>
+                          </TableCell>}
                         </TableRow>
                       ))}
                     </TableBody>

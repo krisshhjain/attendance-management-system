@@ -1,12 +1,13 @@
 from django.utils import timezone
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser
 
 from employees.models import Employee
-from .models import Attendance
+from .models import Attendance, AttendanceAuditLog
 from .geofence import validate_attendance_geofence
+from .face_service import find_closest_match, FaceExtractionError
 
 
 class CheckInView(APIView):
@@ -342,3 +343,354 @@ class AdminForceCheckoutView(APIView):
             count += 1
             
         return Response({"message": f"Successfully forced check-out for {count} records", "count": count})
+
+
+class WebsiteFacialCheckInView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        employee = request.user.employee
+        today = timezone.localdate()
+
+        image_data = request.data.get("image")
+        if not image_data:
+            return Response({"error": "No image provided"}, status=400)
+
+        # 1. Verify face
+        try:
+            recognized_employee, distance = find_closest_match(image_data)
+        except FaceExtractionError as e:
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            return Response({"error": "Internal server error"}, status=500)
+
+        if not recognized_employee:
+            return Response({"error": "We couldn't verify your identity."}, status=403)
+
+        # 2. Enforce website security: recognized employee must match authenticated user
+        if recognized_employee.id != employee.id:
+            return Response({"error": "Recognized face does not match your authenticated account."}, status=403)
+
+        # 3. Apply existing attendance rules
+        attendance, created = Attendance.objects.get_or_create(
+            employee=employee,
+            date=today,
+        )
+
+        if attendance.status == "LEAVE":
+            return Response(
+                {"error": "You cannot check in because you are on approved leave today."},
+                status=400,
+            )
+
+        from leave_management.models import LeaveRequest
+        has_approved_leave = LeaveRequest.objects.filter(
+            employee=employee,
+            status="APPROVED",
+            start_date__lte=today,
+            end_date__gte=today,
+        ).exists()
+
+        if has_approved_leave:
+            return Response(
+                {"error": "You cannot check in because you are on approved leave today."},
+                status=400,
+            )
+
+        if not created and attendance.check_in is not None:
+            return Response(
+                {"error": "Already checked in today"},
+                status=400,
+            )
+
+        attendance.check_in = timezone.now()
+        attendance.status = "INCOMPLETE"
+        attendance.save()
+
+        return Response(
+            {
+                "message": "Check-in successful",
+                "check_in": attendance.check_in,
+            },
+            status=201,
+        )
+
+class WebsiteFacialCheckOutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        employee = request.user.employee
+        today = timezone.localdate()
+
+        image_data = request.data.get("image")
+        if not image_data:
+            return Response({"error": "No image provided"}, status=400)
+
+        # 1. Verify face
+        try:
+            recognized_employee, distance = find_closest_match(image_data)
+        except FaceExtractionError as e:
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            return Response({"error": "Internal server error"}, status=500)
+
+        if not recognized_employee:
+            return Response({"error": "We couldn't verify your identity."}, status=403)
+
+        # 2. Enforce website security
+        if recognized_employee.id != employee.id:
+            return Response({"error": "Recognized face does not match your authenticated account."}, status=403)
+
+        # 3. Apply existing attendance checkout rules
+        try:
+            attendance = Attendance.objects.get(
+                employee=employee,
+                date=today,
+            )
+        except Attendance.DoesNotExist:
+            return Response(
+                {"error": "You have not checked in today"},
+                status=400,
+            )
+
+        if attendance.check_in is None:
+            return Response(
+                {"error": "You have not checked in today"},
+                status=400,
+            )
+
+        if attendance.check_out is not None:
+            return Response(
+                {"error": "Already checked out today"},
+                status=400,
+            )
+
+        cooldown_seconds = 300
+        time_since_check_in = (timezone.now() - attendance.check_in).total_seconds()
+        if time_since_check_in < cooldown_seconds:
+            remaining = int(cooldown_seconds - time_since_check_in)
+            mins = remaining // 60
+            secs = remaining % 60
+            time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+            return Response(
+                {
+                    "error": f"Safety Cooldown: You must wait 5 minutes after checking in before checking out. Please wait {time_str} longer.",
+                    "cooldown_remaining_seconds": remaining,
+                },
+                status=400,
+            )
+
+        attendance.check_out = timezone.now()
+        attendance.working_duration = (
+            attendance.check_out - attendance.check_in
+        )
+        attendance.status = "PRESENT"
+        attendance.save()
+
+        return Response(
+            {
+                "message": "Check-out successful",
+                "check_in": attendance.check_in,
+                "check_out": attendance.check_out,
+                "working_duration": attendance.working_duration,
+            },
+            status=200,
+        )
+
+
+class KioskFaceCheckInView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        image_data = request.data.get("image")
+        if not image_data:
+            return Response({"error": "No image provided"}, status=400)
+
+        try:
+            employee, distance = find_closest_match(image_data)
+        except FaceExtractionError as e:
+            AttendanceAuditLog.objects.create(
+                event_type="CHECK_IN",
+                status="FAILED_MULTI_FACE" if "multi-face" in str(e).lower() else "FAILED_NO_FACE",
+                error_message=str(e)
+            )
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            AttendanceAuditLog.objects.create(
+                event_type="CHECK_IN",
+                status="FAILED_ERROR",
+                error_message=str(e)
+            )
+            return Response({"error": "Internal server error"}, status=500)
+
+        if not employee:
+            AttendanceAuditLog.objects.create(
+                event_type="CHECK_IN",
+                status="FAILED_UNKNOWN",
+                distance=distance,
+            )
+            return Response({"error": "Face not recognized."}, status=403)
+
+        today = timezone.localdate()
+        attendance, created = Attendance.objects.get_or_create(
+            employee=employee,
+            date=today,
+        )
+
+        from leave_management.models import LeaveRequest
+        has_approved_leave = LeaveRequest.objects.filter(
+            employee=employee,
+            status="APPROVED",
+            start_date__lte=today,
+            end_date__gte=today,
+        ).exists()
+
+        if has_approved_leave:
+            return Response(
+                {"error": f"Hello {employee.user.first_name}, you cannot check in because you are on approved leave today."},
+                status=400,
+            )
+
+        if not created and attendance.check_in is not None:
+            return Response(
+                {"error": f"Hello {employee.user.first_name}, you are already checked in today."},
+                status=400,
+            )
+
+        attendance.check_in = timezone.now()
+        attendance.status = "INCOMPLETE"
+        attendance.save()
+
+        AttendanceAuditLog.objects.create(
+            event_type="CHECK_IN",
+            status="SUCCESS",
+            employee=employee,
+            distance=distance,
+        )
+
+        return Response(
+            {
+                "message": f"Welcome, {employee.user.first_name}!",
+                "check_in": attendance.check_in,
+            },
+            status=201,
+        )
+
+
+class KioskFaceCheckOutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        image_data = request.data.get("image")
+        if not image_data:
+            return Response({"error": "No image provided"}, status=400)
+
+        try:
+            employee, distance = find_closest_match(image_data)
+        except FaceExtractionError as e:
+            AttendanceAuditLog.objects.create(
+                event_type="CHECK_OUT",
+                status="FAILED_MULTI_FACE" if "multi-face" in str(e).lower() else "FAILED_NO_FACE",
+                error_message=str(e)
+            )
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            AttendanceAuditLog.objects.create(
+                event_type="CHECK_OUT",
+                status="FAILED_ERROR",
+                error_message=str(e)
+            )
+            return Response({"error": "Internal server error"}, status=500)
+
+        if not employee:
+            AttendanceAuditLog.objects.create(
+                event_type="CHECK_OUT",
+                status="FAILED_UNKNOWN",
+                distance=distance,
+            )
+            return Response({"error": "Face not recognized."}, status=403)
+
+        today = timezone.localdate()
+        try:
+            attendance = Attendance.objects.get(
+                employee=employee,
+                date=today,
+            )
+        except Attendance.DoesNotExist:
+            return Response(
+                {"error": f"Hello {employee.user.first_name}, you have not checked in today."},
+                status=400,
+            )
+
+        if attendance.check_in is None:
+            return Response(
+                {"error": f"Hello {employee.user.first_name}, you have not checked in today."},
+                status=400,
+            )
+
+        if attendance.check_out is not None:
+            return Response(
+                {"error": f"Hello {employee.user.first_name}, you are already checked out today."},
+                status=400,
+            )
+
+        cooldown_seconds = 300
+        time_since_check_in = (timezone.now() - attendance.check_in).total_seconds()
+        if time_since_check_in < cooldown_seconds:
+            remaining = int(cooldown_seconds - time_since_check_in)
+            return Response(
+                {
+                    "error": f"Safety Cooldown: Please wait {remaining} more seconds before checking out.",
+                },
+                status=400,
+            )
+
+        attendance.check_out = timezone.now()
+        attendance.working_duration = (
+            attendance.check_out - attendance.check_in
+        )
+        attendance.status = "PRESENT"
+        attendance.save()
+
+        AttendanceAuditLog.objects.create(
+            event_type="CHECK_OUT",
+            status="SUCCESS",
+            employee=employee,
+            distance=distance,
+        )
+
+        return Response(
+            {
+                "message": f"Goodbye, {employee.user.first_name}! Check-out successful.",
+                "check_out": attendance.check_out,
+            },
+            status=200,
+        )
+
+class FaceVerifyView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        image_data = request.data.get("image")
+        if not image_data:
+            return Response({"error": "No image provided"}, status=400)
+
+        try:
+            employee, distance = find_closest_match(image_data)
+        except FaceExtractionError as e:
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            return Response({"error": "Internal server error"}, status=500)
+
+        if not employee:
+            return Response({"error": "Face not recognized.", "status": "unknown"}, status=404)
+
+        return Response(
+            {
+                "message": "Face verified successfully.",
+                "employee_id": employee.id,
+                "first_name": employee.user.first_name,
+                "last_name": employee.user.last_name,
+            },
+            status=200,
+        )
