@@ -32,6 +32,15 @@ export function formatDuration(value) {
       return `${hours}h ${minutes}m`;
     }
 
+    const djangoDuration = /^(?:(\d+)\s+days?,\s*)?(\d{1,2}):(\d{2}):(\d{2})(?:\.\d+)?$/.exec(value);
+
+    if (djangoDuration) {
+      const days = Number(djangoDuration[1] || 0);
+      const hours = days * 24 + Number(djangoDuration[2]);
+      const minutes = Number(djangoDuration[3]);
+      return `${hours}h ${minutes}m`;
+    }
+
     const seconds = Number(value);
 
     if (Number.isFinite(seconds)) {

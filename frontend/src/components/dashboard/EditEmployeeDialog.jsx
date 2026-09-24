@@ -13,6 +13,9 @@ import {
   Alert,
   Switch,
   FormControlLabel,
+  FormGroup,
+  Checkbox,
+  Divider,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api.js";
 
@@ -31,6 +34,7 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
     employment_type: "PERMANENT",
     date_joined: "",
     is_active: true,
+    app_access: { dashboard: true, attendance: true, leave: true },
   });
 
   // Populate form when employee prop changes
@@ -45,6 +49,7 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
         employment_type: employee.employment_type || "PERMANENT",
         date_joined: employee.date_joined || "",
         is_active: employee.is_active ?? true,
+        app_access: employee.app_access || { dashboard: true, attendance: true, leave: true },
       });
       setError(null);
     }
@@ -185,6 +190,37 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
               </Typography>
             }
           />
+
+          <Divider />
+          <Box>
+            <Typography variant="subtitle2" fontWeight={600}>
+              App access
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Choose which areas this employee can use.
+            </Typography>
+            <FormGroup row sx={{ mt: 0.5, gap: { xs: 0, sm: 1 } }}>
+              {[
+                ["dashboard", "Dashboard"],
+                ["attendance", "Attendance"],
+                ["leave", "Leave"],
+              ].map(([key, label]) => (
+                <FormControlLabel
+                  key={key}
+                  label={label}
+                  control={
+                    <Checkbox
+                      checked={Boolean(formData.app_access?.[key])}
+                      onChange={(event) => setFormData((prev) => ({
+                        ...prev,
+                        app_access: { ...prev.app_access, [key]: event.target.checked },
+                      }))}
+                    />
+                  }
+                />
+              ))}
+            </FormGroup>
+          </Box>
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2, pt: 1 }}>

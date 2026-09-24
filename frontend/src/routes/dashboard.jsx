@@ -7,7 +7,6 @@ import { AttendanceChart } from "../components/dashboard/AttendanceChart.jsx";
 import { EmployeeTable } from "../components/dashboard/EmployeeTable.jsx";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../lib/api.js";
-import { getAdminAttendance } from "../lib/attendance.js";
 import PeopleIcon from "@mui/icons-material/People";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
@@ -27,13 +26,9 @@ function SuperAdminDashboard() {
     queryKey: ["employees"],
     queryFn: () => apiRequest("/admin/employees/list/"),
   });
-  const { data: todayAttendance = [] } = useQuery({
-    queryKey: ["adminAttendance", new Date().toLocaleDateString("en-CA")],
-    queryFn: () => getAdminAttendance(new Date().toLocaleDateString("en-CA")),
-  });
   const employeeRecords = employees || [];
   const scopedEmployees = filterScopedRecords(employeeRecords, selectedScope);
-  const scopedAttendance = filterScopedRecords(Array.isArray(todayAttendance) ? todayAttendance : todayAttendance?.results, selectedScope);
+  const scopedAttendance = filterScopedRecords(data?.attendance, selectedScope);
   const hasScopedEmployeeData = Array.isArray(employees);
   const hasScopedAttendanceData = Array.isArray(scopedAttendance);
   const attendanceSummary = hasScopedAttendanceData ? {

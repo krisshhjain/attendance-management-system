@@ -10,6 +10,7 @@ import { ChatInput } from "../components/hr-copilot/ChatInput.jsx";
 import { ChatMessages } from "../components/hr-copilot/ChatMessages.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import { useOrganizationScope } from "../lib/organizationScope.jsx";
+import { sendMessage } from "../services/hrCopilotService.js";
 
 const suggestions = [
   "Show me today's attendance summary",
@@ -40,10 +41,11 @@ function HRCopilotPage() {
     setMobileSidebarOpen(false);
   }
 
-  function handleSendMessage(message, attachments = []) {
+  async function handleSendMessage(message, attachments = []) {
     const content = message.trim();
     if ((!content && !attachments.length) || isLoading) return;
     setError(null);
+    const conversationId = conversation.id || `local-${Date.now()}`;
     const userMessage = {
       id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
       role: "user",
@@ -53,11 +55,49 @@ function HRCopilotPage() {
       timestamp: new Date().toISOString(),
     };
     setConversation((current) => ({
-      id: current.id || `local-${Date.now()}`,
-      title: current.title || content.slice(0, 64),
+      id: conversationId,
+      title: current.title || content.slice(0, 64) || attachments[0]?.name || "File question",
       messages: [...current.messages, userMessage],
     }));
     setDraft("");
+
+    if (attachments.length) {
+      setConversation((current) => ({
+        ...current,
+        messages: [...current.messages, {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: "File analysis is not enabled yet. I kept the attachment in this chat, but it was not uploaded or processed.",
+          timestamp: new Date().toISOString(),
+        }],
+      }));
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await sendMessage({
+        message: content,
+        conversationId,
+        scope: selectedScope,
+      });
+      setConversation((current) => ({
+        ...current,
+        messages: [...current.messages, {
+          id: globalThis.crypto?.randomUUID?.() || `assistant-${Date.now()}`,
+          role: "assistant",
+          content: result.answer,
+          data: result.data,
+          intent: result.intent,
+          queryStatus: result.query_status,
+          timestamp: new Date().toISOString(),
+        }],
+      }));
+    } catch (requestError) {
+      setError(requestError.message || "Unable to complete this HR query.");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   const sidebar = (
@@ -106,7 +146,7 @@ function HRCopilotPage() {
           <IconButton aria-label="Open conversations" onClick={() => setMobileSidebarOpen(true)} sx={{ display: { xs: "inline-flex", md: "none" } }}><MenuRoundedIcon /></IconButton>
           <AutoAwesomeIcon color="primary" fontSize="small" />
           <Typography variant="subtitle1" fontWeight={700}>HR Copilot</Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>Preview</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>Read-only HR data</Typography>
         </Box>
 
         <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -127,7 +167,7 @@ function HRCopilotPage() {
           <Box sx={{ px: { xs: 1.5, sm: 3 }, pt: 1.5, pb: 1.5, borderTop: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}>
             <Box sx={{ maxWidth: 820, mx: "auto" }}>
               <ChatInput value={draft} onChange={setDraft} onSend={handleSendMessage} disabled={isLoading} />
-              <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 1 }}>Frontend preview only. Messages are not sent to a backend or saved.</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 1 }}>Answers use HR records within your assigned organizational scope.</Typography>
             </Box>
           </Box>
           <div ref={messagesEndRef} />

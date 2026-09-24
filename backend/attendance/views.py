@@ -1,15 +1,16 @@
 from django.utils import timezone
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser
+from leave_management.permissions import IsEmployee
 
 from employees.models import Employee
 from .models import Attendance
 
 
 class CheckInView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsEmployee]
+    app_access_key = "attendance"
 
     def post(self, request):
         employee = request.user.employee
@@ -59,7 +60,8 @@ class CheckInView(APIView):
         )
 
 class CheckOutView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsEmployee]
+    app_access_key = "attendance"
 
     def post(self, request):
         employee = request.user.employee
@@ -122,7 +124,8 @@ class CheckOutView(APIView):
         )
 
 class TodayAttendanceView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsEmployee]
+    app_access_key = "attendance"
 
     def get(self, request):
         employee = request.user.employee
@@ -141,6 +144,10 @@ class TodayAttendanceView(APIView):
                 "working_duration": None,
             })
 
+        working_duration = attendance.working_duration
+        if attendance.check_in and not attendance.check_out:
+            working_duration = timezone.now() - attendance.check_in
+
         if attendance.status == "LEAVE":
             status = "LEAVE"
         elif attendance.check_out is not None:
@@ -152,11 +159,12 @@ class TodayAttendanceView(APIView):
             "status": status,
             "check_in": attendance.check_in,
             "check_out": attendance.check_out,
-            "working_duration": attendance.working_duration,
+            "working_duration": working_duration,
         })
 
 class AttendanceHistoryView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsEmployee]
+    app_access_key = "attendance"
 
     def get(self, request):
         employee = request.user.employee
@@ -235,6 +243,7 @@ class AdminDashboardView(APIView):
         ).count()
 
         checked_in_today = today_attendance.filter(
+            status="INCOMPLETE",
             check_in__isnull=False,
             check_out__isnull=True,
         ).count()
@@ -244,12 +253,31 @@ class AdminDashboardView(APIView):
             check_out__isnull=False,
         ).count()
 
+        attendance_records = today_attendance.select_related("employee", "employee__user").order_by("-check_in")
+        now = timezone.now()
+        attendance_data = []
+        for attendance in attendance_records:
+            working_duration = attendance.working_duration
+            if attendance.check_in and not attendance.check_out:
+                working_duration = now - attendance.check_in
+            attendance_data.append({
+                "employee": attendance.employee.user.email,
+                "section": attendance.employee.section,
+                "subsection": attendance.employee.subsection,
+                "date": attendance.date,
+                "status": attendance.status,
+                "check_in": attendance.check_in,
+                "check_out": attendance.check_out,
+                "working_duration": str(working_duration) if working_duration is not None else None,
+            })
+
         return Response({
             "total_employees": total_employees,
             "active_employees": active_employees,
             "present_today": present_today,
             "checked_in_today": checked_in_today,
             "completed_today": completed_today,
+            "attendance": attendance_data,
         })
 
 class AdminForceCheckoutView(APIView):

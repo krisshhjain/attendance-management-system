@@ -29,6 +29,8 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
     is_system_admin = models.BooleanField(default=False)
+    hr_copilot_sections = models.JSONField(default=list, blank=True)
+    hr_copilot_subsections = models.JSONField(default=list, blank=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

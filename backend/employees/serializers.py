@@ -56,6 +56,7 @@ class EmployeeUpdateSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(required=False)
     section = serializers.CharField(max_length=10, required=False, allow_blank=True)
     subsection = serializers.CharField(max_length=10, required=False, allow_blank=True)
+    app_access = serializers.DictField(child=serializers.BooleanField(), required=False)
 
     def update(self, instance, validated_data):
         # Update User fields
@@ -91,4 +92,5 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             "is_active",
             "section",
             "subsection",
+            "app_access",
         ]

@@ -33,9 +33,13 @@ class IsSystemAdminOrSuperAdminReadOnly(BasePermission):
 
 class IsEmployee(BasePermission):
     def has_permission(self, request, view):
-        return bool(
+        allowed_employee = bool(
             request.user
             and request.user.is_authenticated
             and hasattr(request.user, "employee")
             and request.user.employee.is_active
         )
+        if not allowed_employee:
+            return False
+        access_key = getattr(view, "app_access_key", "leave")
+        return request.user.employee.app_access.get(access_key, True)

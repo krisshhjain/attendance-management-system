@@ -1,10 +1,14 @@
-// Future backend integration boundary. This phase intentionally makes no API calls.
-const notConnected = () => {
-  throw new Error("HR Copilot backend integration is not available yet.");
-};
+import { apiRequest } from "../lib/api.js";
 
-export const sendMessage = notConnected;
-export const getConversations = notConnected;
-export const getConversation = notConnected;
-export const createConversation = notConnected;
-export const deleteConversation = notConnected;
+export function sendMessage({ message, conversationId, scope }) {
+  return apiRequest("/hr-copilot/query/", {
+    method: "POST",
+    body: {
+      message,
+      conversation_id: conversationId,
+      // Sent for UI continuity only. The backend always derives authorization
+      // scope from the authenticated System Admin account.
+      scope,
+    },
+  });
+}

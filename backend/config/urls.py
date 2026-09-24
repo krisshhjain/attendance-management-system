@@ -15,6 +15,7 @@ urlpatterns = [
     path("api/admin/employees/", include("employees.urls")),
     path("api/admin/dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
     path("api/leave/", include("leave_management.urls")),
+    path("api/hr-copilot/", include("hr_copilot.urls")),
 ]
 
 if settings.DEBUG:

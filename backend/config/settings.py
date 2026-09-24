@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "employees",
     "attendance",
     "leave_management",
+    "hr_copilot",
     "rest_framework",
     "corsheaders",
     "django.contrib.admin",

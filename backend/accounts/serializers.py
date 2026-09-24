@@ -26,6 +26,13 @@ class UserProfileSerializer(serializers.Serializer):
     is_staff = serializers.BooleanField()
     is_superuser = serializers.BooleanField()
     must_change_password = serializers.SerializerMethodField()
+    app_access = serializers.SerializerMethodField()
+
+    def get_app_access(self, obj):
+        try:
+            return obj.employee.app_access
+        except Exception:
+            return {"dashboard": True, "attendance": True, "leave": True}
 
     def get_must_change_password(self, obj):
         try:

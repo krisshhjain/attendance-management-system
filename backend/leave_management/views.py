@@ -36,7 +36,7 @@ from .services import (
 # ==============================================================================
 
 class EmployeeLeaveTypesView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsEmployee]
 
     def get(self, request):
         types = LeaveType.objects.filter(is_active=True).order_by("name")
@@ -60,7 +60,7 @@ class EmployeeLeaveBalancesView(APIView):
 
 
 class EstimateLeaveDurationView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsEmployee]
 
     def post(self, request):
         start_date_str = request.data.get("start_date")
