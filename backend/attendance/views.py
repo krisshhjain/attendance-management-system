@@ -356,6 +356,15 @@ class WebsiteFacialCheckInView(APIView):
         if not image_data:
             return Response({"error": "No image provided"}, status=400)
 
+        # Geofence verification
+        is_valid, error_msg, distance_geo, coords = validate_attendance_geofence(
+            request.data.get("latitude"),
+            request.data.get("longitude"),
+            request.data.get("accuracy"),
+        )
+        if not is_valid:
+            return Response({"error": error_msg}, status=400)
+
         # 1. Verify face
         try:
             recognized_employee, distance = find_closest_match(image_data)
@@ -403,8 +412,13 @@ class WebsiteFacialCheckInView(APIView):
                 status=400,
             )
 
+        lat, lon, acc = coords
         attendance.check_in = timezone.now()
         attendance.status = "INCOMPLETE"
+        attendance.check_in_latitude = lat
+        attendance.check_in_longitude = lon
+        attendance.check_in_accuracy = acc
+        attendance.check_in_distance = distance_geo
         attendance.save()
 
         return Response(
@@ -425,6 +439,15 @@ class WebsiteFacialCheckOutView(APIView):
         image_data = request.data.get("image")
         if not image_data:
             return Response({"error": "No image provided"}, status=400)
+
+        # Geofence verification
+        is_valid, error_msg, distance_geo, coords = validate_attendance_geofence(
+            request.data.get("latitude"),
+            request.data.get("longitude"),
+            request.data.get("accuracy"),
+        )
+        if not is_valid:
+            return Response({"error": error_msg}, status=400)
 
         # 1. Verify face
         try:
@@ -480,11 +503,16 @@ class WebsiteFacialCheckOutView(APIView):
                 status=400,
             )
 
+        lat, lon, acc = coords
         attendance.check_out = timezone.now()
         attendance.working_duration = (
             attendance.check_out - attendance.check_in
         )
         attendance.status = "PRESENT"
+        attendance.check_out_latitude = lat
+        attendance.check_out_longitude = lon
+        attendance.check_out_accuracy = acc
+        attendance.check_out_distance = distance_geo
         attendance.save()
 
         return Response(
