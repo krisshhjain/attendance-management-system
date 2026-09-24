@@ -8,6 +8,9 @@ const LABELS = {
   ABSENT: "Absent",
   HALF_DAY: "Half Day",
   LEAVE: "On Leave",
+  HOLIDAY: "Holiday",
+  INCOMPLETE: "Incomplete",
+  OFF: "Off (Weekend)",
 };
 
 const TONES = {
@@ -18,6 +21,9 @@ const TONES = {
   ABSENT: { bgcolor: "#ffebee", color: "#c62828", borderColor: "#ef9a9a" },
   HALF_DAY: { bgcolor: "#fff3e0", color: "#ed6c02", borderColor: "#ffcc80" },
   LEAVE: { bgcolor: "#f3e5f5", color: "#7b1fa2", borderColor: "#ce93d8" },
+  HOLIDAY: { bgcolor: "#fff8e1", color: "#f57f17", borderColor: "#ffe082" },
+  INCOMPLETE: { bgcolor: "#fff3e0", color: "#ed6c02", borderColor: "#ffcc80" },
+  OFF: { bgcolor: "action.hover", color: "text.secondary", borderColor: "divider" },
 };
 
 export function StatusBadge({ status }) {

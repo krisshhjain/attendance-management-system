@@ -493,10 +493,10 @@ function Administration() {
       <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
         {/* Header */}
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px" }}>
+          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a", fontSize: "24px" }}>
             Administration & Leave Policy Engine
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5, fontSize: "14px" }}>
             Manage employee leave requests, configure rule policies per employee tier, and audit system balances.
           </Typography>
         </Box>
@@ -562,14 +562,14 @@ function Administration() {
               ) : (
                 <TableContainer>
                   <Table sx={{ minWidth: 700 }}>
-                    <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
+                    <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 700 }}>Employee</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Leave Type</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Dates & Duration</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Reason</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Employee</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Dates & Duration</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Reason</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
+                        <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -737,15 +737,15 @@ function Administration() {
               ) : (
                 <TableContainer>
                   <Table sx={{ minWidth: 700 }}>
-                    <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
+                    <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 700 }}>Leave Type</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Entitlement (Yr/Mo)</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Carry Forward</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Notice & Rules</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Effective From</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                        {!isSystemAdmin && <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>}
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Entitlement (Yr/Mo)</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Carry Forward</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Notice & Rules</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Effective From</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
+                        {!isSystemAdmin && <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -851,14 +851,14 @@ function Administration() {
               ) : (
                 <TableContainer>
                   <Table sx={{ minWidth: 700 }}>
-                    <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
+                    <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 700 }}>Name & Code</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Half Day & Dates</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Notice & Docs</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                        {!isSystemAdmin && <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>}
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Name & Code</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Category</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Half Day & Dates</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Notice & Docs</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
+                        {!isSystemAdmin && <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -947,7 +947,7 @@ function Administration() {
               ) : (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {filteredBalances.map((empObj) => (
-                    <Paper key={empObj.employee_id} variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
+                    <Paper key={empObj.employee_id} elevation={0} sx={{ p: 3, borderRadius: "16px", border: "1px solid", borderColor: "divider", bgcolor: "white", boxShadow: "0px 1px 3px rgba(15,23,42,0.03)", mb: 2 }}>
                       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5 }}>
                         <Typography variant="subtitle1" fontWeight={700} color="primary.main">
                           {empObj.employee_email}
@@ -957,14 +957,14 @@ function Administration() {
 
                       <TableContainer>
                         <Table size="small">
-                          <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
+                          <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                             <TableRow>
-                              <TableCell sx={{ fontWeight: 700 }}>Leave Type</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Annual Entitlement</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Carried Forward</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Used (Approved)</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Pending</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Available Balance</TableCell>
+                              <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Annual Entitlement</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Carried Forward</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Used (Approved)</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Pending</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Available Balance</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>

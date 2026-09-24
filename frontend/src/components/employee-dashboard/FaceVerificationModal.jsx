@@ -65,7 +65,7 @@ export function FaceVerificationModal({ open, onClose, onSuccess, actionType }) 
         <Typography variant="h5" fontWeight={700}>Face Verification</Typography>
       </DialogTitle>
       
-      <DialogContent sx={{ px: 4, pb: 4, pt: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <DialogContent sx={{ px: 4, pb: 4, pt: 1, display: "flex", flexDirection: "column", alignItems: "center", minHeight: 450, justifyContent: "center" }}>
         {success ? (
           <Box sx={{ py: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
             <CheckCircleOutlineIcon color="success" sx={{ fontSize: 64 }} />

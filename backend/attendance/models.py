@@ -74,8 +74,29 @@ class AttendanceAuditLog(models.Model):
     error_message = models.TextField(blank=True, default="")
     # Optional: we could add a snapshot ImageField here in the future
     
+    def __str__(self):
+        return f"{self.event_type} - {self.status} at {self.timestamp}"
+
+
+class AttendanceCorrection(models.Model):
+    attendance = models.ForeignKey(
+        Attendance,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="corrections"
+    )
+    admin_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True
+    )
+    timestamp = models.DateTimeField(auto_now_add=True)
+    correction_type = models.CharField(max_length=50) # 'RESET', 'EDIT'
+    reason = models.TextField()
+    previous_data = models.JSONField(default=dict)
+
     class Meta:
         ordering = ["-timestamp"]
 
     def __str__(self):
-        return f"{self.event_type} - {self.status} at {self.timestamp}"
+        return f"{self.correction_type} by {self.admin_user} on {self.attendance}"

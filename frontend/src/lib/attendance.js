@@ -30,3 +30,17 @@ export function forceAdminCheckout(payload) {
     body: payload,
   });
 }
+
+export function resetAdminAttendance(payload) {
+  return apiRequest("/admin/attendance/reset/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function editAdminAttendance(payload) {
+  return apiRequest("/admin/attendance/edit/", {
+    method: "POST",
+    body: payload,
+  });
+}

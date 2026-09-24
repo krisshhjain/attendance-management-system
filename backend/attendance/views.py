@@ -128,6 +128,7 @@ class TodayAttendanceView(APIView):
     def get(self, request):
         employee = request.user.employee
         today = timezone.localdate()
+        working_day = is_working_day(today)
 
         try:
             attendance = Attendance.objects.get(
@@ -136,14 +137,17 @@ class TodayAttendanceView(APIView):
             )
         except Attendance.DoesNotExist:
             return Response({
-                "status": "NOT_CHECKED_IN",
+                "status": "NOT_CHECKED_IN" if working_day else "HOLIDAY",
                 "check_in": None,
                 "check_out": None,
                 "working_duration": None,
+                "is_working_day": working_day,
             })
 
         if attendance.status == "LEAVE":
             status = "LEAVE"
+        elif attendance.check_in is None:
+            status = "NOT_CHECKED_IN" if working_day else "HOLIDAY"
         elif attendance.check_out is not None:
             status = "COMPLETED"
         else:
@@ -154,6 +158,7 @@ class TodayAttendanceView(APIView):
             "check_in": attendance.check_in,
             "check_out": attendance.check_out,
             "working_duration": attendance.working_duration,
+            "is_working_day": working_day,
         })
 
 class AttendanceHistoryView(APIView):
@@ -183,14 +188,10 @@ class AdminAttendanceView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        attendance_records = Attendance.objects.select_related(
-            "employee",
-            "employee__user",
-        )
-
-        # Optional date filter: ?date=YYYY-MM-DD
         date_param = request.query_params.get("date")
-        if date_param:
+        if not date_param:
+            filter_date = timezone.localdate()
+        else:
             from datetime import date as date_type
             try:
                 filter_date = date_type.fromisoformat(date_param)
@@ -199,26 +200,48 @@ class AdminAttendanceView(APIView):
                     {"error": f"Invalid date '{date_param}'. Expected format: YYYY-MM-DD."},
                     status=400,
                 )
-            attendance_records = attendance_records.filter(date=filter_date)
 
-        attendance_records = attendance_records.order_by("-date", "-check_in")
+        employees = Employee.objects.filter(is_active=True).select_related("user")
+        attendance_records = Attendance.objects.filter(date=filter_date).select_related("employee")
+        attendance_map = {att.employee_id: att for att in attendance_records}
 
         data = []
-
-        for attendance in attendance_records:
+        for emp in employees:
+            att = attendance_map.get(emp.id)
+            
+            # Determine actual display status
+            if att:
+                if att.status == "LEAVE":
+                    status_display = "LEAVE"
+                elif att.check_in is None:
+                    status_display = "ABSENT"
+                else:
+                    status_display = att.status # PRESENT or INCOMPLETE
+            else:
+                status_display = "ABSENT"
+                
             data.append({
-                "employee": attendance.employee.user.email,
-                "section": attendance.employee.section,
-                "subsection": attendance.employee.subsection,
-                "date": attendance.date,
-                "status": attendance.status,
-                "check_in": attendance.check_in,
-                "check_out": attendance.check_out,
-                "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
+                "employee": emp.user.email,
+                "employee_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
+                "section": emp.section,
+                "subsection": emp.subsection,
+                "date": filter_date,
+                "status": status_display,
+                "check_in": att.check_in if att else None,
+                "check_out": att.check_out if att else None,
+                "working_duration": str(att.working_duration) if att and att.working_duration else None,
             })
 
+        # Sort: Present first, then Incomplete, then Absent/Leave
+        data.sort(key=lambda x: (
+            0 if x["status"] == "PRESENT" else 1 if x["status"] == "INCOMPLETE" else 2,
+            x["employee_name"]
+        ))
+        
         return Response(data)
 
+
+from config.business_rules import is_working_day
 
 class AdminDashboardView(APIView):
     permission_classes = [IsAdminUser]
@@ -251,7 +274,135 @@ class AdminDashboardView(APIView):
             "present_today": present_today,
             "checked_in_today": checked_in_today,
             "completed_today": completed_today,
+            "is_working_day": is_working_day(today),
         })
+
+class AdminResetAttendanceView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        employee_email = request.data.get("employee")
+        reason = request.data.get("reason")
+
+        if not employee_email or not reason:
+            return Response({"error": "Employee email and reason are required"}, status=400)
+
+        today = timezone.localdate()
+        try:
+            attendance = Attendance.objects.get(employee__user__email=employee_email, date=today)
+        except Attendance.DoesNotExist:
+            return Response({"error": "No attendance record found for today"}, status=404)
+
+        if not is_working_day(today):
+            return Response({"error": "Cannot reset attendance on a non-working day"}, status=400)
+
+        reset_type = request.data.get("reset_type", "both")
+
+        previous_data = {
+            "check_in": str(attendance.check_in) if attendance.check_in else None,
+            "check_out": str(attendance.check_out) if attendance.check_out else None,
+            "status": attendance.status,
+            "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
+        }
+
+        if reset_type == "checkout_only":
+            attendance.check_out = None
+            attendance.status = "INCOMPLETE"
+            attendance.working_duration = None
+            attendance.save()
+        else:
+            # Full wipe
+            attendance.delete()
+            attendance = None
+
+        from .models import AttendanceCorrection
+        AttendanceCorrection.objects.create(
+            attendance=attendance,
+            admin_user=request.user,
+            correction_type="RESET",
+            reason=reason,
+            previous_data=previous_data
+        )
+
+        return Response({"message": "Attendance successfully reset for today."})
+
+class AdminEditAttendanceView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        employee_email = request.data.get("employee")
+        date_str = request.data.get("date")
+        reason = request.data.get("reason")
+        check_in_str = request.data.get("check_in")
+        check_out_str = request.data.get("check_out")
+        status = request.data.get("status")
+
+        if not all([employee_email, date_str, reason, status]):
+            return Response({"error": "Employee email, date, status, and reason are required"}, status=400)
+
+        from datetime import date, datetime
+        try:
+            target_date = date.fromisoformat(date_str)
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD"}, status=400)
+            
+        if target_date > timezone.localdate():
+            return Response({"error": "Cannot edit future attendance."}, status=400)
+
+        if not is_working_day(target_date):
+            return Response({"error": "Cannot edit attendance for non-working days (weekends)."}, status=400)
+
+        try:
+            attendance = Attendance.objects.get(employee__user__email=employee_email, date=target_date)
+        except Attendance.DoesNotExist:
+            from employees.models import Employee
+            try:
+                emp = Employee.objects.get(user__email=employee_email)
+                attendance = Attendance(employee=emp, date=target_date)
+            except Employee.DoesNotExist:
+                return Response({"error": "Employee not found"}, status=404)
+
+        previous_data = {
+            "check_in": str(attendance.check_in) if attendance.check_in else None,
+            "check_out": str(attendance.check_out) if attendance.check_out else None,
+            "status": attendance.status,
+            "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
+        }
+
+        if check_in_str:
+            try:
+                attendance.check_in = datetime.fromisoformat(check_in_str.replace('Z', '+00:00'))
+            except ValueError:
+                return Response({"error": "Invalid check_in time format"}, status=400)
+        else:
+            attendance.check_in = None
+
+        if check_out_str:
+            try:
+                attendance.check_out = datetime.fromisoformat(check_out_str.replace('Z', '+00:00'))
+            except ValueError:
+                return Response({"error": "Invalid check_out time format"}, status=400)
+        else:
+            attendance.check_out = None
+
+        if attendance.check_in and attendance.check_out:
+            attendance.working_duration = attendance.check_out - attendance.check_in
+        else:
+            attendance.working_duration = None
+
+        attendance.status = status
+        attendance.save()
+
+        from .models import AttendanceCorrection
+        AttendanceCorrection.objects.create(
+            attendance=attendance,
+            admin_user=request.user,
+            correction_type="EDIT",
+            reason=reason,
+            previous_data=previous_data
+        )
+
+        return Response({"message": "Attendance successfully edited."})
 
 class AdminForceCheckoutView(APIView):
     permission_classes = [IsAdminUser]

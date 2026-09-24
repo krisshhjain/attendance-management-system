@@ -202,6 +202,14 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
             </Typography>
           </Box>
         )}
+
+        {status === "HOLIDAY" && (
+          <Box sx={{ textAlign: "center", py: 1.5, bgcolor: "warning.lighter", borderRadius: 2, color: "warning.dark" }}>
+            <Typography variant="body2" fontWeight={600}>
+              🎉 It's a weekend/holiday. Enjoy your time off!
+            </Typography>
+          </Box>
+        )}
       </Box>
     </Paper>
   );
