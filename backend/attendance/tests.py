@@ -1,11 +1,145 @@
-from django.test import TestCase
-from rest_framework.test import APITestCase
-from django.urls import reverse
+from datetime import date, timedelta
 from unittest.mock import patch, Mock
 import requests
 from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.test import APITestCase
+
 from employees.models import Employee, FaceProfile
+from attendance.models import Attendance
+from attendance.geofence import (
+    WORKPLACE_LATITUDE,
+    WORKPLACE_LONGITUDE,
+    GEOFENCE_RADIUS_METERS,
+    MAX_ACCURACY_METERS,
+    calculate_haversine_distance,
+)
 from attendance.face_service import process_enrollment, find_closest_match, FaceExtractionError
+
+User = get_user_model()
+
+
+class AttendanceGeofenceTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="employee@example.com",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            user=self.user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=date.today(),
+            is_active=True,
+        )
+        self.client.force_authenticate(user=self.user)
+
+        self.valid_location = {
+            "latitude": WORKPLACE_LATITUDE,
+            "longitude": WORKPLACE_LONGITUDE,
+            "accuracy": 15.0,
+        }
+
+        # Point ~500m north of workplace
+        self.outside_location = {
+            "latitude": WORKPLACE_LATITUDE + 0.005,
+            "longitude": WORKPLACE_LONGITUDE,
+            "accuracy": 10.0,
+        }
+
+        # Poor accuracy
+        self.low_accuracy_location = {
+            "latitude": WORKPLACE_LATITUDE,
+            "longitude": WORKPLACE_LONGITUDE,
+            "accuracy": 250.0,
+        }
+
+    def test_haversine_distance_calculation(self):
+        dist_same = calculate_haversine_distance(
+            WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE,
+            WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE
+        )
+        self.assertAlmostEqual(dist_same, 0.0, places=1)
+
+        dist_outside = calculate_haversine_distance(
+            self.outside_location["latitude"], self.outside_location["longitude"],
+            WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE
+        )
+        self.assertGreater(dist_outside, GEOFENCE_RADIUS_METERS)
+
+    def test_check_in_successful_inside_geofence(self):
+        response = self.client.post("/api/attendance/check-in/", self.valid_location, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["message"], "Attendance marked successfully.")
+        
+        record = Attendance.objects.get(employee=self.employee, date=timezone.localdate())
+        self.assertIsNotNone(record.check_in)
+        self.assertEqual(record.status, "INCOMPLETE")
+        self.assertEqual(record.check_in_latitude, WORKPLACE_LATITUDE)
+        self.assertEqual(record.check_in_longitude, WORKPLACE_LONGITUDE)
+        self.assertIsNotNone(record.check_in_distance)
+        self.assertLessEqual(record.check_in_distance, GEOFENCE_RADIUS_METERS)
+
+    def test_check_in_rejected_outside_geofence(self):
+        response = self.client.post("/api/attendance/check-in/", self.outside_location, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["error"],
+            "You are outside the allowed attendance area. Please move closer to the workplace and try again."
+        )
+        self.assertFalse(Attendance.objects.filter(employee=self.employee).exists())
+
+    def test_check_in_rejected_poor_accuracy(self):
+        response = self.client.post("/api/attendance/check-in/", self.low_accuracy_location, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["error"],
+            "Your location accuracy is too low. Please enable precise location and try again."
+        )
+
+    def test_check_in_rejected_missing_coordinates(self):
+        response = self.client.post("/api/attendance/check-in/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Location coordinates", response.data["error"])
+
+    def test_check_out_inside_geofence(self):
+        # Create an attendance record checked in 10 minutes ago
+        past_time = timezone.now() - timedelta(minutes=10)
+        record = Attendance.objects.create(
+            employee=self.employee,
+            date=timezone.localdate(),
+            check_in=past_time,
+            status="INCOMPLETE",
+        )
+
+        response = self.client.post("/api/attendance/check-out/", self.valid_location, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Check-out successful")
+
+        record.refresh_from_db()
+        self.assertEqual(record.status, "PRESENT")
+        self.assertIsNotNone(record.check_out)
+        self.assertEqual(record.check_out_latitude, WORKPLACE_LATITUDE)
+        self.assertLessEqual(record.check_out_distance, GEOFENCE_RADIUS_METERS)
+
+    def test_check_out_rejected_outside_geofence(self):
+        past_time = timezone.now() - timedelta(minutes=10)
+        Attendance.objects.create(
+            employee=self.employee,
+            date=timezone.localdate(),
+            check_in=past_time,
+            status="INCOMPLETE",
+        )
+
+        response = self.client.post("/api/attendance/check-out/", self.outside_location, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["error"],
+            "You are outside the allowed attendance area. Please move closer to the workplace and try again."
+        )
 
 User = get_user_model()
 
@@ -299,6 +433,11 @@ class WebsiteFacialCheckInViewTests(APITestCase):
             status="ACTIVE"
         )
         self.url = reverse('website-facial-check-in')
+        self.valid_location = {
+            "latitude": WORKPLACE_LATITUDE,
+            "longitude": WORKPLACE_LONGITUDE,
+            "accuracy": 15.0,
+        }
         
         # Second user to test spoofing
         self.user2 = User.objects.create_user(email="other@example.com", password="password123")
@@ -312,7 +451,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
+        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
         
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["message"], "Check-in successful")
@@ -327,7 +466,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
 
         # But we are authenticated as employee2 (spoof attempt)
         self.client.force_authenticate(user=self.user2)
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
+        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
         
         self.assertEqual(response.status_code, 403)
         self.assertIn("does not match your authenticated account", response.data["error"])
@@ -340,7 +479,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
+        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
         
         self.assertEqual(response.status_code, 403)
         self.assertIn("couldn't verify your identity", response.data["error"])
@@ -358,7 +497,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
+        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "Already checked in today")
@@ -377,16 +516,29 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
+        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
         
         self.assertEqual(response.status_code, 400)
         self.assertIn("on approved leave", response.data["error"])
 
     @patch('attendance.face_service.requests.post')
+    def test_facial_check_in_rejected_outside_geofence(self, mock_post):
+        outside_location = {
+            "latitude": WORKPLACE_LATITUDE + 0.005,
+            "longitude": WORKPLACE_LONGITUDE,
+            "accuracy": 10.0,
+        }
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(self.url, {"image": "dummy_base64_string", **outside_location})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("outside the allowed attendance area", response.data["error"])
+        mock_post.assert_not_called()
+
+    @patch('attendance.face_service.requests.post')
     def test_facial_check_in_service_unavailable(self, mock_post):
         mock_post.side_effect = requests.exceptions.ConnectionError("Refused")
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
+        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
         self.assertEqual(response.status_code, 400)
         self.assertIn("unavailable", response.data["error"])
 
@@ -396,6 +548,11 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         self.employee = Employee.objects.create(user=self.user, department="Engineering", employment_type="PERMANENT", date_joined="2023-01-01")
         self.profile = FaceProfile.objects.create(employee=self.employee, face_template=[0.5] * 512, status="ACTIVE")
         self.url = reverse('website-facial-check-out')
+        self.valid_location = {
+            "latitude": WORKPLACE_LATITUDE,
+            "longitude": WORKPLACE_LONGITUDE,
+            "accuracy": 15.0,
+        }
 
     @patch('attendance.face_service.requests.post')
     def test_facial_check_out_success(self, mock_post):
@@ -413,7 +570,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy"})
+        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
         
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], "Check-out successful")
@@ -426,7 +583,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy"})
+        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "You have not checked in today")
@@ -447,7 +604,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy"})
+        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
         
         self.assertEqual(response.status_code, 400)
         self.assertIn("Safety Cooldown", response.data["error"])
@@ -468,7 +625,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy"})
+        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "Already checked out today")
@@ -490,9 +647,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=user2)
-        response = self.client.post(self.url, {"image": "dummy"})
+        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
         
         self.assertEqual(response.status_code, 403)
         self.assertIn("does not match your authenticated account", response.data["error"])
-
-

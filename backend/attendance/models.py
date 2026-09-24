@@ -30,6 +30,14 @@ class Attendance(models.Model):
         related_name="attendance_records",
     )
     working_duration = models.DurationField(null=True, blank=True)
+    check_in_latitude = models.FloatField(null=True, blank=True)
+    check_in_longitude = models.FloatField(null=True, blank=True)
+    check_in_accuracy = models.FloatField(null=True, blank=True)
+    check_in_distance = models.FloatField(null=True, blank=True)
+    check_out_latitude = models.FloatField(null=True, blank=True)
+    check_out_longitude = models.FloatField(null=True, blank=True)
+    check_out_accuracy = models.FloatField(null=True, blank=True)
+    check_out_distance = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

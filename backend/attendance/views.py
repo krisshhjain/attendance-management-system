@@ -7,6 +7,7 @@ from leave_management.permissions import IsEmployee
 
 from employees.models import Employee
 from .models import Attendance, AttendanceAuditLog
+from .geofence import validate_attendance_geofence
 from .face_service import find_closest_match, FaceExtractionError
 
 
@@ -15,8 +16,22 @@ class CheckInView(APIView):
     app_access_key = "attendance"
 
     def post(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response(
+                {"error": "No employee profile associated with this account."},
+                status=403,
+            )
         employee = request.user.employee
         today = timezone.localdate()
+
+        # Geofence verification
+        is_valid, error_msg, distance, coords = validate_attendance_geofence(
+            request.data.get("latitude"),
+            request.data.get("longitude"),
+            request.data.get("accuracy"),
+        )
+        if not is_valid:
+            return Response({"error": error_msg}, status=400)
 
         attendance, created = Attendance.objects.get_or_create(
             employee=employee,
@@ -49,13 +64,18 @@ class CheckInView(APIView):
                 status=400,
             )
 
+        lat, lon, acc = coords
         attendance.check_in = timezone.now()
         attendance.status = "INCOMPLETE"
+        attendance.check_in_latitude = lat
+        attendance.check_in_longitude = lon
+        attendance.check_in_accuracy = acc
+        attendance.check_in_distance = distance
         attendance.save()
 
         return Response(
             {
-                "message": "Check-in successful",
+                "message": "Attendance marked successfully.",
                 "check_in": attendance.check_in,
             },
             status=201,
@@ -66,8 +86,22 @@ class CheckOutView(APIView):
     app_access_key = "attendance"
 
     def post(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response(
+                {"error": "No employee profile associated with this account."},
+                status=403,
+            )
         employee = request.user.employee
         today = timezone.localdate()
+
+        # Geofence verification
+        is_valid, error_msg, distance, coords = validate_attendance_geofence(
+            request.data.get("latitude"),
+            request.data.get("longitude"),
+            request.data.get("accuracy"),
+        )
+        if not is_valid:
+            return Response({"error": error_msg}, status=400)
 
         try:
             attendance = Attendance.objects.get(
@@ -108,11 +142,16 @@ class CheckOutView(APIView):
                 status=400,
             )
 
+        lat, lon, acc = coords
         attendance.check_out = timezone.now()
         attendance.working_duration = (
             attendance.check_out - attendance.check_in
         )
         attendance.status = "PRESENT"
+        attendance.check_out_latitude = lat
+        attendance.check_out_longitude = lon
+        attendance.check_out_accuracy = acc
+        attendance.check_out_distance = distance
         attendance.save()
 
         return Response(
@@ -130,6 +169,13 @@ class TodayAttendanceView(APIView):
     app_access_key = "attendance"
 
     def get(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response({
+                "status": "NOT_CHECKED_IN",
+                "check_in": None,
+                "check_out": None,
+                "working_duration": None,
+            })
         employee = request.user.employee
         today = timezone.localdate()
         working_day = is_working_day(today)
@@ -174,6 +220,8 @@ class AttendanceHistoryView(APIView):
     app_access_key = "attendance"
 
     def get(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response([])
         employee = request.user.employee
 
         attendance_records = Attendance.objects.filter(
@@ -486,6 +534,15 @@ class WebsiteFacialCheckInView(APIView):
         if not image_data:
             return Response({"error": "No image provided"}, status=400)
 
+        # Geofence verification
+        is_valid, error_msg, distance_geo, coords = validate_attendance_geofence(
+            request.data.get("latitude"),
+            request.data.get("longitude"),
+            request.data.get("accuracy"),
+        )
+        if not is_valid:
+            return Response({"error": error_msg}, status=400)
+
         # 1. Verify face
         try:
             recognized_employee, distance = find_closest_match(image_data)
@@ -533,8 +590,13 @@ class WebsiteFacialCheckInView(APIView):
                 status=400,
             )
 
+        lat, lon, acc = coords
         attendance.check_in = timezone.now()
         attendance.status = "INCOMPLETE"
+        attendance.check_in_latitude = lat
+        attendance.check_in_longitude = lon
+        attendance.check_in_accuracy = acc
+        attendance.check_in_distance = distance_geo
         attendance.save()
 
         return Response(
@@ -555,6 +617,15 @@ class WebsiteFacialCheckOutView(APIView):
         image_data = request.data.get("image")
         if not image_data:
             return Response({"error": "No image provided"}, status=400)
+
+        # Geofence verification
+        is_valid, error_msg, distance_geo, coords = validate_attendance_geofence(
+            request.data.get("latitude"),
+            request.data.get("longitude"),
+            request.data.get("accuracy"),
+        )
+        if not is_valid:
+            return Response({"error": error_msg}, status=400)
 
         # 1. Verify face
         try:
@@ -610,11 +681,16 @@ class WebsiteFacialCheckOutView(APIView):
                 status=400,
             )
 
+        lat, lon, acc = coords
         attendance.check_out = timezone.now()
         attendance.working_duration = (
             attendance.check_out - attendance.check_in
         )
         attendance.status = "PRESENT"
+        attendance.check_out_latitude = lat
+        attendance.check_out_longitude = lon
+        attendance.check_out_accuracy = acc
+        attendance.check_out_distance = distance_geo
         attendance.save()
 
         return Response(

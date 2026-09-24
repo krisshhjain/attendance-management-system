@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, getToday } from "../../lib/attendance.js";
+import { getCurrentCoordinates } from "../../lib/location.js";
+import { ATTENDANCE_GEOFENCE, calculateHaversineDistance } from "../../lib/geofence.js";
 import { ApiError } from "../../lib/api.js";
-import { formatDuration, formatTime } from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { ErrorState, LoadingState } from "../States.jsx";
 import { Box, Button, Typography, Paper, CircularProgress, Divider } from "@mui/material";
@@ -10,10 +11,13 @@ import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined';
 
 export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) {
   const [actionError, setActionError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [pending, setPending] = useState(false);
+  const [pendingText, setPendingText] = useState("");
   const [secondsRemaining, setSecondsRemaining] = useState(0);
   const [faceModalOpen, setFaceModalOpen] = useState(false);
   const [faceModalType, setFaceModalType] = useState("in");
+  const [locationData, setLocationData] = useState(null);
   const inFlight = useRef(false);
 
   const status = data?.status;
@@ -37,23 +41,77 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
     return () => clearInterval(interval);
   }, [status, data?.check_in]);
 
+  const handleFaceAction = useCallback(async (type) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    setActionError(null);
+    setSuccessMessage(null);
+    setPendingText("Verifying location...");
+
+    try {
+      const coords = await getCurrentCoordinates();
+      
+      if (coords.accuracy > ATTENDANCE_GEOFENCE.maxAccuracyMeters) {
+        throw new Error("Your location accuracy is too low. Please enable precise location and try again.");
+      }
+
+      const distance = calculateHaversineDistance(
+        coords.latitude,
+        coords.longitude,
+        ATTENDANCE_GEOFENCE.latitude,
+        ATTENDANCE_GEOFENCE.longitude
+      );
+
+      if (distance > ATTENDANCE_GEOFENCE.radiusMeters) {
+        throw new Error("You are outside the allowed attendance area. Please move closer to the workplace and try again.");
+      }
+
+      setLocationData(coords);
+      setFaceModalType(type);
+      setFaceModalOpen(true);
+    } catch (error) {
+      setActionError(
+        error instanceof ApiError
+          ? error.message
+          : error?.message || "Could not verify your location."
+      );
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+      setPendingText("");
+    }
+  }, []);
+
   const runAction = useCallback(
     async (action) => {
       if (inFlight.current) return;
       inFlight.current = true;
       setPending(true);
       setActionError(null);
+      setSuccessMessage(null);
+      setPendingText("Getting your location...");
+
       try {
-        if (action === "in") await checkIn();
-        else await checkOut();
+        const coords = await getCurrentCoordinates();
+        setPendingText(action === "in" ? "Checking in..." : "Checking out...");
+        const res = action === "in" ? await checkIn(coords) : await checkOut(coords);
+        setSuccessMessage(
+          action === "in"
+            ? "Attendance marked successfully."
+            : res?.message || "Check-out successful"
+        );
         await reloadData();
       } catch (error) {
         setActionError(
-          error instanceof ApiError ? error.message : "Something went wrong. Please try again.",
+          error instanceof ApiError
+            ? error.message
+            : error?.message || "Something went wrong. Please try again."
         );
       } finally {
         inFlight.current = false;
         setPending(false);
+        setPendingText("");
       }
     },
     [reloadData],
@@ -73,11 +131,35 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         <StatusBadge status={status} />
       </Box>
 
+      {successMessage && (
+        <Box
+          sx={{
+            mb: 2,
+            p: 1.5,
+            borderRadius: 2,
+            border: "1px solid",
+            borderColor: "success.light",
+            bgcolor: "rgba(46, 125, 50, 0.08)",
+            color: "success.main",
+            typography: "body2",
+            fontWeight: 500,
+          }}
+        >
+          {successMessage}
+        </Box>
+      )}
+
       {actionError && (
         <Box
           sx={{
-            mb: 2, p: 1.5, borderRadius: 2, border: "1px solid", borderColor: "error.light",
-            bgcolor: "rgba(211, 47, 47, 0.05)", color: "error.main", typography: "body2",
+            mb: 2,
+            p: 1.5,
+            borderRadius: 2,
+            border: "1px solid",
+            borderColor: "error.light",
+            bgcolor: "rgba(211, 47, 47, 0.05)",
+            color: "error.main",
+            typography: "body2",
           }}
         >
           {actionError}
@@ -91,15 +173,12 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
               variant="contained"
               color="primary"
               disabled={pending}
-              onClick={() => {
-                setFaceModalType("in");
-                setFaceModalOpen(true);
-              }}
+              onClick={() => handleFaceAction("in")}
               fullWidth
               startIcon={<CameraAltOutlinedIcon />}
               sx={{ py: 1.5, fontWeight: 600, borderRadius: 2, textTransform: "none", fontSize: "1rem" }}
             >
-              Face Check-In
+              {pending && pendingText.includes("location") ? pendingText : "Face Check-In"}
             </Button>
             
             <Box sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
@@ -127,10 +206,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
               variant="contained"
               color={secondsRemaining > 0 ? "inherit" : "primary"}
               disabled={pending || secondsRemaining > 0}
-              onClick={() => {
-                setFaceModalType("out");
-                setFaceModalOpen(true);
-              }}
+              onClick={() => handleFaceAction("out")}
               fullWidth
               startIcon={<CameraAltOutlinedIcon />}
               sx={{
@@ -146,7 +222,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
               }}
             >
               {pending
-                ? "Checking out..."
+                ? (pendingText || "Checking out...")
                 : secondsRemaining > 0
                 ? `Check Out (${Math.floor(secondsRemaining / 60)}:${(secondsRemaining % 60).toString().padStart(2, "0")} resting period)`
                 : "Face Check-Out"}
@@ -180,6 +256,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         <FaceVerificationModal 
           open={faceModalOpen}
           actionType={faceModalType}
+          locationData={locationData}
           onClose={() => setFaceModalOpen(false)}
           onSuccess={() => {
             setFaceModalOpen(false);
