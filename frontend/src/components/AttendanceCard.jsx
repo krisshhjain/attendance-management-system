@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, getToday } from "../lib/attendance.js";
+import { getCurrentCoordinates } from "../lib/location.js";
 import { ApiError } from "../lib/api.js";
 import { formatDuration, formatTime } from "../lib/date.js";
 import { StatusBadge } from "./StatusBadge.jsx";
@@ -19,7 +20,9 @@ export function AttendanceCard({ onChanged }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [pending, setPending] = useState(false);
+  const [pendingText, setPendingText] = useState("");
   const inFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -44,18 +47,30 @@ export function AttendanceCard({ onChanged }) {
       inFlight.current = true;
       setPending(true);
       setActionError(null);
+      setSuccessMessage(null);
+      setPendingText("Getting your location...");
+
       try {
-        if (action === "in") await checkIn();
-        else await checkOut();
+        const coords = await getCurrentCoordinates();
+        setPendingText(action === "in" ? "Checking in..." : "Checking out...");
+        const res = action === "in" ? await checkIn(coords) : await checkOut(coords);
+        setSuccessMessage(
+          action === "in"
+            ? "Attendance marked successfully."
+            : res?.message || "Check-out successful"
+        );
         setData(await getToday());
         onChanged?.();
       } catch (error) {
         setActionError(
-          error instanceof ApiError ? error.message : "Something went wrong. Please try again.",
+          error instanceof ApiError
+            ? error.message
+            : error?.message || "Something went wrong. Please try again."
         );
       } finally {
         inFlight.current = false;
         setPending(false);
+        setPendingText("");
       }
     },
     [onChanged],
@@ -118,6 +133,24 @@ export function AttendanceCard({ onChanged }) {
       <Divider />
 
       <CardContent sx={{ pt: 3 }}>
+        {successMessage && (
+          <Box
+            sx={{
+              mb: 2,
+              p: 1.5,
+              borderRadius: 1,
+              border: "1px solid",
+              borderColor: "success.light",
+              bgcolor: "rgba(46, 125, 50, 0.08)",
+              color: "success.main",
+              typography: "body2",
+              fontWeight: 500,
+            }}
+          >
+            {successMessage}
+          </Box>
+        )}
+
         {actionError && (
           <Box
             sx={{
@@ -140,7 +173,7 @@ export function AttendanceCard({ onChanged }) {
           <ActionButton
             pending={pending}
             label="Check in"
-            pendingLabel="Checking in..."
+            pendingLabel={pendingText || "Checking in..."}
             onClick={() => runAction("in")}
           />
         )}
@@ -151,7 +184,7 @@ export function AttendanceCard({ onChanged }) {
               pending={pending}
               disabled={secondsRemaining > 0}
               label={secondsRemaining > 0 ? `Check out (${Math.floor(secondsRemaining / 60)}:${(secondsRemaining % 60).toString().padStart(2, "0")} resting period)` : "Check out"}
-              pendingLabel="Checking out..."
+              pendingLabel={pendingText || "Checking out..."}
               onClick={() => runAction("out")}
             />
             {secondsRemaining > 0 && (

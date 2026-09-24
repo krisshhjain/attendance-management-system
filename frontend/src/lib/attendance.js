@@ -10,12 +10,18 @@ export function getAdminAttendance(date) {
 }
 
 
-export function checkIn() {
-  return apiRequest("/attendance/check-in/", { method: "POST" });
+export function checkIn(locationData) {
+  return apiRequest("/attendance/check-in/", {
+    method: "POST",
+    body: locationData,
+  });
 }
 
-export function checkOut() {
-  return apiRequest("/attendance/check-out/", { method: "POST" });
+export function checkOut(locationData) {
+  return apiRequest("/attendance/check-out/", {
+    method: "POST",
+    body: locationData,
+  });
 }
 
 export async function getHistory() {

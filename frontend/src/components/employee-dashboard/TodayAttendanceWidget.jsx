@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, getToday } from "../../lib/attendance.js";
+import { getCurrentCoordinates } from "../../lib/location.js";
 import { ApiError } from "../../lib/api.js";
-import { formatDuration, formatTime } from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
-import { ErrorState, LoadingState } from "../States.jsx";
-import { Box, Button, Typography, Paper, Grid2, CircularProgress } from "@mui/material";
+import { ErrorState } from "../States.jsx";
+import { Box, Button, Typography, Paper, CircularProgress } from "@mui/material";
 
 export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) {
   const [actionError, setActionError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [pending, setPending] = useState(false);
+  const [pendingText, setPendingText] = useState("");
   const [secondsRemaining, setSecondsRemaining] = useState(0);
   const inFlight = useRef(false);
 
@@ -39,17 +41,29 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
       inFlight.current = true;
       setPending(true);
       setActionError(null);
+      setSuccessMessage(null);
+      setPendingText("Getting your location...");
+
       try {
-        if (action === "in") await checkIn();
-        else await checkOut();
+        const coords = await getCurrentCoordinates();
+        setPendingText(action === "in" ? "Checking in..." : "Checking out...");
+        const res = action === "in" ? await checkIn(coords) : await checkOut(coords);
+        setSuccessMessage(
+          action === "in"
+            ? "Attendance marked successfully."
+            : res?.message || "Check-out successful"
+        );
         await reloadData();
       } catch (error) {
         setActionError(
-          error instanceof ApiError ? error.message : "Something went wrong. Please try again.",
+          error instanceof ApiError
+            ? error.message
+            : error?.message || "Something went wrong. Please try again."
         );
       } finally {
         inFlight.current = false;
         setPending(false);
+        setPendingText("");
       }
     },
     [reloadData],
@@ -69,11 +83,35 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         <StatusBadge status={status} />
       </Box>
 
+      {successMessage && (
+        <Box
+          sx={{
+            mb: 2,
+            p: 1.5,
+            borderRadius: 2,
+            border: "1px solid",
+            borderColor: "success.light",
+            bgcolor: "rgba(46, 125, 50, 0.08)",
+            color: "success.main",
+            typography: "body2",
+            fontWeight: 500,
+          }}
+        >
+          {successMessage}
+        </Box>
+      )}
+
       {actionError && (
         <Box
           sx={{
-            mb: 2, p: 1.5, borderRadius: 2, border: "1px solid", borderColor: "error.light",
-            bgcolor: "rgba(211, 47, 47, 0.05)", color: "error.main", typography: "body2",
+            mb: 2,
+            p: 1.5,
+            borderRadius: 2,
+            border: "1px solid",
+            borderColor: "error.light",
+            bgcolor: "rgba(211, 47, 47, 0.05)",
+            color: "error.main",
+            typography: "body2",
           }}
         >
           {actionError}
@@ -90,7 +128,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
             fullWidth
             sx={{ py: 1.5, fontWeight: 600, borderRadius: 2, textTransform: "none", fontSize: "1rem" }}
           >
-            {pending ? "Checking in..." : "Check In Now"}
+            {pending ? (pendingText || "Checking in...") : "Check In Now"}
           </Button>
         )}
 
@@ -115,7 +153,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
               }}
             >
               {pending
-                ? "Checking out..."
+                ? (pendingText || "Checking out...")
                 : secondsRemaining > 0
                 ? `Check Out (${Math.floor(secondsRemaining / 60)}:${(secondsRemaining % 60).toString().padStart(2, "0")} resting period)`
                 : "Check Out"}

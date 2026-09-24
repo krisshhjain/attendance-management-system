@@ -6,14 +6,29 @@ from rest_framework.permissions import IsAdminUser
 
 from employees.models import Employee
 from .models import Attendance
+from .geofence import validate_attendance_geofence
 
 
 class CheckInView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response(
+                {"error": "No employee profile associated with this account."},
+                status=403,
+            )
         employee = request.user.employee
         today = timezone.localdate()
+
+        # Geofence verification
+        is_valid, error_msg, distance, coords = validate_attendance_geofence(
+            request.data.get("latitude"),
+            request.data.get("longitude"),
+            request.data.get("accuracy"),
+        )
+        if not is_valid:
+            return Response({"error": error_msg}, status=400)
 
         attendance, created = Attendance.objects.get_or_create(
             employee=employee,
@@ -46,13 +61,18 @@ class CheckInView(APIView):
                 status=400,
             )
 
+        lat, lon, acc = coords
         attendance.check_in = timezone.now()
         attendance.status = "INCOMPLETE"
+        attendance.check_in_latitude = lat
+        attendance.check_in_longitude = lon
+        attendance.check_in_accuracy = acc
+        attendance.check_in_distance = distance
         attendance.save()
 
         return Response(
             {
-                "message": "Check-in successful",
+                "message": "Attendance marked successfully.",
                 "check_in": attendance.check_in,
             },
             status=201,
@@ -62,8 +82,22 @@ class CheckOutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response(
+                {"error": "No employee profile associated with this account."},
+                status=403,
+            )
         employee = request.user.employee
         today = timezone.localdate()
+
+        # Geofence verification
+        is_valid, error_msg, distance, coords = validate_attendance_geofence(
+            request.data.get("latitude"),
+            request.data.get("longitude"),
+            request.data.get("accuracy"),
+        )
+        if not is_valid:
+            return Response({"error": error_msg}, status=400)
 
         try:
             attendance = Attendance.objects.get(
@@ -104,11 +138,16 @@ class CheckOutView(APIView):
                 status=400,
             )
 
+        lat, lon, acc = coords
         attendance.check_out = timezone.now()
         attendance.working_duration = (
             attendance.check_out - attendance.check_in
         )
         attendance.status = "PRESENT"
+        attendance.check_out_latitude = lat
+        attendance.check_out_longitude = lon
+        attendance.check_out_accuracy = acc
+        attendance.check_out_distance = distance
         attendance.save()
 
         return Response(
@@ -125,6 +164,13 @@ class TodayAttendanceView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response({
+                "status": "NOT_CHECKED_IN",
+                "check_in": None,
+                "check_out": None,
+                "working_duration": None,
+            })
         employee = request.user.employee
         today = timezone.localdate()
 
@@ -159,6 +205,8 @@ class AttendanceHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response([])
         employee = request.user.employee
 
         attendance_records = Attendance.objects.filter(

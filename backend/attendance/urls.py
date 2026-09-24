@@ -1,6 +1,4 @@
 from django.urls import path
-from .views import AdminDashboardView
-
 from .views import (
     AdminAttendanceView,
     AdminDashboardView,
