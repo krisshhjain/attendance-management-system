@@ -243,8 +243,9 @@ def cancel_leave_request(leave_request, user):
         raise ValidationError("Leave request is already cancelled.")
 
     is_admin = bool(user and (user.is_staff or user.is_superuser))
-    if not is_admin and req.status != "PENDING":
-        raise ValidationError("Employees can only cancel pending leave requests.")
+    if not is_admin:
+        if req.status not in ["PENDING", "APPROVED"]:
+            raise ValidationError("Employees can only cancel PENDING or APPROVED leave requests.")
 
     was_approved = (req.status == "APPROVED")
 

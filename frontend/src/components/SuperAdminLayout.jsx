@@ -1,4 +1,4 @@
-import React from "react";
+import { useState } from "react";
 import { Box, AppBar, Toolbar, Typography, Avatar, IconButton, useTheme, useMediaQuery } from "@mui/material";
 import { Sidebar } from "./Sidebar.jsx";
 import { useAuth } from "../lib/auth.jsx";
@@ -21,7 +21,7 @@ export function SuperAdminLayout({ children, title }) {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const handleDrawerToggle = () => setMobileOpen((prev) => !prev);
 
   return (
