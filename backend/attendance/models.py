@@ -44,3 +44,38 @@ class Attendance(models.Model):
 
     def __str__(self):
         return f"{self.employee} - {self.date}"
+
+
+class AttendanceAuditLog(models.Model):
+    EVENT_TYPES = [
+        ("CHECK_IN", "Check In"),
+        ("CHECK_OUT", "Check Out"),
+        ("ENROLLMENT", "Enrollment"),
+    ]
+    STATUS_CHOICES = [
+        ("SUCCESS", "Success"),
+        ("FAILED_NO_FACE", "Failed - No Face"),
+        ("FAILED_MULTI_FACE", "Failed - Multiple Faces"),
+        ("FAILED_UNKNOWN", "Failed - Unknown Identity"),
+        ("FAILED_ERROR", "Failed - Error"),
+    ]
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+    event_type = models.CharField(max_length=20, choices=EVENT_TYPES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    employee = models.ForeignKey(
+        "employees.Employee",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_logs",
+    )
+    distance = models.FloatField(null=True, blank=True)
+    error_message = models.TextField(blank=True, default="")
+    # Optional: we could add a snapshot ImageField here in the future
+    
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"{self.event_type} - {self.status} at {self.timestamp}"
