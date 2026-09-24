@@ -32,10 +32,12 @@ import { EditEmployeeDialog } from "./EditEmployeeDialog.jsx";
 import { ChangePasswordDialog } from "./ChangePasswordDialog.jsx";
 import WebcamCapture from "../WebcamCapture.jsx";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
-import { TextField, MenuItem, Select, FormControl, InputLabel, InputAdornment } from "@mui/material";
+import { TextField, MenuItem, Select, FormControl, InputAdornment } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import { filterScopedRecords, useOrganizationScope } from "../../lib/organizationScope.jsx";
 
-export function EmployeeTable() {
+export function EmployeeTable({ scope }) {
+  const { selectedScope } = useOrganizationScope();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editEmployee, setEditEmployee] = useState(null);
   const [deleteEmployee, setDeleteEmployee] = useState(null);
@@ -133,7 +135,8 @@ export function EmployeeTable() {
     return full || emp.email.split("@")[0];
   };
 
-  const filteredEmployees = employees?.filter((emp) => {
+  const scopedEmployees = filterScopedRecords(employees, scope || selectedScope);
+  const filteredEmployees = scopedEmployees?.filter((emp) => {
     const matchesSearch = 
       getDisplayName(emp).toLowerCase().includes(searchQuery.toLowerCase()) || 
       emp.email.toLowerCase().includes(searchQuery.toLowerCase());

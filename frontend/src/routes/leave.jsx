@@ -47,6 +47,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import DownloadIcon from "@mui/icons-material/Download";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import {
+  apiRequest,
   fetchLeaveBalances,
   fetchLeaveRequests,
   fetchLeaveTypes,
@@ -55,6 +56,8 @@ import {
   cancelLeaveRequest,
   estimateLeaveDuration,
 } from "../lib/api.js";
+import { useAuth } from "../lib/auth.jsx";
+import { filterScopedRecords, useOrganizationScope } from "../lib/organizationScope.jsx";
 
 export const Route = createFileRoute("/leave")({
   component: Leave,
@@ -186,11 +189,14 @@ function LeaveBalanceCard({ balance }) {
 }
 
 function Leave() {
+  const { loginType } = useAuth();
+  const { selectedScope } = useOrganizationScope();
   const today = new Date();
   const todayDateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
   const [balances, setBalances] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -269,6 +275,11 @@ function Leave() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (loginType !== "systemadmin") return;
+    apiRequest("/admin/employees/list/").then((data) => setEmployees(Array.isArray(data) ? data : [])).catch(() => setEmployees([]));
+  }, [loginType]);
 
   // Recalculate duration when dates/dayType change
   useEffect(() => {
@@ -409,7 +420,13 @@ function Leave() {
     }
   };
 
-  const filteredRequests = requests.filter((r) => {
+  const scopedRequests = loginType === "systemadmin" && (selectedScope.sectionId || selectedScope.subsectionId)
+    ? requests.filter((request) => {
+      const employee = employees.find((item) => item.email === request.employee_email);
+      return employee && filterScopedRecords([employee], selectedScope).length > 0;
+    })
+    : requests;
+  const filteredRequests = scopedRequests.filter((r) => {
     if (statusFilter === "ALL") return true;
     return r.status === statusFilter;
   });
