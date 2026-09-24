@@ -113,10 +113,10 @@ export function EmployeeTable({ scope }) {
       setTimeout(() => {
         setEnrollEmployee(null);
         setEnrollSuccess(false);
+        setEnrollLoading(false);
       }, 2000);
     } catch (err) {
       setEnrollError(err.message);
-    } finally {
       setEnrollLoading(false);
     }
   };
@@ -158,17 +158,20 @@ export function EmployeeTable({ scope }) {
         border: "1px solid",
         borderColor: "divider",
         bgcolor: "white",
-        boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.02)",
+        boxShadow: "0px 1px 3px rgba(15,23,42,0.03)",
         overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        height: "100%"
       }}
     >
       {/* Header */}
-      <Box sx={{ p: 3, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid", borderColor: "divider", flexWrap: "wrap", gap: 2 }}>
+      <Box sx={{ p: 3, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", flexWrap: "wrap", gap: 2 }}>
         <Box>
-          <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: "-0.5px" }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a", fontSize: "16px" }}>
             Employee Details
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5, fontSize: "12px" }}>
             Manage your team members and their employment status.
           </Typography>
         </Box>
@@ -177,22 +180,22 @@ export function EmployeeTable({ scope }) {
           color="primary"
           startIcon={<AddIcon />}
           onClick={() => setDialogOpen(true)}
-          sx={{ borderRadius: "8px", textTransform: "none", fontWeight: 600 }}
+          sx={{ borderRadius: "10px", textTransform: "none", fontWeight: 600, boxShadow: "none" }}
         >
           Add Employee
         </Button>
       </Box>
 
       {/* Filters */}
-      <Box sx={{ p: 2, display: "flex", gap: 2, flexWrap: "wrap", borderBottom: "1px solid", borderColor: "divider", bgcolor: "rgba(0,0,0,0.01)" }}>
+      <Box sx={{ p: 2, display: "flex", gap: 2, flexWrap: "wrap", borderBottom: "1px solid #f1f5f9", bgcolor: "#f8fafc" }}>
         <TextField
           size="small"
           placeholder="Search employees..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           InputProps={{
-            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
-            sx: { borderRadius: "8px", bgcolor: "white" }
+            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" sx={{ color: "#94a3b8" }} /></InputAdornment>,
+            sx: { borderRadius: "10px", bgcolor: "white", fontSize: "13px" }
           }}
           sx={{ minWidth: 250, flexGrow: 1 }}
         />
@@ -201,7 +204,7 @@ export function EmployeeTable({ scope }) {
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
             displayEmpty
-            sx={{ borderRadius: "8px", bgcolor: "white" }}
+            sx={{ borderRadius: "10px", bgcolor: "white", fontSize: "13px", color: typeFilter === "ALL" ? "#64748b" : "#0f172a" }}
           >
             <MenuItem value="ALL">All Types</MenuItem>
             <MenuItem value="PERMANENT">Permanent</MenuItem>
@@ -214,7 +217,7 @@ export function EmployeeTable({ scope }) {
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             displayEmpty
-            sx={{ borderRadius: "8px", bgcolor: "white" }}
+            sx={{ borderRadius: "10px", bgcolor: "white", fontSize: "13px", color: statusFilter === "ALL" ? "#64748b" : "#0f172a" }}
           >
             <MenuItem value="ALL">All Status</MenuItem>
             <MenuItem value="ACTIVE">Active</MenuItem>
@@ -235,8 +238,11 @@ export function EmployeeTable({ scope }) {
           </Button>
         </Box>
       ) : !filteredEmployees || filteredEmployees.length === 0 ? (
-        <Box sx={{ p: 4, textAlign: "center" }}>
-          <Typography color="text.secondary">No employees found matching the filters.</Typography>
+        <Box sx={{ p: 8, textAlign: "center" }}>
+          <Box sx={{ display: "flex", justifyContent: "center", mb: 2, color: "#94a3b8" }}>
+            <PeopleIcon sx={{ fontSize: 48 }} />
+          </Box>
+          <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 500 }}>No employees found matching the filters.</Typography>
         </Box>
       ) : (
         <TableContainer sx={{ overflowX: "auto" }}>

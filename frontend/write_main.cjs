@@ -1,4 +1,5 @@
-import { StrictMode } from "react";
+const fs = require('fs');
+const content = `import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router.jsx";
@@ -164,3 +165,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     </ThemeProvider>
   </StrictMode>,
 );
+`;
+fs.writeFileSync('src/main.jsx', content, 'utf8');
+console.log('Done');

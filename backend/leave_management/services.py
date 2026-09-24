@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from attendance.models import Attendance
+from config.business_rules import is_working_day
 from .models import LeavePolicy, LeaveRequest, LeaveType
 
 
@@ -14,14 +15,14 @@ def calculate_working_days(start_date, end_date, day_type="FULL_DAY"):
 
     if start_date == end_date and day_type in ("FIRST_HALF", "SECOND_HALF"):
         # Check if single day is weekend
-        if start_date.weekday() in (5, 6):  # Saturday or Sunday
+        if not is_working_day(start_date):
             return Decimal("0.0")
         return Decimal("0.5")
 
     total_days = Decimal("0.0")
     curr = start_date
     while curr <= end_date:
-        if curr.weekday() not in (5, 6):  # Saturday or Sunday
+        if is_working_day(curr):
             total_days += Decimal("1.0")
         curr += timedelta(days=1)
 
@@ -203,7 +204,7 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
     # Integrate with Attendance records
     curr = req.start_date
     while curr <= req.end_date:
-        if curr.weekday() not in (5, 6):  # Skip weekends
+        if is_working_day(curr):
             att, created = Attendance.objects.get_or_create(
                 employee=req.employee,
                 date=curr,

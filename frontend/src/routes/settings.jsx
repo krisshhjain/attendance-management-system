@@ -163,29 +163,29 @@ function Settings() {
     <RequireAuth>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 3, maxWidth: 600 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px" }}>
+          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a", fontSize: "24px" }}>
             Settings
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5, fontSize: "14px" }}>
             Update your account settings and preferences.
           </Typography>
         </Box>
 
-        <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: "1px solid", borderColor: "divider" }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+        <Paper elevation={0} sx={{ p: 3, borderRadius: "16px", border: "1px solid", borderColor: "divider", bgcolor: "white", boxShadow: "0px 1px 3px rgba(15,23,42,0.03)" }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a", mb: 2 }}>
             Security
           </Typography>
           
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 2, borderRadius: 2, border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 2, borderRadius: "12px", border: "1px solid", borderColor: "divider", bgcolor: "#f8fafc" }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: 2, bgcolor: "primary.lighter", color: "primary.main" }}>
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "12px", bgcolor: "#eef2ff", color: "#4f46e5" }}>
                 <LockOutlinedIcon fontSize="small" />
               </Box>
               <Box>
-                <Typography variant="body2" fontWeight={600}>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: "#0f172a" }}>
                   Password
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{ color: "#64748b" }}>
                   Last changed recently
                 </Typography>
               </Box>
@@ -194,7 +194,7 @@ function Settings() {
               variant="outlined" 
               size="small"
               onClick={() => setPasswordDialogOpen(true)}
-              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+              sx={{ textTransform: "none", fontWeight: 600, borderRadius: "8px", borderColor: "divider", color: "#475569" }}
             >
               Change
             </Button>
