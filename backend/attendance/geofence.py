@@ -6,19 +6,13 @@ This file can later be replaced or extended with database-driven geofences.
 """
 
 import math
+import os
 
-# Workplace geofence constants (MVP)
-ATTENDANCE_GEOFENCE = {
-    "latitude": 28.5300409164614,
-    "longitude": 77.34955699676016,
-    "radius_meters": 150.0,
-    "max_accuracy_meters": 200.0,
-}
-
-WORKPLACE_LATITUDE = ATTENDANCE_GEOFENCE["latitude"]
-WORKPLACE_LONGITUDE = ATTENDANCE_GEOFENCE["longitude"]
-GEOFENCE_RADIUS_METERS = ATTENDANCE_GEOFENCE["radius_meters"]
-MAX_ACCURACY_METERS = ATTENDANCE_GEOFENCE["max_accuracy_meters"]
+# Workplace geofence constants loaded from environment variables
+WORKPLACE_LATITUDE = float(os.getenv("GEOFENCE_LATITUDE", "28.5300409164614"))
+WORKPLACE_LONGITUDE = float(os.getenv("GEOFENCE_LONGITUDE", "77.34955699676016"))
+GEOFENCE_RADIUS_METERS = float(os.getenv("GEOFENCE_RADIUS_METERS", "150.0"))
+MAX_ACCURACY_METERS = float(os.getenv("GEOFENCE_MAX_ACCURACY_METERS", "200.0"))
 
 
 def calculate_haversine_distance(
@@ -49,6 +43,9 @@ def validate_attendance_geofence(latitude, longitude, accuracy):
     Returns:
         (is_valid: bool, error_message: str | None, distance: float | None, parsed_coords: tuple | None)
     """
+    # Debug print
+    print(f"[GEOFENCE DEBUG] RADIUS: {GEOFENCE_RADIUS_METERS}, MAX_ACC: {MAX_ACCURACY_METERS}")
+    
     if latitude is None or longitude is None:
         return (
             False,
@@ -81,12 +78,14 @@ def validate_attendance_geofence(latitude, longitude, accuracy):
     distance = calculate_haversine_distance(
         lat, lon, WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE
     )
+    
+    print(f"[GEOFENCE DEBUG] Distance: {distance}m, Radius: {GEOFENCE_RADIUS_METERS}m, Pass: {distance <= GEOFENCE_RADIUS_METERS}")
 
     # Radius check: If distance is > 150 meters, reject it
     if distance > GEOFENCE_RADIUS_METERS:
         return (
             False,
-            "You are outside the allowed attendance area. Please move closer to the workplace and try again.",
+            f"You are outside the allowed attendance area. Distance: {distance:.1f}m, Allowed: {GEOFENCE_RADIUS_METERS}m. Please move closer to the workplace and try again.",
             distance,
             (lat, lon, acc),
         )

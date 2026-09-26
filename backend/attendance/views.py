@@ -8,7 +8,8 @@ from leave_management.permissions import IsEmployee
 from employees.models import Employee
 from .models import Attendance, AttendanceAuditLog
 from .geofence import validate_attendance_geofence
-from .face_service import find_closest_match, FaceExtractionError
+from .face_service import find_closest_match, verify_employee_face, FaceExtractionError
+from leave_management.models import LeaveRequest
 
 
 class CheckInView(APIView):
@@ -214,6 +215,132 @@ class TodayAttendanceView(APIView):
             "working_duration": working_duration,
             "is_working_day": working_day,
         })
+
+class MyTeamView(APIView):
+    """
+    GET /api/attendance/my-team/
+
+    Returns today's status for every active employee who shares the same
+    employment_type AND section as the requesting employee.
+    subsection is intentionally ignored so that A1, A2, A3 … all appear.
+
+    Classification rules (applied in priority order):
+      - ON_LEAVE      : has an APPROVED LeaveRequest covering today
+      - CHECKED_IN    : has a today Attendance record with check_in set
+                        (includes both still-checked-in and already-checked-out)
+      - YET_TO_CHECK_IN : active team member with no check_in today and not on leave
+    """
+    permission_classes = [IsEmployee]
+    app_access_key = "attendance"
+
+    def get(self, request):
+        me = request.user.employee
+        today = timezone.localdate()
+
+        # Guard: employee must have both fields set
+        if not me.employment_type or not me.section:
+            return Response(
+                {
+                    "team_employment_type": me.employment_type or "",
+                    "team_section": me.section or "",
+                    "total_members": 0,
+                    "checked_in_count": 0,
+                    "yet_to_check_in_count": 0,
+                    "on_leave_count": 0,
+                    "members": [],
+                    "note": "Team information is incomplete for this employee.",
+                },
+                status=200,
+            )
+
+        # Fetch all active team members — same type + section, any subsection
+        teammates = (
+            Employee.objects.select_related("user")
+            .filter(
+                is_active=True,
+                employment_type=me.employment_type,
+                section=me.section,
+            )
+        )
+
+        teammate_ids = list(teammates.values_list("id", flat=True))
+
+        # Prefetch today's attendance for the whole team in one query
+        attendance_map = {
+            att.employee_id: att
+            for att in Attendance.objects.filter(
+                employee_id__in=teammate_ids,
+                date=today,
+            )
+        }
+
+        # Employees with approved leave covering today (any half-day type included)
+        on_leave_ids = set(
+            LeaveRequest.objects.filter(
+                employee_id__in=teammate_ids,
+                status="APPROVED",
+                start_date__lte=today,
+                end_date__gte=today,
+            ).values_list("employee_id", flat=True)
+        )
+
+        # Build per-member leave type label for UI
+        approved_leave_by_employee = {}
+        for lr in LeaveRequest.objects.select_related("leave_type").filter(
+            employee_id__in=on_leave_ids,
+            status="APPROVED",
+            start_date__lte=today,
+            end_date__gte=today,
+        ):
+            approved_leave_by_employee[lr.employee_id] = lr.leave_type.name
+
+        members = []
+        checked_in_count = 0
+        yet_to_check_in_count = 0
+        on_leave_count = 0
+
+        for emp in teammates:
+            att = attendance_map.get(emp.id)
+            full_name = f"{emp.user.first_name} {emp.user.last_name}".strip() or emp.user.email
+
+            if emp.id in on_leave_ids:
+                member_status = "ON_LEAVE"
+                on_leave_count += 1
+            elif att is not None and att.check_in is not None:
+                member_status = "CHECKED_IN"
+                checked_in_count += 1
+            else:
+                member_status = "YET_TO_CHECK_IN"
+                yet_to_check_in_count += 1
+
+            member_data = {
+                "id": emp.id,
+                "name": full_name,
+                "department": emp.department,
+                "subsection": emp.subsection,
+                "status": member_status,
+                "check_in_time": att.check_in.isoformat() if att and att.check_in else None,
+                "check_out_time": att.check_out.isoformat() if att and att.check_out else None,
+            }
+
+            if member_status == "ON_LEAVE":
+                member_data["leave_type"] = approved_leave_by_employee.get(emp.id, "Leave")
+
+            members.append(member_data)
+
+        return Response(
+            {
+                "team_employment_type": me.employment_type,
+                "team_section": me.section,
+                "total_members": len(members),
+                "checked_in_count": checked_in_count,
+                "yet_to_check_in_count": yet_to_check_in_count,
+                "on_leave_count": on_leave_count,
+                "members": members,
+            },
+            status=200,
+        )
+
 
 class AttendanceHistoryView(APIView):
     permission_classes = [IsEmployee]
@@ -543,19 +670,15 @@ class WebsiteFacialCheckInView(APIView):
         if not is_valid:
             return Response({"error": error_msg}, status=400)
 
-        # 1. Verify face
+        # 1. Verify face matches authenticated user
         try:
-            recognized_employee, distance = find_closest_match(image_data)
+            is_match, distance = verify_employee_face(employee, image_data)
         except FaceExtractionError as e:
             return Response({"error": str(e)}, status=400)
         except Exception as e:
             return Response({"error": "Internal server error"}, status=500)
 
-        if not recognized_employee:
-            return Response({"error": "We couldn't verify your identity."}, status=403)
-
-        # 2. Enforce website security: recognized employee must match authenticated user
-        if recognized_employee.id != employee.id:
+        if not is_match:
             return Response({"error": "Recognized face does not match your authenticated account."}, status=403)
 
         # 3. Apply existing attendance rules
@@ -627,19 +750,15 @@ class WebsiteFacialCheckOutView(APIView):
         if not is_valid:
             return Response({"error": error_msg}, status=400)
 
-        # 1. Verify face
+        # 1. Verify face matches authenticated user
         try:
-            recognized_employee, distance = find_closest_match(image_data)
+            is_match, distance = verify_employee_face(employee, image_data)
         except FaceExtractionError as e:
             return Response({"error": str(e)}, status=400)
         except Exception as e:
             return Response({"error": "Internal server error"}, status=500)
 
-        if not recognized_employee:
-            return Response({"error": "We couldn't verify your identity."}, status=403)
-
-        # 2. Enforce website security
-        if recognized_employee.id != employee.id:
+        if not is_match:
             return Response({"error": "Recognized face does not match your authenticated account."}, status=403)
 
         # 3. Apply existing attendance checkout rules

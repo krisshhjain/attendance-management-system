@@ -12,6 +12,7 @@ from .views import (
     FaceVerifyView,
     WebsiteFacialCheckInView,
     WebsiteFacialCheckOutView,
+    MyTeamView,
 )
 
 
@@ -25,4 +26,5 @@ urlpatterns = [
     path("kiosk/check-in/", KioskFaceCheckInView.as_view(), name="kiosk-check-in"),
     path("kiosk/check-out/", KioskFaceCheckOutView.as_view(), name="kiosk-check-out"),
     path("verify-face/", FaceVerifyView.as_view(), name="verify-face"),
-]
+    path("my-team/", MyTeamView.as_view(), name="my-team"),
+]

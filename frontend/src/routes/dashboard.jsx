@@ -133,7 +133,7 @@ function SuperAdminDashboard() {
       </Box>
 
       <Box sx={{ mt: 1 }}>
-        <LatestAttendanceTable records={scopedAttendance.map(record => {
+        <LatestAttendanceTable records={(scopedAttendance || []).map(record => {
           const emp = scopedEmployees.find(e => e.user?.email === record.employee || e.email === record.employee || e.id === record.employee);
           return {
             ...record,

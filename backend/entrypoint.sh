@@ -21,11 +21,18 @@ except Exception as e:
     sleep 2
 done
 
-echo "==> Running database migrations..."
-python manage.py migrate --noinput
+if [ "$#" -eq 0 ]; then
+    echo "==> Running database migrations..."
+    python manage.py migrate --noinput
 
-echo "==> Seeding default leave types and policies..."
-python manage.py seed_leave_data || echo "(seed already done or skipped)"
+    echo "==> Seeding default leave types and policies..."
+    python manage.py seed_leave_data || echo "(seed already done or skipped)"
+fi
 
-echo "==> Starting gunicorn..."
-exec gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 120 config.wsgi:application
+if [ "$#" -gt 0 ]; then
+    echo "==> Running command: $@"
+    exec "$@"
+else
+    echo "==> Starting gunicorn..."
+    exec gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 120 config.wsgi:application
+fi

@@ -36,7 +36,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { login, isAuthenticated, ready } = useAuth();
+  const { login, isAuthenticated, ready, loginType } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,9 +47,13 @@ function LoginPage() {
 
   useEffect(() => {
     if (ready && isAuthenticated) {
-      navigate({ to: "/dashboard", replace: true });
+      if (loginType === "employee") {
+        navigate({ to: "/dashboard", replace: true });
+      } else {
+        navigate({ to: "/dashboard", replace: true });
+      }
     }
-  }, [ready, isAuthenticated, navigate]);
+  }, [ready, isAuthenticated, navigate, loginType]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -58,11 +62,15 @@ function LoginPage() {
     setError(null);
     try {
       await login(email.trim(), password, userType);
-      navigate({ to: "/dashboard", replace: true });
+      if (userType === "employee") {
+        navigate({ to: "/dashboard", replace: true });
+      } else {
+        navigate({ to: "/dashboard", replace: true });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid email or password.");
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
   }
 

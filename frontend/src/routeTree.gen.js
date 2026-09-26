@@ -10,6 +10,7 @@ import { Route as SettingsRouteImport } from './routes/settings.jsx'
 import { Route as LeaveRouteImport } from './routes/leave.jsx'
 import { Route as AdministrationRouteImport } from './routes/administration.jsx'
 import { Route as EmployeesRouteImport } from './routes/employees.jsx'
+import { Route as MyTeamRouteImport } from './routes/my-team.jsx'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -77,6 +78,12 @@ const EmployeesRoute = EmployeesRouteImport.update({
   getParentRoute: () => rootRouteImport,
 })
 
+const MyTeamRoute = MyTeamRouteImport.update({
+  id: '/my-team',
+  path: '/my-team',
+  getParentRoute: () => rootRouteImport,
+})
+
 const rootRouteChildren = {
   IndexRoute: IndexRoute,
   AttendanceRoute: AttendanceRoute,
@@ -89,6 +96,7 @@ const rootRouteChildren = {
   LeaveRoute: LeaveRoute,
   AdministrationRoute: AdministrationRoute,
   EmployeesRoute: EmployeesRoute,
+  MyTeamRoute: MyTeamRoute,
 }
 
 export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)

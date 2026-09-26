@@ -106,3 +106,44 @@ def find_closest_match(query_image_data: Union[str, bytes], threshold: float = 0
     else:
         # status == "unknown"
         return None, distance
+
+
+def verify_employee_face(employee: Employee, query_image_data: Union[str, bytes], threshold: float = 0.60) -> Tuple[bool, float]:
+    """
+    Verifies if the face in the query image matches the specified employee (1:1 verification).
+    Returns (True, distance) if it matches, or (False, distance) if it doesn't.
+    """
+    try:
+        profile = FaceProfile.objects.get(employee=employee, status="ACTIVE")
+    except FaceProfile.DoesNotExist:
+        return False, float('inf')
+
+    if not profile.face_template:
+        return False, float('inf')
+
+    b64_image = _to_base64_string(query_image_data)
+    candidates = [{"id": employee.id, "template": profile.face_template}]
+
+    try:
+        payload = {
+            "image": b64_image,
+            "candidates": candidates,
+            "threshold": threshold
+        }
+        response = requests.post(f"{settings.FACE_SERVICE_URL}/recognize", json=payload, timeout=60)
+    except requests.RequestException as e:
+        logger.error(f"FR Service connection error: {e}")
+        raise FaceExtractionError("Facial Recognition service is currently unavailable.")
+        
+    if response.status_code != 200:
+        error_msg = response.json().get("error", "Unknown FR service error")
+        raise FaceExtractionError(error_msg)
+        
+    result = response.json()
+    status = result.get("status")
+    distance = result.get("distance", float('inf'))
+    
+    if status == "match":
+        return True, distance
+    else:
+        return False, distance

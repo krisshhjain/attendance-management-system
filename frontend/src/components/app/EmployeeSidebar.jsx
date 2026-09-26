@@ -12,6 +12,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
@@ -38,6 +39,7 @@ export function EmployeeSidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
   const appAccess = user?.app_access || { dashboard: true, attendance: true, leave: true };
   const mainNav = [
     { text: "Dashboard", icon: <DashboardOutlinedIcon />, path: "/dashboard" },
+    { text: "My Team", icon: <GroupsOutlinedIcon />, path: "/my-team" },
     { text: "Attendance", icon: <AccessTimeOutlinedIcon />, path: "/attendance" },
     { text: "Leave", icon: <EventAvailableOutlinedIcon />, path: "/leave" },
   ].filter((item) => appAccess[item.path.slice(1)] !== false);
