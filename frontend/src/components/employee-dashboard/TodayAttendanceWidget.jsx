@@ -5,7 +5,7 @@ import { ATTENDANCE_GEOFENCE, calculateHaversineDistance } from "../../lib/geofe
 import { ApiError } from "../../lib/api.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { ErrorState, LoadingState } from "../States.jsx";
-import { Box, Button, Typography, Paper, CircularProgress, Divider, Chip } from "@mui/material";
+import { Box, Button, Typography, Paper, CircularProgress, Chip } from "@mui/material";
 import { FaceVerificationModal } from "./FaceVerificationModal.jsx";
 import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined';
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
@@ -30,6 +30,39 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
 
   const status = data?.status;
   const shift = shiftData?.shift;
+
+  const formatAttendanceTime = (value) => {
+    if (!value) return "--:--";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? "--:--"
+      : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  };
+
+  const formatWorkingDuration = (value) => {
+    if (!value) return "00h 00m";
+    if (typeof value === "number") {
+      const hours = Math.floor(value / 3600);
+      const minutes = Math.floor((value % 3600) / 60);
+      return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m`;
+    }
+    if (typeof value === "string" && Number.isFinite(Number(value))) {
+      const seconds = Number(value);
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m`;
+    }
+    return value;
+  };
+
+  const liveCheckInTime = data?.check_in ? new Date(data.check_in).getTime() : NaN;
+  const hasOpenAttendance = Boolean(data?.check_in && !data?.check_out && Number.isFinite(liveCheckInTime));
+  const liveWorkingDuration = hasOpenAttendance
+    ? Math.max(0, Math.floor((Date.now() - liveCheckInTime) / 1000))
+    : null;
+  const workingDisplay = liveWorkingDuration !== null
+    ? formatWorkingDuration(liveWorkingDuration)
+    : formatWorkingDuration(data?.working_duration);
 
   const handleFaceAction = useCallback(async (type) => {
     if (inFlight.current) return;
@@ -97,168 +130,114 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
   if (loading) return <Paper sx={{ p: 4, display: "flex", justifyContent: "center", borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none" }}><CircularProgress /></Paper>;
   if (loadError || !data) return <ErrorState onRetry={reloadData} />;
 
+  const canCheckIn = status === "NOT_CHECKED_IN" || status === "COMPLETED";
+  const canCheckOut = status === "CHECKED_IN";
+
   return (
-    <Paper sx={{ p: 3, borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none", height: "100%", display: "flex", flexDirection: "column" }}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
+    <Paper sx={{ overflow: "visible", height: "auto", borderRadius: 3, border: "1px solid", borderColor: "#dbe3ee", boxShadow: "0 2px 8px rgba(15, 23, 42, 0.06)" }}>
+      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 1.75, borderBottom: "1px solid", borderColor: "#e5ebf2", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
         <Box>
-          <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: "-0.5px" }}>
-            Attendance
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#718096" }}>
+            Today&apos;s Attendance
           </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.8, mt: 0.5 }}>
+            <Box sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: canCheckOut ? "#22c55e" : "#cbd5e1" }} />
+            <Typography sx={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
+              {status === "LEAVE" ? "On Leave" : canCheckOut ? "Checked In" : status === "COMPLETED" ? "Checked Out" : "Not Checked In"}
+            </Typography>
+          </Box>
         </Box>
         <StatusBadge status={status} />
       </Box>
 
+      {successMessage && <Box sx={{ mx: 2.5, mt: 2, p: 1.25, borderRadius: 1.5, bgcolor: "rgba(46, 125, 50, 0.08)", color: "success.main", typography: "body2", fontWeight: 600 }}>{successMessage}</Box>}
+      {actionError && <Box sx={{ mx: 2.5, mt: 2, p: 1.25, borderRadius: 1.5, bgcolor: "rgba(211, 47, 47, 0.06)", color: "error.main", typography: "body2" }}>{actionError}</Box>}
+
       {shift && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 3, p: 1.5, bgcolor: "background.default", borderRadius: 2, border: "1px solid", borderColor: "divider" }}>
-          <ScheduleOutlinedIcon sx={{ color: "text.secondary", fontSize: 20 }} />
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-            <Typography variant="body2" fontWeight={600} color="text.primary">
-              {shift.name}
-            </Typography>
-            <Chip label={shift.code} size="small" sx={{ height: 20, fontSize: "0.65rem", fontWeight: 700 }} />
-            <Typography variant="body2" color="text.secondary">
-              ({shift.start_time} - {shift.end_time})
-            </Typography>
-          </Box>
+        <Box sx={{ mx: 2.5, mt: 2, display: "flex", alignItems: "center", gap: 1, color: "text.secondary" }}>
+          <ScheduleOutlinedIcon sx={{ fontSize: 18 }} />
+          <Typography variant="caption" fontWeight={600}>{shift.name}</Typography>
+          <Chip label={`${shift.start_time} - ${shift.end_time}`} size="small" sx={{ height: 20, fontSize: 10, fontWeight: 700 }} />
         </Box>
       )}
 
-      {successMessage && (
-        <Box
-          sx={{
-            mb: 2,
-            p: 1.5,
-            borderRadius: 2,
-            border: "1px solid",
-            borderColor: "success.light",
-            bgcolor: "rgba(46, 125, 50, 0.08)",
-            color: "success.main",
-            typography: "body2",
-            fontWeight: 500,
-          }}
-        >
-          {successMessage}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
+        <Box sx={{ p: { xs: 2, sm: 2.5 }, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, bgcolor: "#f8fafc", borderRight: { md: "1px solid" }, borderBottom: { xs: "1px solid", md: 0 }, borderColor: "#e5ebf2" }}>
+          <Metric label="Check In" value={formatAttendanceTime(data.check_in)} />
+          <Metric label="Check Out" value={formatAttendanceTime(data.check_out)} />
+          <Metric label="Working" value={workingDisplay} />
         </Box>
-      )}
 
-      {actionError && (
-        <Box
-          sx={{
-            mb: 2,
-            p: 1.5,
-            borderRadius: 2,
-            border: "1px solid",
-            borderColor: "error.light",
-            bgcolor: "rgba(211, 47, 47, 0.05)",
-            color: "error.main",
-            typography: "body2",
-          }}
-        >
-          {actionError}
+        <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
+          <Typography sx={{ mb: 1.25, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#718096" }}>
+            Quick Actions
+          </Typography>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 1 }}>
+            <ActionButton label={pending && canCheckIn ? pendingText || "Checking in..." : "Check In"} icon={<ScheduleOutlinedIcon />} primary disabled={!canCheckIn || pending} onClick={() => runAction("in")} />
+            <ActionButton label={pending && canCheckOut ? pendingText || "Checking out..." : "Check Out"} icon={<ScheduleOutlinedIcon />} disabled={!canCheckOut || pending} onClick={() => runAction("out")} />
+            <ActionButton label={pending && canCheckIn && pendingText.includes("location") ? pendingText : "Face Check In"} icon={<CameraAltOutlinedIcon />} disabled={!canCheckIn || pending} onClick={() => handleFaceAction("in")} />
+            <ActionButton label={pending && canCheckOut && pendingText.includes("location") ? pendingText : "Face Check Out"} icon={<CameraAltOutlinedIcon />} disabled={!canCheckOut || pending} onClick={() => handleFaceAction("out")} />
+          </Box>
         </Box>
-      )}
-
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: "auto" }}>
-        {(status === "NOT_CHECKED_IN" || status === "COMPLETED") && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-            <Button
-              variant="contained"
-              color="primary"
-              disabled={pending}
-              onClick={() => handleFaceAction("in")}
-              fullWidth
-              startIcon={<CameraAltOutlinedIcon />}
-              sx={{ py: 1.5, fontWeight: 600, borderRadius: 2, textTransform: "none", fontSize: "1rem" }}
-            >
-              {pending && pendingText.includes("location") ? pendingText : "Face Check-In"}
-            </Button>
-            
-            <Box sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
-              <Divider sx={{ flexGrow: 1 }} />
-              <Typography variant="caption" sx={{ px: 2, fontWeight: 600 }}>OR</Typography>
-              <Divider sx={{ flexGrow: 1 }} />
-            </Box>
-
-            <Button
-              variant="outlined"
-              color="inherit"
-              disabled={pending}
-              onClick={() => runAction("in")}
-              fullWidth
-              sx={{ py: 1, fontWeight: 600, borderRadius: 2, textTransform: "none" }}
-            >
-              Manual Check-In
-            </Button>
-          </Box>
-        )}
-
-        {status === "CHECKED_IN" && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-            <Button
-              variant="contained"
-              color="primary"
-              disabled={pending}
-              onClick={() => handleFaceAction("out")}
-              fullWidth
-              startIcon={<CameraAltOutlinedIcon />}
-              sx={{
-                py: 1.5,
-                fontWeight: 600,
-                borderRadius: 2,
-                textTransform: "none",
-                fontSize: "1rem",
-              }}
-            >
-              {pending ? (pendingText || "Checking out...") : "Face Check-Out"}
-            </Button>
-            
-            <Box sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
-              <Divider sx={{ flexGrow: 1 }} />
-              <Typography variant="caption" sx={{ px: 2, fontWeight: 600 }}>OR</Typography>
-              <Divider sx={{ flexGrow: 1 }} />
-            </Box>
-
-            <Button
-              variant="outlined"
-              color="inherit"
-              disabled={pending}
-              onClick={() => runAction("out")}
-              fullWidth
-              sx={{ py: 1, fontWeight: 600, borderRadius: 2, textTransform: "none" }}
-            >
-              Manual Check-Out
-            </Button>
-          </Box>
-        )}
-
-        <FaceVerificationModal 
-          open={faceModalOpen}
-          actionType={faceModalType}
-          locationData={locationData}
-          onClose={() => setFaceModalOpen(false)}
-          onSuccess={() => {
-            setFaceModalOpen(false);
-            reloadData();
-          }}
-        />
-
-
-        {status === "LEAVE" && (
-          <Box sx={{ textAlign: "center", py: 1.5, bgcolor: "info.lighter", borderRadius: 2, color: "info.dark" }}>
-            <Typography variant="body2" fontWeight={600}>
-              🌴 You are on leave today. Enjoy your time off!
-            </Typography>
-          </Box>
-        )}
-
-        {status === "HOLIDAY" && (
-          <Box sx={{ textAlign: "center", py: 1.5, bgcolor: "warning.lighter", borderRadius: 2, color: "warning.dark" }}>
-            <Typography variant="body2" fontWeight={600}>
-              🎉 It's a weekend/holiday. Enjoy your time off!
-            </Typography>
-          </Box>
-        )}
       </Box>
+
+      <FaceVerificationModal
+        open={faceModalOpen}
+        actionType={faceModalType}
+        locationData={locationData}
+        onClose={() => setFaceModalOpen(false)}
+        onSuccess={() => {
+          setFaceModalOpen(false);
+          reloadData();
+        }}
+      />
     </Paper>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <Box sx={{ minWidth: 0, px: { xs: 0.5, sm: 1 }, borderRight: "1px solid", borderColor: "#e2e8f0", "&:last-child": { borderRight: 0 } }}>
+      <Typography sx={{ fontSize: 11, color: "#718096", mb: 0.5 }}>{label}</Typography>
+      <Typography sx={{ fontSize: { xs: 13, sm: 15 }, fontWeight: 700, color: "#334155", whiteSpace: "nowrap" }}>{value}</Typography>
+    </Box>
+  );
+}
+
+function ActionButton({ label, icon, primary = false, disabled, onClick }) {
+  return (
+    <Button
+      variant={primary ? "contained" : "outlined"}
+      disabled={disabled}
+      onClick={onClick}
+      startIcon={icon}
+      fullWidth
+      sx={{
+        minHeight: 38,
+        px: 1,
+        borderRadius: 1.5,
+        borderColor: "#dbe3ee",
+        color: primary ? "#fff" : "#64748b",
+        bgcolor: primary ? "#4f39ee" : "#fff",
+        fontSize: { xs: 11, sm: 12 },
+        fontWeight: 700,
+        textTransform: "none",
+        whiteSpace: "nowrap",
+        boxShadow: "none",
+        "&:hover": {
+          bgcolor: primary ? "#4338ca" : "#f8fafc",
+          borderColor: "#cbd5e1",
+        },
+        "&.Mui-disabled": {
+          color: "#94a3b8",
+          borderColor: "#e2e8f0",
+          bgcolor: primary ? "#e2e8f0" : "#f8fafc",
+          boxShadow: "none",
+          opacity: 1,
+        },
+      }}
+    >
+      {label}
+    </Button>
   );
 }

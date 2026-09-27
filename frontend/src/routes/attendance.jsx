@@ -10,6 +10,7 @@ import { formatTime, formatDuration } from "../lib/date.js";
 import { StatusBadge } from "../components/StatusBadge.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import { filterScopedRecords, useOrganizationScope } from "../lib/organizationScope.jsx";
+import { EmployeeAttendancePage as EmployeeAttendanceSummaryPage } from "../components/employee-dashboard/EmployeeAttendancePage.jsx";
 import {
   Box,
   Typography,
@@ -699,50 +700,11 @@ function AdminAttendancePage() {
   );
 }
 
-// ── Employee attendance page (unchanged) ──────────────────────────────────────
-
-function EmployeeAttendancePage() {
-  const [records, setRecords] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      setRecords(await getHistory());
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <Box sx={{ mb: 1 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a", fontSize: "24px" }}>
-          Attendance History
-        </Typography>
-        <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5, fontSize: "14px" }}>
-          A complete record of your daily check-in, check-out, and working hours.
-        </Typography>
-      </Box>
-      {loading && <LoadingState message="Loading attendance..." />}
-      {!loading && error && <ErrorState onRetry={load} />}
-      {!loading && !error && (records?.length ?? 0) === 0 && <EmptyState />}
-      {!loading && !error && records && records.length > 0 && <AttendanceTable records={records} />}
-    </Box>
-  );
-}
-
 // ── Root component — role router ──────────────────────────────────────────────
 
 function AttendancePage() {
   const { user, loginType } = useAuth();
   // Show admin attendance page for SuperUsers, Admins (is_staff), and Managers (is_system_admin)
   const isAdmin = (user?.is_superuser || user?.is_staff || user?.is_system_admin) && (loginType === "admin" || loginType === "systemadmin");
-  return isAdmin ? <AdminAttendancePage /> : <EmployeeAttendancePage />;
+  return isAdmin ? <AdminAttendancePage /> : <EmployeeAttendanceSummaryPage />;
 }

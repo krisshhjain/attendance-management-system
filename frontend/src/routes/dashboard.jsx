@@ -186,9 +186,9 @@ function SuperAdminDashboard() {
 
 import { WelcomeHeader } from "../components/employee-dashboard/WelcomeHeader.jsx";
 import { TodayAttendanceWidget } from "../components/employee-dashboard/TodayAttendanceWidget.jsx";
-import { SummaryCards } from "../components/employee-dashboard/SummaryCards.jsx";
+import { WeeklyAttendanceTrack } from "../components/employee-dashboard/WeeklyAttendanceTrack.jsx";
+import { UpcomingHolidays } from "../components/employee-dashboard/UpcomingHolidays.jsx";
 import { RecentAttendance } from "../components/employee-dashboard/RecentAttendance.jsx";
-import { QuickActions } from "../components/employee-dashboard/QuickActions.jsx";
 import { getToday } from "../lib/attendance.js";
 
 function EmployeeDashboard() {
@@ -201,15 +201,11 @@ function EmployeeDashboard() {
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <WelcomeHeader />
       
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 2fr" }, gap: 3 }}>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <TodayAttendanceWidget data={data} loading={isLoading} loadError={isError} reloadData={refetch} />
-          <QuickActions />
-        </Box>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <SummaryCards data={data} />
-          <RecentAttendance />
-        </Box>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <TodayAttendanceWidget data={data} loading={isLoading} loadError={isError} reloadData={refetch} />
+        <WeeklyAttendanceTrack todayData={data} />
+        <UpcomingHolidays />
+        <RecentAttendance />
       </Box>
     </Box>
   );

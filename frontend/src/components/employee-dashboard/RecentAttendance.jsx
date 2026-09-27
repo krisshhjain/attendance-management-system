@@ -1,4 +1,4 @@
-import { Box, Paper, Typography, Button, CircularProgress } from "@mui/material";
+import { Box, Paper, Typography, Button, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from "@mui/material";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { getHistory } from "../../lib/attendance.js";
@@ -12,7 +12,7 @@ export function RecentAttendance() {
   const load = useCallback(async () => {
     try {
       const data = await getHistory();
-      setRecords(data.slice(0, 5)); // Show only top 5
+      setRecords([...data].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5));
     } catch {
       // Silently fail on dashboard, just show empty
     } finally {
@@ -40,27 +40,28 @@ export function RecentAttendance() {
           <CircularProgress size={24} />
         </Box>
       ) : records && records.length > 0 ? (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {records.map((record, index) => (
-            <Box key={index} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", p: 1.5, borderRadius: 2, bgcolor: "action.hover" }}>
-              <Box>
-                <Typography variant="body2" fontWeight={600}>
-                  {new Date(record.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "monospace", display: "flex", gap: 1 }}>
-                  <span>IN: {record.check_in ? formatTime(record.check_in) : "--:--"}</span>
-                  <span>OUT: {record.check_out ? formatTime(record.check_out) : "--:--"}</span>
-                </Typography>
-              </Box>
-              <Box sx={{ textAlign: "right" }}>
-                <StatusBadge status={record.status} />
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, fontFamily: "monospace" }}>
-                  {formatDuration(record.working_duration)}
-                </Typography>
-              </Box>
-            </Box>
-          ))}
-        </Box>
+        <TableContainer>
+          <Table size="small">
+            <TableHead sx={{ bgcolor: "#f8fafc" }}>
+              <TableRow>
+                {['DATE', 'STATUS', 'CHECK IN', 'CHECK OUT', 'WORKING HOURS'].map((heading) => (
+                  <TableCell key={heading} sx={{ py: 1.25, color: "#718096", fontSize: 10, fontWeight: 800, letterSpacing: "0.04em" }}>{heading}</TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {records.map((record, index) => (
+                <TableRow key={record.id || `${record.date}-${index}`}>
+                  <TableCell sx={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>{new Date(`${record.date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</TableCell>
+                  <TableCell><StatusBadge status={record.status} /></TableCell>
+                  <TableCell sx={{ fontSize: 11, color: "#475569", fontFamily: "monospace" }}>{record.check_in ? formatTime(record.check_in) : "--:--"}</TableCell>
+                  <TableCell sx={{ fontSize: 11, color: "#475569", fontFamily: "monospace" }}>{record.check_out ? formatTime(record.check_out) : "--:--"}</TableCell>
+                  <TableCell sx={{ fontSize: 11, color: "#475569", fontFamily: "monospace" }}>{formatDuration(record.working_duration)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       ) : (
         <Box sx={{ textAlign: "center", py: 4, color: "text.secondary" }}>
           <Typography variant="body2">No recent attendance found.</Typography>
