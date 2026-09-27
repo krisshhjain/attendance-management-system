@@ -20,6 +20,11 @@ from .views import (
     AdminShiftConfigurationView,
     AdminAllShiftsView,
     MyShiftView,
+    RegularizationRequestCreateView,
+    RegularizationRequestListView,
+    RegularizationRequestDetailView,
+    RegularizationRequestApproveView,
+    RegularizationRequestRejectView,
 )
 
 
@@ -42,4 +47,13 @@ urlpatterns = [
     path("admin/shift/bulk-assign/", AdminEmployeeShiftBulkAssignView.as_view(), name="admin-bulk-assign-shift"),
     path("admin/shift/configure/", AdminShiftConfigurationView.as_view(), name="admin-shift-configure"),
     path("admin/shift/all/", AdminAllShiftsView.as_view(), name="admin-shifts-all"),
+    # Employee regularization endpoints
+    path("regularization/", RegularizationRequestCreateView.as_view(), name="regularization-create"),
+    path("regularization/list/", RegularizationRequestListView.as_view(), name="regularization-list"),
+    path("regularization/<int:request_id>/", RegularizationRequestDetailView.as_view(), name="regularization-detail"),
+    # Admin regularization endpoints
+    path("admin/regularization/", RegularizationRequestListView.as_view(), name="admin-regularization-list"),
+    path("admin/regularization/<int:request_id>/", RegularizationRequestDetailView.as_view(), name="admin-regularization-detail"),
+    path("admin/regularization/<int:request_id>/approve/", RegularizationRequestApproveView.as_view(), name="admin-regularization-approve"),
+    path("admin/regularization/<int:request_id>/reject/", RegularizationRequestRejectView.as_view(), name="admin-regularization-reject"),
 ]
