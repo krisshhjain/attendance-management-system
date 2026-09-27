@@ -13,7 +13,7 @@ from leave_management.permissions import (
 )
 
 from employees.models import Employee
-from .models import Attendance, AttendanceEvent, AttendanceAuditLog, Shift
+from .models import Attendance, AttendanceEvent, AttendanceAuditLog, Shift, RegularizationRequest
 from .geofence import validate_attendance_geofence
 from .face_service import find_closest_match, verify_employee_face, FaceExtractionError
 from leave_management.models import LeaveRequest
@@ -1504,3 +1504,402 @@ class AdminAllShiftsView(APIView):
                 "employment_type": shift.employment_type or None,
             })
         return Response({"shifts": data})
+
+
+# ============================================================================
+# REGULARIZATION REQUEST VIEWS
+# ============================================================================
+
+class RegularizationRequestCreateView(APIView):
+    """Employee creates a regularization request."""
+    permission_classes = [IsEmployee]
+    app_access_key = "attendance"
+
+    def post(self, request):
+        if not hasattr(request.user, "employee"):
+            return Response(
+                {"error": "No employee profile associated with this account."},
+                status=403,
+            )
+        
+        employee = request.user.employee
+        
+        # Validate required fields
+        attendance_date_str = request.data.get("attendance_date")
+        request_type = request.data.get("request_type")
+        reason = request.data.get("reason", "").strip()
+        description = request.data.get("description", "").strip()
+        requested_check_in_str = request.data.get("requested_check_in")
+        requested_check_out_str = request.data.get("requested_check_out")
+        
+        if not all([attendance_date_str, request_type, reason]):
+            return Response(
+                {"error": "attendance_date, request_type, and reason are required."},
+                status=400,
+            )
+        
+        # Validate request type
+        valid_types = [choice[0] for choice in RegularizationRequest.REQUEST_TYPES]
+        if request_type not in valid_types:
+            return Response(
+                {"error": f"Invalid request_type. Must be one of: {valid_types}"},
+                status=400,
+            )
+        
+        # Parse attendance date
+        try:
+            from datetime import date as date_type
+            attendance_date = date_type.fromisoformat(attendance_date_str)
+        except ValueError:
+            return Response(
+                {"error": "Invalid attendance_date format. Use YYYY-MM-DD."},
+                status=400,
+            )
+        
+        # Validate 48-hour rule
+        from django.utils import timezone
+        import datetime
+        now = timezone.now().date()
+        max_allowed_date = now - datetime.timedelta(days=2)
+        
+        if attendance_date < max_allowed_date:
+            return Response(
+                {"error": "Regularization requests are only allowed within 48 hours of the attendance date."},
+                status=400,
+            )
+        
+        # Parse requested times if provided
+        requested_check_in = None
+        requested_check_out = None
+        
+        if requested_check_in_str:
+            try:
+                from datetime import datetime as datetime_type
+                requested_check_in = datetime_type.fromisoformat(requested_check_in_str.replace('Z', '+00:00'))
+                if requested_check_in.date() != attendance_date:
+                    return Response(
+                        {"error": "Requested check-in time must be on the attendance date."},
+                        status=400,
+                    )
+            except ValueError:
+                return Response(
+                    {"error": "Invalid requested_check_in format."},
+                    status=400,
+                )
+        
+        if requested_check_out_str:
+            try:
+                from datetime import datetime as datetime_type
+                requested_check_out = datetime_type.fromisoformat(requested_check_out_str.replace('Z', '+00:00'))
+                if requested_check_out.date() != attendance_date:
+                    return Response(
+                        {"error": "Requested check-out time must be on the attendance date."},
+                        status=400,
+                    )
+            except ValueError:
+                return Response(
+                    {"error": "Invalid requested_check_out format."},
+                    status=400,
+                )
+        
+        # Validate check-out is after check-in if both provided
+        if requested_check_in and requested_check_out:
+            if requested_check_out <= requested_check_in:
+                return Response(
+                    {"error": "Requested check-out time must be after check-in time."},
+                    status=400,
+                )
+        
+        # Get existing attendance data for the date
+        existing_check_in = None
+        existing_check_out = None
+        try:
+            existing_attendance = Attendance.objects.get(employee=employee, date=attendance_date)
+            existing_check_in = existing_attendance.check_in
+            existing_check_out = existing_attendance.check_out
+        except Attendance.DoesNotExist:
+            # No existing attendance record - that's okay
+            pass
+        
+        # Check for existing pending request on the same date
+        existing_request = RegularizationRequest.objects.filter(
+            employee=employee,
+            attendance_date=attendance_date,
+            status="PENDING"
+        ).first()
+        
+        if existing_request:
+            return Response(
+                {"error": "You already have a pending regularization request for this date."},
+                status=400,
+            )
+        
+        try:
+            # Create regularization request
+            regularization_request = RegularizationRequest.objects.create(
+                employee=employee,
+                attendance_date=attendance_date,
+                request_type=request_type,
+                existing_check_in=existing_check_in,
+                existing_check_out=existing_check_out,
+                requested_check_in=requested_check_in,
+                requested_check_out=requested_check_out,
+                reason=reason,
+                description=description,
+                status="PENDING",
+            )
+            
+            return Response({
+                "message": "Regularization request submitted successfully.",
+                "request_id": regularization_request.id,
+                "status": regularization_request.status,
+                "attendance_date": regularization_request.attendance_date,
+                "request_type": regularization_request.request_type,
+            }, status=201)
+            
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to create regularization request: {str(e)}"},
+                status=500,
+            )
+
+
+class RegularizationRequestListView(APIView):
+    """List regularization requests - Employee sees own, Manager/SuperUser see all they can access."""
+    permission_classes = [IsEmployeeOrManager]
+    app_access_key = "attendance"
+    
+    def get(self, request):
+        # Check if user is a manager or admin
+        is_manager_or_admin = request.user.is_staff or request.user.is_system_admin or request.user.is_superuser
+        
+        if is_manager_or_admin:
+            # Managers/admins see all requests or filter by employee_id
+            employee_id = request.query_params.get('employee_id')
+            status_filter = request.query_params.get('status')
+            
+            if employee_id:
+                try:
+                    requests = RegularizationRequest.objects.filter(
+                        employee_id=employee_id
+                    ).select_related('employee__user', 'reviewed_by').order_by('-created_at')
+                except ValueError:
+                    return Response({"error": "Invalid employee_id"}, status=400)
+            else:
+                requests = RegularizationRequest.objects.select_related(
+                    'employee__user', 'reviewed_by'
+                ).order_by('-created_at')
+            
+            if status_filter:
+                requests = requests.filter(status=status_filter)
+        else:
+            # Regular employees see only their own requests
+            if not hasattr(request.user, "employee"):
+                return Response([])
+            
+            employee = request.user.employee
+            status_filter = request.query_params.get('status')
+            
+            requests = RegularizationRequest.objects.filter(
+                employee=employee
+            ).select_related('reviewed_by').order_by('-created_at')
+            
+            if status_filter:
+                requests = requests.filter(status=status_filter)
+        
+        data = []
+        for req in requests:
+            record = {
+                "id": req.id,
+                "attendance_date": req.attendance_date,
+                "request_type": req.request_type,
+                "reason": req.reason,
+                "description": req.description,
+                "status": req.status,
+                "existing_check_in": req.existing_check_in,
+                "existing_check_out": req.existing_check_out,
+                "requested_check_in": req.requested_check_in,
+                "requested_check_out": req.requested_check_out,
+                "created_at": req.created_at,
+                "reviewed_at": req.reviewed_at,
+                "rejection_reason": req.rejection_reason,
+            }
+            
+            # Add employee info for managers/admins
+            if is_manager_or_admin:
+                record["employee_id"] = req.employee.id
+                record["employee_name"] = f"{req.employee.user.first_name} {req.employee.user.last_name}"
+                record["employee_email"] = req.employee.user.email
+            
+            # Add reviewer info if reviewed
+            if req.reviewed_by:
+                record["reviewed_by_name"] = f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}"
+                record["reviewed_by_email"] = req.reviewed_by.email
+            
+            data.append(record)
+        
+        return Response(data)
+
+
+class RegularizationRequestDetailView(APIView):
+    """Get details of a specific regularization request."""
+    permission_classes = [IsEmployeeOrManager]
+    app_access_key = "attendance"
+    
+    def get(self, request, request_id):
+        try:
+            # Check if user is a manager or admin
+            is_manager_or_admin = request.user.is_staff or request.user.is_system_admin or request.user.is_superuser
+            
+            if is_manager_or_admin:
+                # Managers/admins can view any request
+                req = RegularizationRequest.objects.select_related(
+                    'employee__user', 'reviewed_by', 'attendance_correction'
+                ).get(id=request_id)
+            else:
+                # Employees can only view their own requests
+                if not hasattr(request.user, "employee"):
+                    return Response({"error": "Access denied."}, status=403)
+                
+                req = RegularizationRequest.objects.select_related(
+                    'reviewed_by', 'attendance_correction'
+                ).get(id=request_id, employee=request.user.employee)
+        
+        except RegularizationRequest.DoesNotExist:
+            return Response({"error": "Regularization request not found."}, status=404)
+        
+        data = {
+            "id": req.id,
+            "employee_id": req.employee.id,
+            "employee_name": f"{req.employee.user.first_name} {req.employee.user.last_name}",
+            "employee_email": req.employee.user.email,
+            "attendance_date": req.attendance_date,
+            "request_type": req.request_type,
+            "reason": req.reason,
+            "description": req.description,
+            "status": req.status,
+            "existing_check_in": req.existing_check_in,
+            "existing_check_out": req.existing_check_out,
+            "requested_check_in": req.requested_check_in,
+            "requested_check_out": req.requested_check_out,
+            "created_at": req.created_at,
+            "reviewed_at": req.reviewed_at,
+            "rejection_reason": req.rejection_reason,
+            "is_within_48_hours": req.is_within_48_hours,
+            "can_be_processed": req.can_be_processed,
+        }
+        
+        # Add reviewer info if reviewed
+        if req.reviewed_by:
+            data["reviewed_by_name"] = f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}"
+            data["reviewed_by_email"] = req.reviewed_by.email
+        
+        # Add attendance correction info if applied
+        if req.attendance_correction:
+            data["attendance_correction"] = {
+                "id": req.attendance_correction.id,
+                "timestamp": req.attendance_correction.timestamp,
+                "reason": req.attendance_correction.reason,
+            }
+        
+        return Response(data)
+
+
+class RegularizationRequestApproveView(APIView):
+    """Manager/SuperUser approves a regularization request."""
+    permission_classes = [IsManagerOrAdmin]
+    
+    def post(self, request, request_id):
+        try:
+            regularization_request = RegularizationRequest.objects.select_related(
+                'employee__user'
+            ).get(id=request_id)
+        except RegularizationRequest.DoesNotExist:
+            return Response({"error": "Regularization request not found."}, status=404)
+        
+        if regularization_request.status != "PENDING":
+            return Response(
+                {"error": f"Cannot approve request with status {regularization_request.status}."},
+                status=400,
+            )
+        
+        if not regularization_request.is_within_48_hours:
+            return Response(
+                {"error": "Cannot approve request outside 48-hour window."},
+                status=400,
+            )
+        
+        try:
+            # Approve the request and apply correction
+            correction = regularization_request.approve(
+                reviewed_by_user=request.user,
+                apply_correction=True
+            )
+            
+            return Response({
+                "message": "Regularization request approved successfully.",
+                "request_id": regularization_request.id,
+                "status": regularization_request.status,
+                "correction_id": correction.id if correction else None,
+                "employee_name": f"{regularization_request.employee.user.first_name} {regularization_request.employee.user.last_name}",
+                "attendance_date": regularization_request.attendance_date,
+            })
+            
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to approve request: {str(e)}"},
+                status=500,
+            )
+
+
+class RegularizationRequestRejectView(APIView):
+    """Manager/SuperUser rejects a regularization request."""
+    permission_classes = [IsManagerOrAdmin]
+    
+    def post(self, request, request_id):
+        rejection_reason = request.data.get("rejection_reason", "").strip()
+        
+        if not rejection_reason:
+            return Response(
+                {"error": "rejection_reason is required."},
+                status=400,
+            )
+        
+        try:
+            regularization_request = RegularizationRequest.objects.select_related(
+                'employee__user'
+            ).get(id=request_id)
+        except RegularizationRequest.DoesNotExist:
+            return Response({"error": "Regularization request not found."}, status=404)
+        
+        if regularization_request.status != "PENDING":
+            return Response(
+                {"error": f"Cannot reject request with status {regularization_request.status}."},
+                status=400,
+            )
+        
+        try:
+            # Reject the request
+            regularization_request.reject(
+                reviewed_by_user=request.user,
+                rejection_reason=rejection_reason
+            )
+            
+            return Response({
+                "message": "Regularization request rejected.",
+                "request_id": regularization_request.id,
+                "status": regularization_request.status,
+                "rejection_reason": regularization_request.rejection_reason,
+                "employee_name": f"{regularization_request.employee.user.first_name} {regularization_request.employee.user.last_name}",
+                "attendance_date": regularization_request.attendance_date,
+            })
+            
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to reject request: {str(e)}"},
+                status=500,
+            )

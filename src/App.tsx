@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
 
+// Add a debug console log to verify the file is being loaded
+console.log("App.tsx loaded with Regularization feature");
+
 type IconName =
   | "grid" | "users" | "manager" | "calendar" | "leave" | "report"
   | "building" | "settings" | "logout" | "search" | "bell" | "menu"
   | "close" | "plus" | "clock" | "userCheck" | "userX" | "briefcase"
-  | "arrowUp" | "arrowRight" | "chevronDown";
+  | "arrowUp" | "arrowRight" | "chevronDown" | "edit" | "check" | "x" | "refresh";
 
 const iconPaths: Record<IconName, ReactNode> = {
   grid: (<><rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" /></>),
@@ -28,6 +31,10 @@ const iconPaths: Record<IconName, ReactNode> = {
   arrowUp: <path d="m18 15-6-6-6 6" />,
   arrowRight: <path d="m9 18 6-6-6-6" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  edit: (<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3l-6.5 6.5-4 1 1-4z" /></>),
+  check: <path d="m9 12 2 2 4-4" />,
+  x: <path d="m18 6-12 12M6 6l12 12" />,
+  refresh: (<><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M3 21v-5h5" /></>),
 };
 
 function Icon({ name, className = "h-5 w-5" }: { name: IconName; className?: string }) {
@@ -43,6 +50,7 @@ const navItems: { name: string; icon: IconName }[] = [
   { name: "Employees", icon: "users" },
   { name: "Managers", icon: "manager" },
   { name: "Attendance", icon: "calendar" },
+  { name: "Regularization", icon: "edit" },
   { name: "Leave Management", icon: "leave" },
   { name: "Reports", icon: "report" },
   { name: "Departments", icon: "building" },
@@ -52,6 +60,7 @@ const navItems: { name: string; icon: IconName }[] = [
 type Page =
   | "dashboard" | "employees" | "add-employee" | "employee-details"
   | "managers" | "manager-details" | "attendance" | "attendance-details"
+  | "regularization" | "regularization-create" | "regularization-details"
   | "leave-management" | "leave-details" | "departments" | "department-details"
   | "reports" | "settings" | "notifications" | "search";
 
@@ -93,11 +102,10 @@ function Sidebar({ open, onClose, page, onNavigate, dark }: { open: boolean; onC
               <button
                 key={item.name}
                 onClick={() => { onNavigate(item.name.toLowerCase().replace(" ", "-") as Page); onClose(); }}
-                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-sm font-medium transition-colors ${
-                  page === item.name.toLowerCase().replace(" ", "-")
+                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-sm font-medium transition-colors ${page === item.name.toLowerCase().replace(" ", "-")
                     ? dark ? "bg-purple-900/50 text-purple-300" : "bg-indigo-50 text-indigo-700"
                     : dark ? "text-slate-400 hover:bg-purple-900/30 hover:text-slate-200" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
+                  }`}
               >
                 <Icon name={item.icon} className="h-[19px] w-[19px]" />
                 {item.name}
@@ -637,19 +645,255 @@ function NotificationsPage() {
   );
 }
 
-function SearchPage({ navigate: _navigate }: { navigate: (page: Page) => void }) {
+function RegularizationPage({ navigate }: { navigate: (page: Page) => void }) {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/admin/regularization/", {
+      headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+    })
+      .then(res => res.json())
+      .then(data => { setRequests(data); setLoading(false); })
+      .catch(err => { console.error(err); setLoading(false); });
+  }, []);
+
   return (
     <>
-      <PageHeader title="Global Search" description="Search across employees, managers, departments, and records." />
-      <Card className="mx-auto max-w-4xl overflow-hidden">
-        <div className="relative p-5">
-          <Icon name="search" className="absolute left-8 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-          <input autoFocus className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-50" placeholder="Search employees, departments, records..." />
-        </div>
-        <div className="border-t border-slate-100 p-5">
-          <EmptyState icon="search" title="Start typing to search" description="Results for employees, managers, departments and records will appear here." />
+      <PageHeader title="Regularization" description="Manage attendance correction requests and approvals." />
+      <SmallStats items={[{ label: "Pending Requests", icon: "clock", color: "bg-amber-50 text-amber-600" }, { label: "Approved", icon: "check", color: "bg-emerald-50 text-emerald-600" }, { label: "Rejected", icon: "x", color: "bg-rose-50 text-rose-600" }, { label: "Total Requests", icon: "edit" }]} />
+      <Card className="overflow-hidden">
+        <Toolbar search="Search regularization requests..."><SelectControl>All statuses</SelectControl><SelectControl>All employees</SelectControl><SelectControl>Select date range</SelectControl></Toolbar>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1200px] text-left text-xs">
+            <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+              <tr>{["Employee", "Date", "Request Type", "Current Attendance", "Requested Correction", "Reason", "Status", "Actions"].map(h => <th className="px-4 py-3.5" key={h}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} className="p-10 text-center text-sm">Loading requests...</td></tr>
+              ) : requests.length === 0 ? (
+                <tr><td colSpan={8}><EmptyState icon="edit" title="No regularization requests" description="Employee attendance correction requests will appear here." /></td></tr>
+              ) : (
+                requests.map(req => (
+                  <tr key={req.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3">{req.employee_name}</td>
+                    <td className="px-4 py-3">{req.attendance_date}</td>
+                    <td className="px-4 py-3">{req.request_type}</td>
+                    <td className="px-4 py-3">{req.existing_check_in ? req.existing_check_in.slice(11, 16) : "--"} - {req.existing_check_out ? req.existing_check_out.slice(11, 16) : "--"}</td>
+                    <td className="px-4 py-3 font-semibold text-indigo-700">{req.requested_check_in ? req.requested_check_in.slice(11, 16) : "--"} - {req.requested_check_out ? req.requested_check_out.slice(11, 16) : "--"}</td>
+                    <td className="px-4 py-3 max-w-[200px] truncate">{req.reason}</td>
+                    <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${req.status === "PENDING" ? "bg-amber-100 text-amber-700" : req.status === "APPROVED" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>{req.status}</span></td>
+                    <td className="px-4 py-3"><SecondaryButton onClick={() => navigate("regularization-details")}>View</SecondaryButton></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </Card>
+    </>
+  );
+}
+
+function RegularizationCreatePage({ navigate }: { navigate: (page: Page) => void }) {
+  return (
+    <>
+      <PageHeader title="Create Regularization Request" description="Submit a request to correct your attendance record." />
+      <Card className="mx-auto max-w-3xl p-5 sm:p-8">
+        <div className="mb-7 flex items-center gap-4 border-b border-slate-100 pb-7">
+          <span className="grid h-16 w-16 place-items-center rounded-full bg-amber-50 text-amber-600"><Icon name="edit" className="h-6 w-6" /></span>
+          <div>
+            <p className="text-sm font-bold text-slate-800">Attendance Correction Request</p>
+            <p className="mt-1 text-xs text-slate-400">Requests can only be submitted within 48 hours of the attendance date.</p>
+          </div>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); navigate("regularization"); }}>
+          <div className="space-y-6">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-xs font-semibold text-slate-700">Attendance Date *</span>
+                <input type="date" className="h-11 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-50" max={new Date().toISOString().split('T')[0]} />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-semibold text-slate-700">Request Type *</span>
+                <select className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-500 outline-none">
+                  <option value="">Select request type</option>
+                  <option value="FORGOT_CHECK_IN">Forgot Check-In</option>
+                  <option value="FORGOT_CHECK_OUT">Forgot Check-Out</option>
+                  <option value="INCORRECT_ATTENDANCE">Incorrect Attendance</option>
+                  <option value="SYSTEM_ISSUE">System Issue</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-5">
+              <h3 className="text-sm font-bold text-slate-800 mb-4">Current Attendance</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Check-In</span>
+                  <p className="mt-1 text-sm text-slate-700">--:-- (No record)</p>
+                </div>
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Check-Out</span>
+                  <p className="mt-1 text-sm text-slate-700">--:-- (No record)</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/30 p-5">
+              <h3 className="text-sm font-bold text-slate-800 mb-4">Requested Correction</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold text-slate-700">Requested Check-In</span>
+                  <input type="time" className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-indigo-300" />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold text-slate-700">Requested Check-Out</span>
+                  <input type="time" className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-indigo-300" />
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <label className="block">
+                <span className="mb-2 block text-xs font-semibold text-slate-700">Reason for Correction *</span>
+                <textarea className="h-20 w-full rounded-xl border border-slate-200 px-3 py-3 text-xs outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-50 resize-none" placeholder="Explain why you need this attendance correction..." />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-semibold text-slate-700">Additional Details</span>
+                <textarea className="h-16 w-full rounded-xl border border-slate-200 px-3 py-3 text-xs outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-50 resize-none" placeholder="Any additional information that supports your request..." />
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-8 flex justify-end gap-3 border-t border-slate-100 pt-6">
+            <SecondaryButton onClick={() => navigate("regularization")}>Cancel</SecondaryButton>
+            <PrimaryButton>Submit Request</PrimaryButton>
+          </div>
+        </form>
+      </Card>
+    </>
+  );
+}
+
+function RegularizationDetailsPage({ navigate }: { navigate: (page: Page) => void }) {
+  return (
+    <>
+      <PageHeader title="Regularization Details" description="View request details and take action." action={<SecondaryButton onClick={() => navigate("regularization")}>Back to Regularization</SecondaryButton>} />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <Card className="p-6">
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Request Information</h3>
+                <p className="text-xs text-slate-500 mt-1">Submitted on September 27, 2026</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">PENDING</span>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <span className="text-xs font-semibold text-slate-700">Employee</span>
+                  <p className="mt-1 text-sm text-slate-900">--</p>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-700">Request Type</span>
+                  <p className="mt-1 text-sm text-slate-900">--</p>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-700">Attendance Date</span>
+                  <p className="mt-1 text-sm text-slate-900">--</p>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-700">Within 48 Hours</span>
+                  <p className="mt-1 text-sm text-emerald-600">✓ Yes</p>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-xs font-semibold text-slate-700">Reason</span>
+                <p className="mt-2 text-sm text-slate-700 bg-slate-50 rounded-lg p-3">No request selected</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="mt-6 p-6">
+            <h3 className="text-sm font-bold text-slate-900 mb-4">Attendance Comparison</h3>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 p-4">
+                <h4 className="text-xs font-bold text-slate-700 mb-3">Current Attendance</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-xs text-slate-500">Check-In:</span>
+                    <span className="text-xs text-slate-700">--:--</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-slate-500">Check-Out:</span>
+                    <span className="text-xs text-slate-700">--:--</span>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border-2 border-dashed border-indigo-200 bg-indigo-50/30 p-4">
+                <h4 className="text-xs font-bold text-slate-700 mb-3">Requested Correction</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-xs text-slate-500">Check-In:</span>
+                    <span className="text-xs font-semibold text-indigo-700">--:--</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-slate-500">Check-Out:</span>
+                    <span className="text-xs font-semibold text-indigo-700">--:--</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <div>
+          <Card className="p-6">
+            <h3 className="text-sm font-bold text-slate-900 mb-4">Actions</h3>
+            <div className="space-y-3">
+              <button className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700">
+                <Icon name="check" className="h-4 w-4" />
+                Approve Request
+              </button>
+              <button className="w-full flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-3 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700">
+                <Icon name="x" className="h-4 w-4" />
+                Reject Request
+              </button>
+              <button className="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">
+                <Icon name="refresh" className="h-4 w-4" />
+                Refresh Status
+              </button>
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-slate-100">
+              <h4 className="text-xs font-bold text-slate-700 mb-3">Request Timeline</h4>
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5"></div>
+                  <div>
+                    <p className="text-xs font-medium text-slate-700">Request Submitted</p>
+                    <p className="text-[10px] text-slate-500">Today at 2:05 PM</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-2 h-2 rounded-full bg-slate-300 mt-1.5"></div>
+                  <div>
+                    <p className="text-xs text-slate-500">Pending Review</p>
+                    <p className="text-[10px] text-slate-400">Waiting for manager approval</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
     </>
   );
 }
@@ -657,7 +901,7 @@ function SearchPage({ navigate: _navigate }: { navigate: (page: Page) => void })
 // ─── Upcoming Holidays ────────────────────────────────────────────────────────
 
 const HOLIDAY_MAP: Record<string, string> = {};
-const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
 function UpcomingHolidays() {
@@ -709,13 +953,13 @@ function UpcomingHolidays() {
             className={`grid h-8 w-8 place-items-center rounded-lg transition-colors ${calOpen ? "bg-indigo-100" : "bg-indigo-50 hover:bg-indigo-100"}`}
             aria-label="Toggle calendar"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
           </button>
           {calOpen && (
             <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/70">
               <div className="mb-3 flex items-center gap-1.5">
                 <button onClick={prevMonth} className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 hover:bg-slate-100">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 </button>
                 <select value={calMonth} onChange={e => setCalMonth(Number(e.target.value))} className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-center text-xs font-semibold text-slate-700 outline-none focus:border-indigo-300">
                   {MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}
@@ -724,11 +968,11 @@ function UpcomingHolidays() {
                   {years.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
                 <button onClick={nextMonth} className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 hover:bg-slate-100">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
               </div>
               <div className="mb-1 grid grid-cols-7 text-center">
-                {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
+                {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => (
                   <span key={d} className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{d}</span>
                 ))}
               </div>
@@ -818,6 +1062,7 @@ function App() {
   const titles: Record<Page, string> = {
     dashboard: "Super Admin Dashboard", employees: "Employees", "add-employee": "Add Employee", "employee-details": "Employee Details",
     managers: "Managers", "manager-details": "Manager Details", attendance: "Attendance", "attendance-details": "Attendance Details",
+    regularization: "Regularization", "regularization-create": "Create Regularization Request", "regularization-details": "Regularization Details",
     "leave-management": "Leave Management", "leave-details": "Leave Request Details", departments: "Departments", "department-details": "Department Details",
     reports: "Reports", settings: "Settings", notifications: "Notifications", search: "Global Search",
   };
@@ -831,6 +1076,9 @@ function App() {
     "manager-details": <PersonDetailsPage kind="Manager" navigate={navigate} />,
     attendance: <AttendancePage navigate={navigate} />,
     "attendance-details": <AttendanceDetailsPage navigate={navigate} />,
+    regularization: <RegularizationPage navigate={navigate} />,
+    "regularization-create": <RegularizationCreatePage navigate={navigate} />,
+    "regularization-details": <RegularizationDetailsPage navigate={navigate} />,
     "leave-management": <LeavePage navigate={navigate} />,
     "leave-details": <LeaveDetailsPage navigate={navigate} />,
     departments: <DepartmentsPage navigate={navigate} />,
@@ -867,8 +1115,8 @@ function App() {
               aria-label="Toggle theme"
             >
               {dark
-                ? <svg xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                : <svg xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                ? <svg xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
+                : <svg xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
               }
             </button>
             <div className={`mx-1 hidden h-7 w-px sm:block ${dark ? "bg-purple-900/50" : "bg-slate-200"}`} />
@@ -888,12 +1136,12 @@ function App() {
                     <p className="text-[10px] text-slate-400">Super Admin</p>
                   </div>
                   <button onClick={() => { navigate("settings"); setProfileOpen(false); }} className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs font-medium ${dark ? "text-slate-300 hover:bg-purple-900/40" : "text-slate-700 hover:bg-slate-50"}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
                     Settings
                   </button>
                   <div className={`my-1 border-t ${dark ? "border-purple-900/50" : "border-slate-100"}`} />
                   <button onClick={() => setProfileOpen(false)} className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs font-medium text-rose-500 ${dark ? "hover:bg-rose-950/40" : "hover:bg-rose-50"}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                     Log Out
                   </button>
                 </div>

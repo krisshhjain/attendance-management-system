@@ -56,6 +56,9 @@ frontend/.env.*
 # Facial recognition
 facial-recognition/
 
+# Locally transferred language model weights
+models/**/*.gguf
+
 # Jupyter
 .ipynb_checkpoints/
 
@@ -63,3 +66,5 @@ facial-recognition/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+backend/*.sql

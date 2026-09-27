@@ -6,6 +6,8 @@ from django.db import connection
 from django.utils import timezone
 from employees.models import Employee
 
+from .employee_resolver import employee_resolver
+
 MAX_ROWS = 100
 ALLOWED_TABLES = {
     "employees_employee", "accounts_user", "attendance_attendance",
@@ -25,125 +27,53 @@ class CopilotError(Exception):
         super().__init__(message)
 
 
-def analyze_question(question):
-    """Extract only supported entities from natural language; never accept SQL."""
-    lower = question.strip().casefold()
-    is_absence_question = bool(re.search(r"\b(absent|absence)\b", lower))
-    if re.search(r"\b(br|business region)\b", lower):
-        raise CopilotError("unsupported_entity", "BR is not represented in the current HR data model.")
-    if re.search(r"\bleave\s+balances?\b", lower):
-        raise CopilotError("unsupported_metric", "Leave balances use policy calculations and are not supported by this Copilot query version.")
-
-    from .llm import get_structured_intent
-
-    # Absence has a precise, schema-based definition below. Keep its intent
-    # deterministic so an LLM cannot reinterpret the business rule.
-    structured = None if is_absence_question else get_structured_intent(question)
-    if structured is not None:
-        intent = structured
-        entities = intent["entities"]
-        _apply_deterministic_entities(question, intent["source"], entities)
+def analyze_question(question, context=None, session_id=None):
+    """Extract semantic intent from natural language using enhanced LLM interpretation."""
+    from .semantic_interpreter import semantic_interpreter
+    from .write_actions import write_action_planner
+    
+    # Use semantic interpreter for all queries including absence and write actions
+    intent = semantic_interpreter.interpret_query(question, context or {}, session_id=session_id)
+    
+    # Check if this is a write action requiring approval
+    if write_action_planner.is_write_action(intent):
+        intent['requires_approval'] = True
+        intent['action_type'] = 'write'
+    else:
+        intent['action_type'] = 'read'
+    
+    # Handle missing information and ambiguities
+    missing_info = intent.get("missing_information", [])
+    ambiguities = intent.get("ambiguities", [])
+    
+    if ambiguities:
+        if "employee_identity" in ambiguities:
+            raise CopilotError("employee_ambiguous", "More than one employee matched. Please provide the employee's email address.")
+        # Add other ambiguity handling as needed
+    
+    if missing_info:
+        if "employee_identity" in missing_info:
+            raise CopilotError("employee_not_found", "No employee matched that name or email.")
+        elif "department" in missing_info:
+            raise CopilotError("department_not_found", "That department is not present in the employee data.")
+        # Add other missing information handling as needed
+    
+    # Apply temporal scope metadata for compatibility
+    entities = intent.get("entities", {})
+    if entities.get("date_range"):
+        start, end = entities["date_range"]["start"], entities["date_range"]["end"]
         today = timezone.localdate()
-        if intent["source"] != "employee" or not intent["intent"].startswith("absence_"):
-            _apply_explicit_date_range(question, entities, today)
-            _apply_temporal_scope(question, intent["source"], intent["intent"], entities, today)
-        return intent
-    entities = {}
-
-    sub = re.search(r"\bsection\s+([a-z])\s*[- ]?([0-9]+)\b|\b([a-z])([0-9]+)\b", lower)
-    if sub:
-        letter = sub.group(1) or sub.group(3)
-        number = sub.group(2) or sub.group(4)
-        entities["section"] = letter.upper()
-        entities["subsection"] = letter.upper() + number
-    else:
-        section = re.search(r"\bsection\s+([a-z])\b", lower)
-        if section:
-            entities["section"] = section.group(1).upper()
-    if "compare" in lower or "comparison" in lower:
-        compared = sorted({value.upper() for value in re.findall(r"\b([a-z][0-9]+)\b", lower)})
-        if len(compared) >= 2:
-            entities["comparison_subsections"] = compared
-            entities.pop("subsection", None)
-        else:
-            raise CopilotError("clarification_required", "Which two sections or sub-sections should I compare?")
-
-    employee_type = re.search(r"\b(interns?|contract(?:ors)?|permanent)\b", lower)
-    if employee_type:
-        word = employee_type.group(1)
-        entities["employee_type"] = "INTERN" if word.startswith("intern") else "CONTRACT" if word.startswith("contract") else "PERMANENT"
-    if re.search(r"\binactive\b", lower):
-        entities["is_active"] = False
-    elif re.search(r"\bactive\b", lower):
-        entities["is_active"] = True
-    _apply_deterministic_entities(question, None, entities)
-    leave_status = re.search(r"\b(pending|approved|denied|cancelled)\b", lower)
-    attendance_status = re.search(r"\b(present|incomplete|on leave|leave)\b", lower)
-    if leave_status:
-        entities["leave_status"] = leave_status.group(1).upper()
-    elif attendance_status:
-        word = attendance_status.group(1)
-        entities["attendance_status"] = "LEAVE" if word in ("leave", "on leave") else word.upper()
-
-    today = timezone.localdate()
-    if "yesterday" in lower:
-        yesterday = (today - timedelta(days=1)).isoformat()
-        entities["date_range"] = {"start": yesterday, "end": yesterday}
-    elif "today" in lower:
-        today_iso = today.isoformat()
-        entities["date_range"] = {"start": today_iso, "end": today_iso}
-    elif "last week" in lower or "last 7 days" in lower:
-        entities["date_range"] = {"start": (today - timedelta(days=6)).isoformat(), "end": today.isoformat()}
-    elif "last month" in lower:
-        last_month_end = today.replace(day=1) - timedelta(days=1)
-        entities["date_range"] = {"start": date(last_month_end.year, last_month_end.month, 1).isoformat(), "end": last_month_end.isoformat()}
-    else:
-        exact_dates = re.findall(r"\b(\d{4}-\d{2}-\d{2})\b", lower)
-        if exact_dates:
-            if len(exact_dates) > 2:
-                raise CopilotError("invalid_date_range", "Use one date or a date range with two ISO dates.")
-            try:
-                start = date.fromisoformat(exact_dates[0])
-                end = date.fromisoformat(exact_dates[-1])
-            except ValueError as error:
-                raise CopilotError("invalid_date", "Use a valid date in YYYY-MM-DD format.") from error
-            if start > end:
-                raise CopilotError("invalid_date_range", "The start date must be on or before the end date.")
-            entities["date_range"] = {"start": start.isoformat(), "end": end.isoformat()}
-        elif re.search(r"\b(last year|this week|this month|last quarter|last 30 days)\b", lower):
-            raise CopilotError("unsupported_date_range", "That date range is not supported yet. Try today, yesterday, last week, last month, or an ISO date.")
-
-    if is_absence_question:
-        source = "employee"
-    elif re.search(r"\b(attendance|present|incomplete|absent|check.?in|check.?out)\b", lower):
-        source = "attendance"
-    elif re.search(r"\b(leave|leaves|vacation|time off)\b", lower):
-        source = "leave"
-    elif re.search(r"\b(employees?|staff|interns?|contractors?|permanent)\b", lower):
-        source = "employee"
-    else:
-        source = None
-
-    count = bool(re.search(r"\b(how many|count|number of|total)\b", lower))
-    summary = bool(re.search(r"\b(summary|overview|breakdown)\b", lower))
-    trend = bool(re.search(r"\b(trend|over time|by day|daily|weekly|monthly|compare|comparison)\b", lower))
-    if source is None:
-        name = "unknown"
-    elif "compare" in lower:
-        name = "comparison"
-    elif is_absence_question:
-        name = "absence_count" if count else "absence_lookup"
-    elif source == "employee":
-        name = "employee_count" if count else "employee_summary" if summary or trend else "employee_lookup"
-    elif source == "attendance":
-        name = "attendance_trend" if trend else "attendance_summary" if count or summary else "attendance_lookup"
-    else:
-        name = "leave_trend" if trend else "leave_summary" if count or summary else "leave_lookup"
-    intent = {"intent": name, "source": source, "entities": entities}
-    if not is_absence_question:
-        _apply_temporal_scope(question, source, name, entities, today)
-    if is_absence_question:
+        scope_type = "date" if start == end else "range"
+        if start == today.isoformat():
+            scope_type = "today"
+        elif start == (today - timedelta(days=1)).isoformat() and end == start:
+            scope_type = "yesterday"
+        entities["temporal_scope"] = {"type": scope_type, "start_date": start, "end_date": end, "source": "llm_resolved"}
+    
+    # Validate absence date range if it's an absence query
+    if intent.get("intent", "").startswith("absence_"):
         _validate_absence_date_range(entities)
+    
     return intent
 
 
@@ -163,9 +93,43 @@ def _apply_temporal_scope(question, source, intent_name, entities, today):
         entities["temporal_scope"] = {"type": scope_type, "start_date": start, "end_date": end, "source": "explicit"}
 
 
+MONTH_NAMES = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "june": 6, "jun": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
+    "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+
+
+def _parse_natural_date_string(text, today):
+    lower = text.casefold()
+    m1 = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)(?:\s+(\d{4}))?\b", lower)
+    if m1 and m1.group(2) in MONTH_NAMES:
+        day = int(m1.group(1))
+        month = MONTH_NAMES[m1.group(2)]
+        year = int(m1.group(3)) if m1.group(3) else today.year
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            pass
+    m2 = re.search(r"\b([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?\b", lower)
+    if m2 and m2.group(1) in MONTH_NAMES:
+        month = MONTH_NAMES[m2.group(1)]
+        day = int(m2.group(2))
+        year = int(m2.group(3)) if m2.group(3) else today.year
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            pass
+    return None
+
+
 def _apply_explicit_date_range(question, entities, today):
     lower = question.casefold()
-    if "yesterday" in lower:
+    if "the day before" in lower or "two days ago" in lower:
+        value = (today - timedelta(days=2)).isoformat()
+        entities["date_range"] = {"start": value, "end": value}
+    elif "yesterday" in lower:
         value = (today - timedelta(days=1)).isoformat()
         entities["date_range"] = {"start": value, "end": value}
     elif re.search(r"\btoday\b", lower):
@@ -173,21 +137,30 @@ def _apply_explicit_date_range(question, entities, today):
         entities["date_range"] = {"start": value, "end": value}
     elif "last week" in lower or "last 7 days" in lower:
         entities["date_range"] = {"start": (today - timedelta(days=6)).isoformat(), "end": today.isoformat()}
+    elif "this week" in lower:
+        start = today - timedelta(days=today.weekday())
+        entities["date_range"] = {"start": start.isoformat(), "end": today.isoformat()}
+    elif "this month" in lower:
+        entities["date_range"] = {"start": today.replace(day=1).isoformat(), "end": today.isoformat()}
     elif "last month" in lower:
         end = today.replace(day=1) - timedelta(days=1)
         entities["date_range"] = {"start": date(end.year, end.month, 1).isoformat(), "end": end.isoformat()}
     else:
-        dates = re.findall(r"\b(\d{4}-\d{2}-\d{2})\b", lower)
-        if dates:
-            if len(dates) > 2:
-                raise CopilotError("invalid_date_range", "Use one date or a date range with two ISO dates.")
-            try:
-                start, end = date.fromisoformat(dates[0]), date.fromisoformat(dates[-1])
-            except ValueError as error:
-                raise CopilotError("invalid_date", "Use a valid date in YYYY-MM-DD format.") from error
-            if start > end:
-                raise CopilotError("invalid_date_range", "The start date must be on or before the end date.")
-            entities["date_range"] = {"start": start.isoformat(), "end": end.isoformat()}
+        natural_date = _parse_natural_date_string(lower, today)
+        if natural_date:
+            entities["date_range"] = {"start": natural_date, "end": natural_date}
+        else:
+            dates = re.findall(r"\b(\d{4}-\d{2}-\d{2})\b", lower)
+            if dates:
+                if len(dates) > 2:
+                    raise CopilotError("invalid_date_range", "Use one date or a date range with two ISO dates.")
+                try:
+                    start, end = date.fromisoformat(dates[0]), date.fromisoformat(dates[-1])
+                except ValueError as error:
+                    raise CopilotError("invalid_date", "Use a valid date in YYYY-MM-DD format.") from error
+                if start > end:
+                    raise CopilotError("invalid_date_range", "The start date must be on or before the end date.")
+                entities["date_range"] = {"start": start.isoformat(), "end": end.isoformat()}
 
 
 
@@ -195,13 +168,24 @@ def _apply_explicit_date_range(question, entities, today):
 def _apply_deterministic_entities(question, source, entities):
     """Extract security and schema-sensitive filters independently of the LLM."""
     lower = question.casefold()
-    if (source == "employee" or re.search(r"\b(?:employee|attendance|by\s+(?:name|email))\b", lower)) and not re.search(r"\bsection\s+[a-z]\b", lower):
+    if "comparison_subsections" not in entities:
+        sub = re.search(r"\bsection\s+([a-z])\s*[- ]?([0-9]+)\b|\b([a-z])([0-9]+)\b", lower)
+        if sub:
+            letter = sub.group(1) or sub.group(3)
+            number = sub.group(2) or sub.group(4)
+            entities["section"] = letter.upper()
+            entities["subsection"] = letter.upper() + number
+        else:
+            section = re.search(r"\bsection\s+([a-z])\b", lower)
+            if section:
+                entities["section"] = section.group(1).upper()
+    if (source == "employee" or re.search(r"\b(?:employee|attendance|present|absent|check.?in|check.?out|by\s+(?:name|email)|who|about|profile)\b", lower)) and not re.search(r"\bsection\s+[a-z]\b", lower):
         email_match = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", question, re.IGNORECASE)
         if email_match:
             entities["employee_email"] = email_match.group(0).casefold()
         else:
             identity = re.search(
-                r"\b(?:employee named|named|for employee|employee|attendance for|for)\s+([A-Z][A-Z .'-]{1,60}?)(?=\s+(?:in|from|on|during|with|whose|today|yesterday|for the last|last 7 days)\b|[?.!,]|$)",
+                r"\b(?:employee named|named|for employee|employee|attendance for|for|about|who is|who's|tell me about|profile of|profile for)\s+([A-Z][A-Z .'-]{1,60}?)(?=\s+(?:present|absent|in|from|on|during|with|whose|today|yesterday|for the last|last 7 days)\b|[?.!,]|$)",
                 question,
                 re.IGNORECASE,
             )
@@ -209,6 +193,24 @@ def _apply_deterministic_entities(question, source, entities):
                 candidate = identity.group(1).strip()
                 if candidate.casefold() not in {"name", "email", "name or email", "employee", "an employee"}:
                     entities["employee_name"] = candidate
+            if "employee_name" not in entities:
+                name_match = re.search(r"\b([A-Z][a-z]{1,30}(?:\s+[A-Z][a-z]{1,30})+)\b", question)
+                if name_match:
+                    candidate = name_match.group(1).strip()
+                    # Strip leading sentence-starting words that are not part of a name
+                    _non_name_starters = {
+                        "was", "is", "did", "who", "what", "which", "show", "give",
+                        "tell", "list", "find", "get", "fetch", "display", "can", "does",
+                        "has", "have", "had", "will", "would", "could", "should", "shall",
+                    }
+                    parts = candidate.split()
+                    while parts and parts[0].casefold() in _non_name_starters:
+                        parts = parts[1:]
+                    candidate = " ".join(parts)
+                    if candidate and candidate.casefold() not in {
+                        "student department", "ai intern", "section c", "section a", "section b", "section d",
+                    }:
+                        entities["employee_name"] = candidate
         if re.search(r"\b(?:name or email|by name|by email|for employee|employee attendance|for name|for email)\b", lower) and not (entities.get("employee_email") or entities.get("employee_name")):
             if re.search(r"\bby\s+name\b", lower):
                 raise CopilotError("clarification_required", "Please provide the employee's name.")
@@ -271,19 +273,20 @@ def plan_query(intent, scope):
     if entities.pop("employee_identity_missing", False):
         raise CopilotError("clarification_required", "Please provide the employee's name or email address.")
     employee_resolution = {"status": "not_required", "employee_id": None}
-    if entities.get("employee_name") or entities.get("employee_email"):
-        if entities.get("employee_email"):
-            matches = Employee.objects.filter(user__email__iexact=entities["employee_email"])
-        else:
-            name_parts = entities["employee_name"].split()
-            matches = Employee.objects.filter(user__first_name__iexact=name_parts[0], user__last_name__iexact=" ".join(name_parts[1:]))
-        matching_ids = list(matches.values_list("id", flat=True)[:2])
-        if not matching_ids:
+    if entities.get("employee_id"):
+        employee_resolution = employee_resolver.resolve_employee(employee_id=entities["employee_id"]).as_dict()
+        if employee_resolution["status"] != "resolved":
+            raise CopilotError("employee_not_found", "No employee matched that identity.")
+        entities["employee_id"] = employee_resolution["employee_id"]
+    elif entities.get("employee_name") or entities.get("employee_email"):
+        employee_resolution = employee_resolver.resolve_employee(
+            name=entities.get("employee_name"), email=entities.get("employee_email"),
+        ).as_dict()
+        if employee_resolution["status"] == "not_found":
             raise CopilotError("employee_not_found", "No employee matched that name or email.")
-        if len(matching_ids) > 1:
+        if employee_resolution["status"] == "ambiguous":
             raise CopilotError("employee_ambiguous", "More than one employee matched. Please provide the employee's email address.")
-        employee_resolution = {"status": "resolved", "employee_id": matching_ids[0]}
-        entities["employee_id"] = matching_ids[0]
+        entities["employee_id"] = employee_resolution["employee_id"]
     if entities.get("department"):
         departments = set(Employee.objects.values_list("department", flat=True).distinct())
         requested_department = entities["department"]
@@ -480,6 +483,19 @@ def generate_answer(intent, data):
             return str(value) + " employee" + (" was" if value == 1 else "s were") + " absent on that date."
         noun = "employee" if intent["source"] == "employee" else "record"
         return str(value) + " " + noun + ("" if value == 1 else "s") + " matched your question."
+    if intent.get("source") == "employee" and len(data) == 1 and "name" in data[0]:
+        employee = data[0]
+        status = "active" if employee["is_active"] else "inactive"
+        article = "an" if status == "active" else "an"
+        return f"{employee['name']} is {article} {status} {employee['employment_type'].lower()} employee in {employee['department']}, Section {employee['section']}, Subsection {employee['subsection']}."
+    if intent.get("source") == "attendance" and len(data) == 1 and (
+        intent.get("entities", {}).get("employee_id") or intent.get("entities", {}).get("employee_name") or intent.get("entities", {}).get("employee_email")
+    ):
+        row = data[0]
+        name = " ".join(part for part in [row.get("first_name", ""), row.get("last_name", "")] if part).strip() or "The employee"
+        att_date = row.get("date", "that date")
+        att_status = str(row.get("status", "")).replace("_", " ").capitalize()
+        return f"{name} was {att_status} on {att_date}."
     if intent_name == "absence_lookup":
         return "I found " + str(len(data)) + " absent employee(s). See the data below for details."
     return "I found " + str(len(data)) + " result group(s). See the data below for details."

@@ -21,7 +21,7 @@ Apply migrations, then use Django Admin at `/admin/` to edit a System Admin user
 
 ## Query path
 
-The endpoint is `POST /api/hr-copilot/query/` with `{ "message": "...", "conversation_id": "...", "scope": {} }`. A structured intent provider may be enabled with `HR_COPILOT_LLM_URL` (Ollama `/api/chat`) and `HR_COPILOT_LLM_MODEL` (defaults to `qwen3:8b`). The model only extracts JSON intent/entities; without a configured URL a deterministic parser is used. SQL is always assembled by fixed templates with bound parameters, checked for SELECT-only access to allowlisted tables, and executed in a read-only transaction with a five-second timeout.
+The endpoint is `POST /api/hr-copilot/query/` with `{ "message": "...", "conversation_id": "...", "scope": {} }`. Set `HR_COPILOT_LLM_PROVIDER=local_ollama_qwen`, `HR_COPILOT_LLM_URL=http://127.0.0.1:11434`, and `HR_COPILOT_LLM_MODEL=qwen3-8b-q4km-local` to use the local Qwen3-8B provider. Only loopback Ollama endpoints are accepted. `GET /api/hr-copilot/health/` is available to System Admins and reports whether the configured local model is installed and reachable. The model only extracts JSON intent/entities; without a configured provider the existing deterministic parser is used. SQL is always assembled by fixed templates with bound parameters, checked for SELECT-only access to allowlisted tables, and executed in a read-only transaction with a five-second timeout.
 
 The response includes `answer`, `intent`, the backend-derived scope, `query_status`, structured `data`, and `visualization`. Audit records store the question, intent, plan, generated parameterized SQL template, status, and error code, but not result rows or bound values.
 

@@ -351,7 +351,7 @@ class AttendanceCorrection(models.Model):
         null=True
     )
     timestamp = models.DateTimeField(auto_now_add=True)
-    correction_type = models.CharField(max_length=50) # 'RESET', 'EDIT'
+    correction_type = models.CharField(max_length=50) # 'RESET', 'EDIT', 'REGULARIZATION'
     reason = models.TextField()
     previous_data = models.JSONField(default=dict)
 
@@ -360,3 +360,274 @@ class AttendanceCorrection(models.Model):
 
     def __str__(self):
         return f"{self.correction_type} by {self.admin_user} on {self.attendance}"
+
+
+class RegularizationRequest(models.Model):
+    REQUEST_TYPES = [
+        ("FORGOT_CHECK_IN", "Forgot Check-In"),
+        ("FORGOT_CHECK_OUT", "Forgot Check-Out"),
+        ("INCORRECT_ATTENDANCE", "Incorrect Attendance"),
+        ("SYSTEM_ISSUE", "System Issue"),
+    ]
+    
+    STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected"),
+    ]
+    
+    # Primary fields
+    employee = models.ForeignKey(
+        "employees.Employee",
+        on_delete=models.CASCADE,
+        related_name="regularization_requests",
+    )
+    attendance_date = models.DateField()
+    request_type = models.CharField(max_length=30, choices=REQUEST_TYPES)
+    
+    # Existing attendance (before correction)
+    existing_check_in = models.DateTimeField(null=True, blank=True)
+    existing_check_out = models.DateTimeField(null=True, blank=True)
+    
+    # Requested attendance (after correction)
+    requested_check_in = models.DateTimeField(null=True, blank=True)
+    requested_check_out = models.DateTimeField(null=True, blank=True)
+    
+    # Request details
+    reason = models.TextField()
+    description = models.TextField(blank=True, default="")
+    
+    # Status and review
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="regularization_reviews",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default="")
+    
+    # Audit trail
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Link to resulting attendance correction (after approval)
+    attendance_correction = models.ForeignKey(
+        AttendanceCorrection,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="regularization_request",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "attendance_date", "status"],
+                condition=models.Q(status="PENDING"),
+                name="unique_pending_regularization_per_employee_per_date",
+            )
+        ]
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["employee", "status"]),
+            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["attendance_date"]),
+            models.Index(fields=["reviewed_by", "reviewed_at"]),
+        ]
+
+    def __str__(self):
+        return f"Regularization: {self.employee} - {self.attendance_date} ({self.status})"
+    
+    def clean(self):
+        """Validate the regularization request."""
+        from django.core.exceptions import ValidationError
+        from django.utils import timezone
+        import datetime
+        
+        # Validate 48-hour rule
+        if self.attendance_date:
+            now = timezone.now().date()
+            max_allowed_date = now - datetime.timedelta(days=2)
+            
+            if self.attendance_date < max_allowed_date:
+                raise ValidationError(
+                    "Regularization requests are only allowed within 48 hours of the attendance date."
+                )
+        
+        # Validate requested times are logical
+        if self.requested_check_in and self.requested_check_out:
+            if self.requested_check_out <= self.requested_check_in:
+                raise ValidationError(
+                    "Requested check-out time must be after check-in time."
+                )
+        
+        # Validate that requested times are on the correct date
+        if self.requested_check_in and self.attendance_date:
+            if self.requested_check_in.date() != self.attendance_date:
+                raise ValidationError(
+                    "Requested check-in time must be on the attendance date."
+                )
+        
+        if self.requested_check_out and self.attendance_date:
+            if self.requested_check_out.date() != self.attendance_date:
+                raise ValidationError(
+                    "Requested check-out time must be on the attendance date."
+                )
+    
+    def save(self, *args, **kwargs):
+        """Override save to run validation."""
+        self.clean()
+        super().save(*args, **kwargs)
+    
+    @property
+    def is_within_48_hours(self):
+        """Check if the request is within the 48-hour window."""
+        from django.utils import timezone
+        import datetime
+        
+        now = timezone.now().date()
+        cutoff_date = now - datetime.timedelta(days=2)
+        return self.attendance_date >= cutoff_date
+    
+    @property
+    def can_be_processed(self):
+        """Check if the request can be approved or rejected."""
+        return self.status == "PENDING" and self.is_within_48_hours
+    
+    def approve(self, reviewed_by_user, apply_correction=True):
+        """
+        Approve the regularization request and optionally apply the correction.
+        
+        Args:
+            reviewed_by_user: User who is approving the request
+            apply_correction: Whether to apply the attendance correction (default: True)
+        
+        Returns:
+            AttendanceCorrection instance if correction was applied, None otherwise
+        """
+        from django.utils import timezone
+        from django.db import transaction
+        
+        if self.status != "PENDING":
+            raise ValueError(f"Cannot approve request with status {self.status}")
+        
+        if not self.is_within_48_hours:
+            raise ValueError("Cannot approve request outside 48-hour window")
+        
+        with transaction.atomic():
+            # Update request status
+            self.status = "APPROVED"
+            self.reviewed_by = reviewed_by_user
+            self.reviewed_at = timezone.now()
+            self.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+            
+            if apply_correction:
+                return self._apply_attendance_correction(reviewed_by_user)
+        
+        return None
+    
+    def reject(self, reviewed_by_user, rejection_reason):
+        """
+        Reject the regularization request.
+        
+        Args:
+            reviewed_by_user: User who is rejecting the request
+            rejection_reason: Reason for rejection
+        """
+        from django.utils import timezone
+        
+        if self.status != "PENDING":
+            raise ValueError(f"Cannot reject request with status {self.status}")
+        
+        self.status = "REJECTED"
+        self.reviewed_by = reviewed_by_user
+        self.reviewed_at = timezone.now()
+        self.rejection_reason = rejection_reason
+        self.save(update_fields=[
+            "status", "reviewed_by", "reviewed_at", "rejection_reason", "updated_at"
+        ])
+    
+    def _apply_attendance_correction(self, reviewed_by_user):
+        """
+        Apply the regularization correction to attendance records.
+        
+        This method:
+        1. Gets or creates the Attendance record for the date
+        2. Stores the previous state
+        3. Creates corrective AttendanceEvents with source='ADMIN'
+        4. Recomputes the attendance summary
+        5. Creates an AttendanceCorrection audit record
+        
+        Returns:
+            AttendanceCorrection instance
+        """
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Get or create attendance record
+            attendance, created = Attendance.get_or_create_for_date(
+                employee=self.employee,
+                date=self.attendance_date
+            )
+            
+            # Store previous state for audit
+            previous_data = {
+                "check_in": attendance.check_in.isoformat() if attendance.check_in else None,
+                "check_out": attendance.check_out.isoformat() if attendance.check_out else None,
+                "status": attendance.status,
+                "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
+            }
+            
+            # Create corrective AttendanceEvents based on request type
+            self._create_correction_events()
+            
+            # Recompute attendance from events (preserves event-based architecture)
+            attendance.recompute_from_events()
+            
+            # Create audit record
+            correction = AttendanceCorrection.objects.create(
+                attendance=attendance,
+                admin_user=reviewed_by_user,
+                correction_type="REGULARIZATION",
+                reason=f"Regularization approved: {self.reason}",
+                previous_data=previous_data,
+            )
+            
+            # Link the correction to this request
+            self.attendance_correction = correction
+            self.save(update_fields=["attendance_correction", "updated_at"])
+            
+            return correction
+    
+    def _create_correction_events(self):
+        """
+        Create corrective AttendanceEvents based on the regularization request.
+        
+        This preserves the event-based architecture by creating new events
+        with source='ADMIN' rather than directly modifying attendance summaries.
+        """
+        # Get employee's effective shift for the date
+        shift = self.employee.get_effective_shift()
+        
+        # Create check-in event if requested
+        if self.requested_check_in:
+            AttendanceEvent.objects.create(
+                employee=self.employee,
+                shift=shift,
+                timestamp=self.requested_check_in,
+                event_type="CHECK_IN",
+                source="ADMIN",
+            )
+        
+        # Create check-out event if requested
+        if self.requested_check_out:
+            AttendanceEvent.objects.create(
+                employee=self.employee,
+                shift=shift,
+                timestamp=self.requested_check_out,
+                event_type="CHECK_OUT",
+                source="ADMIN",
+            )
