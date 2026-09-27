@@ -25,6 +25,7 @@ class UserProfileSerializer(serializers.Serializer):
     email = serializers.EmailField()
     is_staff = serializers.BooleanField()
     is_superuser = serializers.BooleanField()
+    is_system_admin = serializers.BooleanField()
     must_change_password = serializers.SerializerMethodField()
     app_access = serializers.SerializerMethodField()
 

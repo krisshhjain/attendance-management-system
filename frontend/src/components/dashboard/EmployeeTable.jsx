@@ -27,13 +27,16 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import CameraAltOutlinedIcon from "@mui/icons-material/CameraAltOutlined";
 import FaceIcon from "@mui/icons-material/Face";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import { AddEmployeeDialog } from "./AddEmployeeDialog.jsx";
 import { EditEmployeeDialog } from "./EditEmployeeDialog.jsx";
 import { ChangePasswordDialog } from "./ChangePasswordDialog.jsx";
+import { ShiftAssignmentDialog } from "./ShiftAssignmentDialog.jsx";
 import WebcamCapture from "../WebcamCapture.jsx";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import { TextField, MenuItem, Select, FormControl, InputAdornment } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import PeopleIcon from "@mui/icons-material/People";
 import { filterScopedRecords, useOrganizationScope } from "../../lib/organizationScope.jsx";
 
 export function EmployeeTable({ scope }) {
@@ -47,6 +50,7 @@ export function EmployeeTable({ scope }) {
   const [enrollLoading, setEnrollLoading] = useState(false);
   const [enrollError, setEnrollError] = useState(null);
   const [enrollSuccess, setEnrollSuccess] = useState(false);
+  const [shiftEmployee, setShiftEmployee] = useState(null);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
@@ -254,6 +258,7 @@ export function EmployeeTable({ scope }) {
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Type</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Sec</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Sub</TableCell>
+                <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Shift</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Date Joined</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.75rem", textTransform: "uppercase" }}>Biometrics</TableCell>
@@ -307,6 +312,22 @@ export function EmployeeTable({ scope }) {
                       </Typography>
                     </TableCell>
                     <TableCell>
+                      {emp.shift ? (
+                        <Box>
+                          <Typography variant="body2" fontWeight={500} color="text.primary">
+                            {emp.shift.code}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {emp.shift.start_time} - {emp.shift.end_time}
+                          </Typography>
+                        </Box>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          No shift
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Typography variant="body2" color="text.secondary">
                         {emp.date_joined || "-"}
                       </Typography>
@@ -341,6 +362,15 @@ export function EmployeeTable({ scope }) {
                     </TableCell>
                     <TableCell align="right">
                       <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 0.5 }}>
+                        <Tooltip title="Assign Shift">
+                          <IconButton
+                            size="small"
+                            onClick={() => setShiftEmployee(emp)}
+                            sx={{ color: "text.secondary", "&:hover": { color: "info.main", bgcolor: "rgba(33,150,243,0.06)" } }}
+                          >
+                            <AccessTimeIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title={emp.has_face_enrolled ? "Re-enroll Face" : "Enroll Face"}>
                           <IconButton
                             size="small"
@@ -412,6 +442,14 @@ export function EmployeeTable({ scope }) {
         employee={passwordEmployee}
         onClose={() => setPasswordEmployee(null)}
         onSuccess={() => { setPasswordEmployee(null); }}
+      />
+
+      {/* Shift Assignment Dialog */}
+      <ShiftAssignmentDialog
+        open={Boolean(shiftEmployee)}
+        employee={shiftEmployee}
+        onClose={() => setShiftEmployee(null)}
+        onSuccess={() => { setShiftEmployee(null); refetch(); }}
       />
 
       {/* Delete Confirmation Dialog */}

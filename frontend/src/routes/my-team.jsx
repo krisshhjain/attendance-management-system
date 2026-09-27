@@ -1,19 +1,15 @@
+import { useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../lib/api.js";
 import { RequireAuth } from "../components/RequireAuth.jsx";
-import {
-  Box,
-  Typography,
-  Avatar,
-  Skeleton,
-  Alert,
-} from "@mui/material";
-import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
-import BeachAccessOutlinedIcon from "@mui/icons-material/BeachAccessOutlined";
-import HourglassEmptyOutlinedIcon from "@mui/icons-material/HourglassEmptyOutlined";
+import { Box, Typography, Avatar, Skeleton, Alert } from "@mui/material";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
+import BeachAccessRoundedIcon from "@mui/icons-material/BeachAccessRounded";
+import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import InboxRoundedIcon from "@mui/icons-material/InboxRounded";
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 
@@ -31,44 +27,59 @@ export const Route = createFileRoute("/my-team")({
   ),
 });
 
-// ── Column config ─────────────────────────────────────────────────────────────
+// ── Font loader ───────────────────────────────────────────────────────────────
+// Inter reads as a crisp, considered enterprise typeface. Loaded once, quietly.
+
+function useInterFont() {
+  useEffect(() => {
+    if (document.getElementById("inter-font-link")) return;
+    const link = document.createElement("link");
+    link.id = "inter-font-link";
+    link.rel = "stylesheet";
+    link.href =
+      "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
+    document.head.appendChild(link);
+  }, []);
+}
+
+const FONT = '"Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
+// ── Design tokens ─────────────────────────────────────────────────────────────
+
+const INK = "#101828";
+const TEXT_2 = "#475467";
+const TEXT_3 = "#98a2b3";
+const BORDER = "#e4e7ec";
+const BORDER_LIGHT = "#eef0f3";
+const SURFACE = "#ffffff";
+const PAGE_BG = "#f8f9fb";
+const PRIMARY = "#3555e6";
+const PRIMARY_SOFT = "#eef1fd";
 
 const COLUMNS = [
   {
     key: "CHECKED_IN",
-    label: "Checked In",
+    label: "Checked in",
     countKey: "checked_in_count",
-    color: "#166534",
-    avatarBg: "#16a34a",
-    columnBg: "#f0fdf4",
-    headerBg: "#dcfce7",
-    borderColor: "#bbf7d0",
-    countBadgeBg: "#16a34a",
-    icon: <CheckCircleOutlineIcon sx={{ fontSize: 14 }} />,
+    icon: CheckRoundedIcon,
+    solid: "#17b26a",
+    soft: "#eafcf3",
   },
   {
     key: "YET_TO_CHECK_IN",
-    label: "Yet to Check In",
+    label: "Yet to check in",
     countKey: "yet_to_check_in_count",
-    color: "#9a3412",
-    avatarBg: "#ea580c",
-    columnBg: "#fff7ed",
-    headerBg: "#ffedd5",
-    borderColor: "#fed7aa",
-    countBadgeBg: "#ea580c",
-    icon: <HourglassEmptyOutlinedIcon sx={{ fontSize: 14 }} />,
+    icon: ScheduleRoundedIcon,
+    solid: "#f79009",
+    soft: "#fffaeb",
   },
   {
     key: "ON_LEAVE",
-    label: "On Leave",
+    label: "On leave",
     countKey: "on_leave_count",
-    color: "#075985",
-    avatarBg: "#0284c7",
-    columnBg: "#f0f9ff",
-    headerBg: "#e0f2fe",
-    borderColor: "#bae6fd",
-    countBadgeBg: "#0284c7",
-    icon: <BeachAccessOutlinedIcon sx={{ fontSize: 14 }} />,
+    icon: BeachAccessRoundedIcon,
+    solid: "#2e90fa",
+    soft: "#eff8ff",
   },
 ];
 
@@ -91,70 +102,104 @@ function initials(name) {
     : parts[0].slice(0, 2).toUpperCase();
 }
 
-// ── Member card ───────────────────────────────────────────────────────────────
+// Calm, name-derived avatar tint pairs (bg / text) — a muted palette so the
+// roster feels considered rather than randomly colorful.
+const AVATAR_TINTS = [
+  ["#eef1fd", "#3555e6"],
+  ["#f4f3ff", "#6938ef"],
+  ["#ecfdf3", "#079455"],
+  ["#fff6ed", "#b93815"],
+  ["#fdf2fa", "#c11574"],
+  ["#f0f9ff", "#026aa2"],
+];
+function avatarTint(name) {
+  const sum = [...(name || "")].reduce((a, c) => a + c.charCodeAt(0), 0);
+  return AVATAR_TINTS[sum % AVATAR_TINTS.length];
+}
 
-function MemberCard({ member, col }) {
+// ── Member row ────────────────────────────────────────────────────────────────
+
+function MemberRow({ member, currentUserId, isLast }) {
+  const isCurrentUser = member.id === currentUserId;
+  const [avatarBg, avatarFg] = avatarTint(member.name);
+
   return (
     <Box
       sx={{
         display: "flex",
         alignItems: "center",
         gap: 1.5,
-        px: 1.5,
-        py: 1.25,
-        borderRadius: "10px",
-        bgcolor: "#fff",
-        border: "1px solid #e5e7eb",
-        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-        transition: "box-shadow 0.15s, transform 0.15s",
-        "&:hover": {
-          boxShadow: "0 3px 8px rgba(0,0,0,0.08)",
-          transform: "translateY(-1px)",
-        },
+        px: 1.25,
+        py: 1.1,
+        borderBottom: isLast ? "none" : `1px solid ${BORDER_LIGHT}`,
+        transition: "background-color 0.12s ease",
+        "&:hover": { bgcolor: "#fafbfc" },
       }}
     >
       <Avatar
         sx={{
-          width: 36,
-          height: 36,
-          bgcolor: col.avatarBg,
-          fontSize: "0.75rem",
+          width: 34,
+          height: 34,
+          bgcolor: avatarBg,
+          color: avatarFg,
+          fontSize: "0.72rem",
           fontWeight: 700,
           flexShrink: 0,
-          boxShadow: `0 0 0 2px ${col.headerBg}`,
+          fontFamily: FONT,
         }}
       >
         {initials(member.name)}
       </Avatar>
 
       <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-        <Typography
-          variant="body2"
-          fontWeight={600}
-          noWrap
-          sx={{ fontSize: "0.83rem", color: "#111827", lineHeight: 1.3 }}
-        >
-          {member.name}
-        </Typography>
-
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.25, flexWrap: "wrap" }}>
-          {member.subsection && (
-            <Typography
-              variant="caption"
-              sx={{ fontSize: "0.7rem", color: "#6b7280", fontWeight: 500 }}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+          <Typography
+            noWrap
+            sx={{ fontFamily: FONT, fontSize: "0.84rem", fontWeight: 600, color: INK, lineHeight: 1.35 }}
+          >
+            {member.name}
+          </Typography>
+          {isCurrentUser && (
+            <Box
+              sx={{
+                fontFamily: FONT,
+                fontSize: "0.65rem",
+                fontWeight: 700,
+                color: PRIMARY,
+                bgcolor: PRIMARY_SOFT,
+                borderRadius: "5px",
+                px: 0.7,
+                py: 0.15,
+                flexShrink: 0,
+              }}
             >
+              You
+            </Box>
+          )}
+        </Box>
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.2, flexWrap: "wrap" }}>
+          {member.subsection && (
+            <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}>
               {member.subsection}
             </Typography>
           )}
 
+          {member.status === "WEEKEND" && (
+            <>
+              {member.subsection && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
+              <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}>
+                Weekend
+              </Typography>
+            </>
+          )}
+
           {member.status === "CHECKED_IN" && member.check_in_time && (
             <>
-              {member.subsection && (
-                <Box sx={{ width: "3px", height: "3px", borderRadius: "50%", bgcolor: "#d1d5db" }} />
-              )}
+              {member.subsection && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.3 }}>
-                <AccessTimeIcon sx={{ fontSize: 10, color: "#9ca3af" }} />
-                <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "#9ca3af" }}>
+                <AccessTimeRoundedIcon sx={{ fontSize: 12, color: TEXT_3 }} />
+                <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}>
                   {formatTime(member.check_in_time)}
                 </Typography>
               </Box>
@@ -163,13 +208,8 @@ function MemberCard({ member, col }) {
 
           {member.status === "ON_LEAVE" && member.leave_type && (
             <>
-              {member.subsection && (
-                <Box sx={{ width: "3px", height: "3px", borderRadius: "50%", bgcolor: "#d1d5db" }} />
-              )}
-              <Typography
-                variant="caption"
-                sx={{ fontSize: "0.7rem", color: col.color, fontWeight: 600 }}
-              >
+              {member.subsection && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
+              <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_2, fontWeight: 600 }}>
                 {member.leave_type}
               </Typography>
             </>
@@ -182,93 +222,106 @@ function MemberCard({ member, col }) {
 
 // ── Column ────────────────────────────────────────────────────────────────────
 
-function Column({ col, members, isLoading }) {
+function Column({ col, members, isLoading, currentUserId }) {
+  const Icon = col.icon;
+
   return (
     <Box
       sx={{
-        flex: 1,
-        minWidth: 0,
         display: "flex",
         flexDirection: "column",
         borderRadius: "14px",
-        border: `1.5px solid ${col.borderColor}`,
-        bgcolor: col.columnBg,
+        border: `1px solid ${BORDER}`,
+        bgcolor: SURFACE,
         overflow: "hidden",
+        boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
       }}
     >
       {/* Header */}
       <Box
         sx={{
           px: 2,
-          py: 1.5,
-          bgcolor: col.headerBg,
-          borderBottom: `1.5px solid ${col.borderColor}`,
+          py: 1.6,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          borderBottom: `1px solid ${BORDER_LIGHT}`,
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-          <Box sx={{ color: col.color, display: "flex", alignItems: "center" }}>{col.icon}</Box>
-          <Typography
-            variant="subtitle2"
-            fontWeight={700}
-            sx={{ color: col.color, fontSize: "0.8rem", letterSpacing: "-0.01em" }}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.1 }}>
+          <Box
+            sx={{
+              width: 28,
+              height: 28,
+              borderRadius: "8px",
+              bgcolor: col.soft,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
           >
+            <Icon sx={{ fontSize: 16, color: col.solid }} />
+          </Box>
+          <Typography sx={{ fontFamily: FONT, fontSize: "0.86rem", fontWeight: 700, color: INK }}>
             {col.label}
           </Typography>
         </Box>
 
         {isLoading ? (
-          <Skeleton variant="rounded" width={22} height={20} sx={{ borderRadius: "6px" }} />
+          <Skeleton variant="rounded" width={26} height={20} sx={{ borderRadius: "6px" }} />
         ) : (
           <Box
             sx={{
-              minWidth: 22,
+              minWidth: 24,
               height: 22,
-              px: 0.75,
-              borderRadius: "6px",
-              bgcolor: col.countBadgeBg,
+              px: 0.85,
+              borderRadius: "999px",
+              bgcolor: col.soft,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Typography sx={{ fontSize: "0.7rem", fontWeight: 700, color: "#fff" }}>
+            <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", fontWeight: 700, color: col.solid }}>
               {members.length}
             </Typography>
           </Box>
         )}
       </Box>
 
-      {/* Cards */}
-      <Box
-        sx={{
-          flex: 1,
-          p: 1.25,
-          display: "flex",
-          flexDirection: "column",
-          gap: 0.75,
-          overflowY: "auto",
-          minHeight: 160,
-        }}
-      >
+      {/* Rows */}
+      <Box sx={{ flex: 1, overflowY: "auto", minHeight: 200, px: 0.75 }}>
         {isLoading &&
           [...Array(4)].map((_, i) => (
-            <Skeleton key={i} variant="rounded" height={54} sx={{ borderRadius: "10px", bgcolor: "rgba(0,0,0,0.06)" }} />
+            <Box key={i} sx={{ px: 0.5, py: 1 }}>
+              <Skeleton variant="rounded" height={44} sx={{ borderRadius: "8px", bgcolor: "#f2f3f6" }} />
+            </Box>
           ))}
 
         {!isLoading && members.length === 0 && (
-          <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", py: 5 }}>
-            <Typography variant="caption" sx={{ color: "#9ca3af", fontStyle: "italic", fontSize: "0.75rem" }}>
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 1,
+              py: 6,
+            }}
+          >
+            <InboxRoundedIcon sx={{ fontSize: 22, color: BORDER }} />
+            <Typography sx={{ fontFamily: FONT, color: TEXT_3, fontSize: "0.78rem", fontWeight: 500 }}>
               No members
             </Typography>
           </Box>
         )}
 
-        {!isLoading && members.map((m) => (
-          <MemberCard key={m.id} member={m} col={col} />
-        ))}
+        {!isLoading &&
+          members.map((m, i) => (
+            <MemberRow key={m.id} member={m} currentUserId={currentUserId} isLast={i === members.length - 1} />
+          ))}
       </Box>
     </Box>
   );
@@ -277,6 +330,8 @@ function Column({ col, members, isLoading }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 function MyTeamPage() {
+  useInterFont();
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["my-team"],
     queryFn: () => apiRequest("/attendance/my-team/"),
@@ -293,12 +348,12 @@ function MyTeamPage() {
 
   const grouped = {
     CHECKED_IN: data?.members?.filter((m) => m.status === "CHECKED_IN") ?? [],
-    YET_TO_CHECK_IN: data?.members?.filter((m) => m.status === "YET_TO_CHECK_IN") ?? [],
+    YET_TO_CHECK_IN: data?.members?.filter((m) => m.status === "YET_TO_CHECK_IN" || m.status === "WEEKEND") ?? [],
     ON_LEAVE: data?.members?.filter((m) => m.status === "ON_LEAVE") ?? [],
   };
 
   return (
-    <Box>
+    <Box sx={{ fontFamily: FONT }}>
       {/* Override EmployeeLayout's inner container to be truly full-width */}
       <Box
         sx={{
@@ -307,75 +362,107 @@ function MyTeamPage() {
           px: { xs: 2, sm: 3, md: 4 },
           pb: 4,
           minHeight: "100%",
-          bgcolor: "#f8fafc",
+          bgcolor: PAGE_BG,
         }}
       >
         {/* Page header */}
         <Box
           sx={{
-            pt: 3,
+            pt: 3.5,
             pb: 2.5,
             display: "flex",
             alignItems: { xs: "flex-start", sm: "center" },
             justifyContent: "space-between",
             flexDirection: { xs: "column", sm: "row" },
-            gap: 1.5,
-            borderBottom: "1px solid #e5e7eb",
-            mb: 2.5,
+            gap: 2,
           }}
         >
-          <Box>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.25 }}>
-              <GroupsOutlinedIcon sx={{ color: "#6366f1", fontSize: 22 }} />
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "10px",
+                bgcolor: PRIMARY_SOFT,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <GroupsRoundedIcon sx={{ color: PRIMARY, fontSize: 21 }} />
+            </Box>
+            <Box>
               <Typography
-                variant="h6"
-                fontWeight={700}
-                sx={{ color: "#111827", fontSize: "1.1rem", letterSpacing: "-0.02em" }}
+                sx={{ fontFamily: FONT, color: INK, fontSize: "1.2rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2 }}
               >
                 My Team
               </Typography>
+              <Typography sx={{ fontFamily: FONT, color: TEXT_2, fontSize: "0.8rem", fontWeight: 500, mt: 0.2 }}>
+                {today}
+                {data && (
+                  <span style={{ color: TEXT_3 }}>
+                    {" "}
+                    · {data.team_employment_type} · Section {data.team_section}
+                  </span>
+                )}
+              </Typography>
             </Box>
-            <Typography variant="body2" sx={{ color: "#6b7280", fontSize: "0.78rem" }}>
-              {today}
-              {data && (
-                <> &mdash; {data.team_employment_type} · Section {data.team_section}</>
-              )}
-            </Typography>
           </Box>
 
-          {/* Summary pills */}
+          {/* Summary stat cards */}
           {!isLoading && data && (
             <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              {COLUMNS.map((col) => (
-                <Box
-                  key={col.key}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 0.6,
-                    px: 1.25,
-                    py: 0.6,
-                    borderRadius: "99px",
-                    bgcolor: col.headerBg,
-                    border: `1px solid ${col.borderColor}`,
-                  }}
-                >
-                  <Box sx={{ color: col.color, display: "flex" }}>{col.icon}</Box>
-                  <Typography sx={{ fontSize: "0.75rem", fontWeight: 700, color: col.color }}>
-                    {data[col.countKey] ?? 0}
-                  </Typography>
-                  <Typography sx={{ fontSize: "0.73rem", color: "#6b7280" }}>
-                    {col.label}
-                  </Typography>
-                </Box>
-              ))}
+              {COLUMNS.map((col) => {
+                const Icon = col.icon;
+                return (
+                  <Box
+                    key={col.key}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      pl: 1.4,
+                      pr: 1.8,
+                      py: 1,
+                      borderRadius: "10px",
+                      bgcolor: SURFACE,
+                      border: `1px solid ${BORDER}`,
+                      boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: "7px",
+                        bgcolor: col.soft,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon sx={{ fontSize: 14, color: col.solid }} />
+                    </Box>
+                    <Box>
+                      <Typography sx={{ fontFamily: FONT, fontSize: "0.95rem", fontWeight: 800, color: INK, lineHeight: 1.1 }}>
+                        {data[col.countKey] ?? 0}
+                      </Typography>
+                      <Typography sx={{ fontFamily: FONT, fontSize: "0.68rem", color: TEXT_3, fontWeight: 600, whiteSpace: "nowrap" }}>
+                        {col.label}
+                      </Typography>
+                    </Box>
+                  </Box>
+                );
+              })}
             </Box>
           )}
 
           {isLoading && (
             <Box sx={{ display: "flex", gap: 1 }}>
-              {[90, 110, 80].map((w, i) => (
-                <Skeleton key={i} variant="rounded" width={w} height={30} sx={{ borderRadius: "99px" }} />
+              {[120, 130, 110].map((w, i) => (
+                <Skeleton key={i} variant="rounded" width={w} height={52} sx={{ borderRadius: "10px" }} />
               ))}
             </Box>
           )}
@@ -383,12 +470,12 @@ function MyTeamPage() {
 
         {/* Errors / notices */}
         {isError && (
-          <Alert severity="error" sx={{ mb: 2, borderRadius: "10px" }}>
+          <Alert severity="error" sx={{ mb: 2, borderRadius: "10px", fontFamily: FONT }}>
             {error?.message ?? "Failed to load team data. Please try again."}
           </Alert>
         )}
         {!isLoading && !isError && data?.note && (
-          <Alert severity="info" sx={{ mb: 2, borderRadius: "10px" }}>
+          <Alert severity="info" sx={{ mb: 2, borderRadius: "10px", fontFamily: FONT }}>
             {data.note} Your team section or employment type may not be configured yet.
           </Alert>
         )}
@@ -408,6 +495,7 @@ function MyTeamPage() {
               col={col}
               members={grouped[col.key]}
               isLoading={isLoading}
+              currentUserId={data?.current_user_id}
             />
           ))}
         </Box>

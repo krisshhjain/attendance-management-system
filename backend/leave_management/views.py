@@ -14,6 +14,7 @@ from .permissions import (
     IsAdminOrSuperAdmin,
     IsEmployee,
     IsSystemAdminOrSuperAdminReadOnly,
+    IsManagerOrAdmin,
 )
 from .serializers import (
     CreateLeaveRequestSerializer,
@@ -177,7 +178,8 @@ class EmployeeCancelLeaveRequestView(APIView):
 # ==============================================================================
 
 class AdminLeaveRequestsView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    """Manager and Admin can view all leave requests."""
+    permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         requests = LeaveRequest.objects.select_related(
@@ -198,7 +200,8 @@ class AdminLeaveRequestsView(APIView):
 
 
 class AdminLeaveRequestDetailView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    """Manager and Admin can view leave request details."""
+    permission_classes = [IsManagerOrAdmin]
 
     def get(self, request, pk):
         try:
@@ -212,7 +215,8 @@ class AdminLeaveRequestDetailView(APIView):
 
 
 class AdminApproveLeaveView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    """Manager and Admin can approve leave requests."""
+    permission_classes = [IsManagerOrAdmin]
 
     def post(self, request, pk):
         try:
@@ -234,7 +238,8 @@ class AdminApproveLeaveView(APIView):
 
 
 class AdminDenyLeaveView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    """Manager and Admin can deny leave requests."""
+    permission_classes = [IsManagerOrAdmin]
 
     def post(self, request, pk):
         try:
@@ -256,7 +261,8 @@ class AdminDenyLeaveView(APIView):
 
 
 class AdminCancelApprovedLeaveView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    """Manager and Admin can cancel approved leave."""
+    permission_classes = [IsManagerOrAdmin]
 
     def post(self, request, pk):
         try:
@@ -276,7 +282,8 @@ class AdminCancelApprovedLeaveView(APIView):
 
 
 class AdminEmployeeLeaveBalancesView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    """Manager and Admin can view employee leave balances."""
+    permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         employee_id = request.query_params.get("employee_id")

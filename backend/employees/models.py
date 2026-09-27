@@ -37,9 +37,43 @@ class Employee(models.Model):
     section = models.CharField(max_length=10, blank=True, default="")
     subsection = models.CharField(max_length=10, blank=True, default="")
     app_access = models.JSONField(default=default_app_access, blank=True)
+    shift = models.ForeignKey(
+        "attendance.Shift",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="employees",
+    )
 
     def __str__(self):
         return self.user.email
+    
+    def get_effective_shift(self):
+        """
+        Get the effective shift for this employee based on employment type configuration.
+        
+        Returns:
+            - Employee's assigned shift if they have one (Employee.shift)
+            - Single configured shift if exactly one exists for their employment type
+            - None otherwise (no shifts configured or multiple shifts available)
+        """
+        # If employee has an explicitly assigned shift, use that
+        if self.shift is not None:
+            return self.shift
+        
+        # Check shifts configured for this employment type
+        from attendance.models import Shift
+        configured_shifts = Shift.objects.filter(
+            employment_type=self.employment_type,
+            is_active=True
+        )
+        
+        # If exactly one shift configured, auto-assign it
+        if configured_shifts.count() == 1:
+            return configured_shifts.first()
+        
+        # Otherwise (0 or multiple), no effective shift
+        return None
 
 class FaceProfile(models.Model):
     STATUS_CHOICES = [

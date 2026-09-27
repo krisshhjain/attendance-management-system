@@ -12,13 +12,26 @@ class LoginView(TokenObtainPairView):
 
 
 class SystemAdminLoginView(TokenObtainPairView):
+    """
+    Manager login endpoint.
+    Allows ONLY users with is_system_admin=True (Managers).
+    SuperUsers must use the regular admin login.
+    """
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        if not (serializer.user.is_system_admin or serializer.user.is_superuser):
+        # Only allow is_system_admin users (Managers), NOT superusers
+        if not serializer.user.is_system_admin:
             return Response(
-                {"detail": "You do not have System Admin privileges."},
+                {"detail": "You do not have Manager privileges."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        
+        # Explicitly reject superusers from this endpoint
+        if serializer.user.is_superuser:
+            return Response(
+                {"detail": "SuperUser accounts must use the admin login."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 

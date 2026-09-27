@@ -1,15 +1,51 @@
 from django.utils import timezone
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.db import transaction
+from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser
-from leave_management.permissions import IsEmployee
+from leave_management.permissions import (
+    IsEmployee, 
+    IsAdminOrAppAdmin, 
+    IsEmployeeWithShift,
+    IsManagerOrAdmin,
+    IsManagerOrSuperUser,
+)
 
 from employees.models import Employee
-from .models import Attendance, AttendanceAuditLog
+from .models import Attendance, AttendanceEvent, AttendanceAuditLog, Shift
 from .geofence import validate_attendance_geofence
 from .face_service import find_closest_match, verify_employee_face, FaceExtractionError
 from leave_management.models import LeaveRequest
+
+
+def _get_last_event_state(employee, date):
+    """Determine check-in/check-out state from events or attendance record.
+    Returns: (state, last_event) where state is:
+      - 'CHECKED_IN'   : currently checked in (has CHECK_IN, no CHECK_OUT)
+      - 'CHECKED_OUT'  : already checked out (has CHECK_OUT)
+      - 'NOT_CHECKED_IN' : no check-in today
+    """
+    last_event = employee.attendance_events.filter(
+        timestamp__date=date
+    ).order_by("-timestamp").first()
+
+    if last_event:
+        if last_event.event_type == "CHECK_IN":
+            return 'CHECKED_IN', last_event
+        else:  # CHECK_OUT
+            return 'CHECKED_OUT', last_event
+
+    # Fallback: check Attendance record for backward compatibility
+    try:
+        attendance = Attendance.objects.get(employee=employee, date=date)
+        if attendance.check_out:
+            return 'CHECKED_OUT', None
+        if attendance.check_in:
+            return 'CHECKED_IN', None
+        return 'NOT_CHECKED_IN', None
+    except Attendance.DoesNotExist:
+        return 'NOT_CHECKED_IN', None
 
 
 class CheckInView(APIView):
@@ -34,10 +70,8 @@ class CheckInView(APIView):
         if not is_valid:
             return Response({"error": error_msg}, status=400)
 
-        attendance, created = Attendance.objects.get_or_create(
-            employee=employee,
-            date=today,
-        )
+        # Get or create attendance record
+        attendance, created = Attendance.get_or_create_for_date(employee, today)
 
         if attendance.status == "LEAVE":
             return Response(
@@ -45,7 +79,6 @@ class CheckInView(APIView):
                 status=400,
             )
 
-        from leave_management.models import LeaveRequest
         has_approved_leave = LeaveRequest.objects.filter(
             employee=employee,
             status="APPROVED",
@@ -59,21 +92,42 @@ class CheckInView(APIView):
                 status=400,
             )
 
-        if not created and attendance.check_in is not None:
+        # Check if employee has an effective shift
+        effective_shift = employee.get_effective_shift()
+        if effective_shift is None:
             return Response(
-                {"error": "Already checked in today"},
+                {"error": "You must have a shift assigned before checking in. Please self-assign a shift or contact admin."},
+                status=400,
+            )
+
+        # Check current state via events
+        state, last_event = _get_last_event_state(employee, today)
+        if state == 'CHECKED_IN':
+            return Response(
+                {"error": "Already checked in"},
                 status=400,
             )
 
         lat, lon, acc = coords
-        attendance.check_in = timezone.now()
-        attendance.status = "INCOMPLETE"
-        attendance.check_in_latitude = lat
-        attendance.check_in_longitude = lon
-        attendance.check_in_accuracy = acc
-        attendance.check_in_distance = distance
-        attendance.save()
+        now = timezone.now()
 
+        # Create AttendanceEvent with effective shift
+        with transaction.atomic():
+            AttendanceEvent.objects.create(
+                employee=employee,
+                shift=effective_shift,
+                timestamp=now,
+                event_type="CHECK_IN",
+                source="MOBILE",
+                latitude=lat,
+                longitude=lon,
+                accuracy=acc,
+                distance=distance,
+            )
+            # Recompute attendance summary
+            attendance.recompute_from_events()
+
+        attendance.refresh_from_db()
         return Response(
             {
                 "message": "Attendance marked successfully.",
@@ -115,46 +169,40 @@ class CheckOutView(APIView):
                 status=400,
             )
 
-        if attendance.check_in is None:
+        # Check current state via events
+        state, last_event = _get_last_event_state(employee, today)
+        if state == 'NOT_CHECKED_IN':
             return Response(
                 {"error": "You have not checked in today"},
                 status=400,
             )
-
-        if attendance.check_out is not None:
+        if state == 'CHECKED_OUT':
             return Response(
                 {"error": "Already checked out today"},
                 status=400,
             )
 
-        # Safety 5-minute rest period check
-        cooldown_seconds = 300
-        time_since_check_in = (timezone.now() - attendance.check_in).total_seconds()
-        if time_since_check_in < cooldown_seconds:
-            remaining = int(cooldown_seconds - time_since_check_in)
-            mins = remaining // 60
-            secs = remaining % 60
-            time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-            return Response(
-                {
-                    "error": f"Safety Cooldown: You must wait 5 minutes after checking in before checking out. Please wait {time_str} longer.",
-                    "cooldown_remaining_seconds": remaining,
-                },
-                status=400,
-            )
-
         lat, lon, acc = coords
-        attendance.check_out = timezone.now()
-        attendance.working_duration = (
-            attendance.check_out - attendance.check_in
-        )
-        attendance.status = "PRESENT"
-        attendance.check_out_latitude = lat
-        attendance.check_out_longitude = lon
-        attendance.check_out_accuracy = acc
-        attendance.check_out_distance = distance
-        attendance.save()
+        now = timezone.now()
+        
+        # Get effective shift for event recording
+        effective_shift = employee.get_effective_shift()
 
+        with transaction.atomic():
+            AttendanceEvent.objects.create(
+                employee=employee,
+                shift=effective_shift,
+                timestamp=now,
+                event_type="CHECK_OUT",
+                source="MOBILE",
+                latitude=lat,
+                longitude=lon,
+                accuracy=acc,
+                distance=distance,
+            )
+            attendance.recompute_from_events()
+
+        attendance.refresh_from_db()
         return Response(
             {
                 "message": "Check-out successful",
@@ -187,8 +235,9 @@ class TodayAttendanceView(APIView):
                 date=today,
             )
         except Attendance.DoesNotExist:
+            # Always return NOT_CHECKED_IN - weekends should allow attendance if employee comes to office
             return Response({
-                "status": "NOT_CHECKED_IN" if working_day else "HOLIDAY",
+                "status": "NOT_CHECKED_IN",
                 "check_in": None,
                 "check_out": None,
                 "working_duration": None,
@@ -196,14 +245,17 @@ class TodayAttendanceView(APIView):
             })
 
         working_duration = attendance.working_duration
+        state, last_event = _get_last_event_state(employee, today)
+
         if attendance.check_in and not attendance.check_out:
             working_duration = timezone.now() - attendance.check_in
 
         if attendance.status == "LEAVE":
             status = "LEAVE"
-        elif attendance.check_in is None:
-            status = "NOT_CHECKED_IN" if working_day else "HOLIDAY"
-        elif attendance.check_out is not None:
+        elif state == "NOT_CHECKED_IN":
+            # Always allow check-in, even on weekends
+            status = "NOT_CHECKED_IN"
+        elif state == "CHECKED_OUT":
             status = "COMPLETED"
         else:
             status = "CHECKED_IN"
@@ -228,6 +280,7 @@ class MyTeamView(APIView):
       - ON_LEAVE      : has an APPROVED LeaveRequest covering today
       - CHECKED_IN    : has a today Attendance record with check_in set
                         (includes both still-checked-in and already-checked-out)
+      - WEEKEND       : today is Saturday/Sunday and employee has no attendance
       - YET_TO_CHECK_IN : active team member with no check_in today and not on leave
     """
     permission_classes = [IsEmployee]
@@ -298,6 +351,9 @@ class MyTeamView(APIView):
         checked_in_count = 0
         yet_to_check_in_count = 0
         on_leave_count = 0
+        
+        # Check if today is a weekend (Saturday=5, Sunday=6)
+        is_weekend = today.weekday() in [5, 6]
 
         for emp in teammates:
             att = attendance_map.get(emp.id)
@@ -309,6 +365,9 @@ class MyTeamView(APIView):
             elif att is not None and att.check_in is not None:
                 member_status = "CHECKED_IN"
                 checked_in_count += 1
+            elif is_weekend:
+                # Weekend with no attendance → not counted as yet-to-check-in
+                member_status = "WEEKEND"
             else:
                 member_status = "YET_TO_CHECK_IN"
                 yet_to_check_in_count += 1
@@ -337,39 +396,87 @@ class MyTeamView(APIView):
                 "yet_to_check_in_count": yet_to_check_in_count,
                 "on_leave_count": on_leave_count,
                 "members": members,
+                "current_user_id": me.id,
             },
             status=200,
         )
 
 
+class IsEmployeeOrManager(BasePermission):
+    """Allow employees or managers."""
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        # Allow managers and admins
+        if request.user.is_staff or request.user.is_system_admin:
+            return True
+        # Allow employees with app access
+        try:
+            employee = request.user.employee
+            app_key = getattr(view, 'app_access_key', None)
+            if app_key:
+                return employee.is_active and employee.app_access.get(app_key, False)
+            return employee.is_active
+        except Employee.DoesNotExist:
+            return False
+
+
 class AttendanceHistoryView(APIView):
-    permission_classes = [IsEmployee]
+    """View attendance history - accessible by employees and managers."""
+    permission_classes = [IsEmployeeOrManager]
     app_access_key = "attendance"
 
     def get(self, request):
-        if not hasattr(request.user, "employee"):
-            return Response([])
-        employee = request.user.employee
-
-        attendance_records = Attendance.objects.filter(
-            employee=employee
-        ).order_by("-date")
+        # Check if user is a manager or admin
+        is_manager_or_admin = request.user.is_staff or request.user.is_system_admin
+        
+        if is_manager_or_admin:
+            # Managers/admins see all employees' attendance
+            # Check for employee_id filter
+            employee_id = request.query_params.get('employee_id')
+            if employee_id:
+                try:
+                    attendance_records = Attendance.objects.filter(
+                        employee_id=employee_id
+                    ).select_related('employee__user').order_by("-date")
+                except ValueError:
+                    return Response({"error": "Invalid employee_id"}, status=400)
+            else:
+                # Return all employees' attendance
+                attendance_records = Attendance.objects.select_related(
+                    'employee__user'
+                ).order_by("-date")
+        else:
+            # Regular employees see only their own attendance
+            if not hasattr(request.user, "employee"):
+                return Response([])
+            employee = request.user.employee
+            attendance_records = Attendance.objects.filter(
+                employee=employee
+            ).order_by("-date")
 
         data = []
-
         for attendance in attendance_records:
-            data.append({
+            record = {
                 "date": attendance.date,
                 "status": attendance.status,
                 "check_in": attendance.check_in,
                 "check_out": attendance.check_out,
                 "working_duration": attendance.working_duration,
-            })
+            }
+            # Add employee info for managers/admins
+            if is_manager_or_admin:
+                record["employee_id"] = attendance.employee.id
+                record["employee_name"] = f"{attendance.employee.user.first_name} {attendance.employee.user.last_name}"
+                record["employee_email"] = attendance.employee.user.email
+            
+            data.append(record)
 
         return Response(data)
 
 class AdminAttendanceView(APIView):
-    permission_classes = [IsAdminUser]
+    """Manager and Admin can view attendance records."""
+    permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         date_param = request.query_params.get("date")
@@ -428,7 +535,8 @@ class AdminAttendanceView(APIView):
 from config.business_rules import is_working_day
 
 class AdminDashboardView(APIView):
-    permission_classes = [IsAdminUser]
+    """Manager and Admin can view dashboard."""
+    permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         today = timezone.localdate()
@@ -482,7 +590,8 @@ class AdminDashboardView(APIView):
         })
 
 class AdminResetAttendanceView(APIView):
-    permission_classes = [IsAdminUser]
+    """Only SuperUser can reset attendance - Manager cannot."""
+    permission_classes = [IsAdminUser]  # Keep SuperUser-only
 
     def post(self, request):
         employee_email = request.data.get("employee")
@@ -497,9 +606,6 @@ class AdminResetAttendanceView(APIView):
         except Attendance.DoesNotExist:
             return Response({"error": "No attendance record found for today"}, status=404)
 
-        if not is_working_day(today):
-            return Response({"error": "Cannot reset attendance on a non-working day"}, status=400)
-
         reset_type = request.data.get("reset_type", "both")
 
         previous_data = {
@@ -509,29 +615,35 @@ class AdminResetAttendanceView(APIView):
             "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
         }
 
-        if reset_type == "checkout_only":
-            attendance.check_out = None
-            attendance.status = "INCOMPLETE"
-            attendance.working_duration = None
-            attendance.save()
-        else:
-            # Full wipe
-            attendance.delete()
-            attendance = None
+        with transaction.atomic():
+            if reset_type == "checkout_only":
+                attendance.check_out = None
+                attendance.status = "INCOMPLETE"
+                attendance.working_duration = None
+                attendance.save()
+            else:
+                # Full wipe - delete events and attendance
+                AttendanceEvent.objects.filter(
+                    employee=attendance.employee,
+                    timestamp__date=today
+                ).delete()
+                attendance.delete()
+                attendance = None
 
-        from .models import AttendanceCorrection
-        AttendanceCorrection.objects.create(
-            attendance=attendance,
-            admin_user=request.user,
-            correction_type="RESET",
-            reason=reason,
-            previous_data=previous_data
-        )
+            from .models import AttendanceCorrection
+            AttendanceCorrection.objects.create(
+                attendance=attendance,
+                admin_user=request.user,
+                correction_type="RESET",
+                reason=reason,
+                previous_data=previous_data
+            )
 
         return Response({"message": "Attendance successfully reset for today."})
 
 class AdminEditAttendanceView(APIView):
-    permission_classes = [IsAdminUser]
+    """Manager and Admin can edit past attendance."""
+    permission_classes = [IsManagerOrAdmin]
 
     def post(self, request):
         employee_email = request.data.get("employee")
@@ -552,9 +664,6 @@ class AdminEditAttendanceView(APIView):
             
         if target_date > timezone.localdate():
             return Response({"error": "Cannot edit future attendance."}, status=400)
-
-        if not is_working_day(target_date):
-            return Response({"error": "Cannot edit attendance for non-working days (weekends)."}, status=400)
 
         try:
             attendance = Attendance.objects.get(employee__user__email=employee_email, date=target_date)
@@ -591,10 +700,16 @@ class AdminEditAttendanceView(APIView):
 
         if attendance.check_in and attendance.check_out:
             attendance.working_duration = attendance.check_out - attendance.check_in
+            # Auto-correct status to PRESENT if both times are provided
+            if status == "INCOMPLETE":
+                attendance.status = "PRESENT"
+            else:
+                attendance.status = status
         else:
             attendance.working_duration = None
+            # If only check-in or no times, keep the provided status
+            attendance.status = status
 
-        attendance.status = status
         attendance.save()
 
         from .models import AttendanceCorrection
@@ -609,7 +724,8 @@ class AdminEditAttendanceView(APIView):
         return Response({"message": "Attendance successfully edited."})
 
 class AdminForceCheckoutView(APIView):
-    permission_classes = [IsAdminUser]
+    """Manager and Admin can force checkout."""
+    permission_classes = [IsManagerOrAdmin]
 
     def post(self, request):
         date_param = request.data.get("date")
@@ -643,10 +759,17 @@ class AdminForceCheckoutView(APIView):
         count = 0
         now = timezone.now()
         for att in attendances:
-            att.check_out = now
-            att.working_duration = now - att.check_in
-            att.status = "PRESENT"
-            att.save()
+            # Get effective shift for each employee
+            effective_shift = att.employee.get_effective_shift()
+            with transaction.atomic():
+                AttendanceEvent.objects.create(
+                    employee=att.employee,
+                    shift=effective_shift,
+                    timestamp=now,
+                    event_type="CHECK_OUT",
+                    source="ADMIN",
+                )
+                att.recompute_from_events()
             count += 1
             
         return Response({"message": f"Successfully forced check-out for {count} records", "count": count})
@@ -681,11 +804,8 @@ class WebsiteFacialCheckInView(APIView):
         if not is_match:
             return Response({"error": "Recognized face does not match your authenticated account."}, status=403)
 
-        # 3. Apply existing attendance rules
-        attendance, created = Attendance.objects.get_or_create(
-            employee=employee,
-            date=today,
-        )
+        # Get or create attendance record
+        attendance, created = Attendance.get_or_create_for_date(employee, today)
 
         if attendance.status == "LEAVE":
             return Response(
@@ -693,7 +813,6 @@ class WebsiteFacialCheckInView(APIView):
                 status=400,
             )
 
-        from leave_management.models import LeaveRequest
         has_approved_leave = LeaveRequest.objects.filter(
             employee=employee,
             status="APPROVED",
@@ -707,21 +826,35 @@ class WebsiteFacialCheckInView(APIView):
                 status=400,
             )
 
-        if not created and attendance.check_in is not None:
+        # Check current state via events
+        state, last_event = _get_last_event_state(employee, today)
+        if state == 'CHECKED_IN':
             return Response(
                 {"error": "Already checked in today"},
                 status=400,
             )
 
         lat, lon, acc = coords
-        attendance.check_in = timezone.now()
-        attendance.status = "INCOMPLETE"
-        attendance.check_in_latitude = lat
-        attendance.check_in_longitude = lon
-        attendance.check_in_accuracy = acc
-        attendance.check_in_distance = distance_geo
-        attendance.save()
+        now = timezone.now()
+        
+        # Get effective shift for event recording
+        effective_shift = employee.get_effective_shift()
 
+        with transaction.atomic():
+            AttendanceEvent.objects.create(
+                employee=employee,
+                shift=effective_shift,
+                timestamp=now,
+                event_type="CHECK_IN",
+                source="FACE_WEB",
+                latitude=lat,
+                longitude=lon,
+                accuracy=acc,
+                distance=distance_geo,
+            )
+            attendance.recompute_from_events()
+
+        attendance.refresh_from_db()
         return Response(
             {
                 "message": "Check-in successful",
@@ -761,7 +894,6 @@ class WebsiteFacialCheckOutView(APIView):
         if not is_match:
             return Response({"error": "Recognized face does not match your authenticated account."}, status=403)
 
-        # 3. Apply existing attendance checkout rules
         try:
             attendance = Attendance.objects.get(
                 employee=employee,
@@ -773,45 +905,40 @@ class WebsiteFacialCheckOutView(APIView):
                 status=400,
             )
 
-        if attendance.check_in is None:
+        # Check current state via events
+        state, last_event = _get_last_event_state(employee, today)
+        if state == 'NOT_CHECKED_IN':
             return Response(
                 {"error": "You have not checked in today"},
                 status=400,
             )
-
-        if attendance.check_out is not None:
+        if state == 'CHECKED_OUT':
             return Response(
                 {"error": "Already checked out today"},
                 status=400,
             )
 
-        cooldown_seconds = 300
-        time_since_check_in = (timezone.now() - attendance.check_in).total_seconds()
-        if time_since_check_in < cooldown_seconds:
-            remaining = int(cooldown_seconds - time_since_check_in)
-            mins = remaining // 60
-            secs = remaining % 60
-            time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-            return Response(
-                {
-                    "error": f"Safety Cooldown: You must wait 5 minutes after checking in before checking out. Please wait {time_str} longer.",
-                    "cooldown_remaining_seconds": remaining,
-                },
-                status=400,
-            )
-
         lat, lon, acc = coords
-        attendance.check_out = timezone.now()
-        attendance.working_duration = (
-            attendance.check_out - attendance.check_in
-        )
-        attendance.status = "PRESENT"
-        attendance.check_out_latitude = lat
-        attendance.check_out_longitude = lon
-        attendance.check_out_accuracy = acc
-        attendance.check_out_distance = distance_geo
-        attendance.save()
+        now = timezone.now()
+        
+        # Get effective shift for event recording
+        effective_shift = employee.get_effective_shift()
 
+        with transaction.atomic():
+            AttendanceEvent.objects.create(
+                employee=employee,
+                shift=effective_shift,
+                timestamp=now,
+                event_type="CHECK_OUT",
+                source="FACE_WEB",
+                latitude=lat,
+                longitude=lon,
+                accuracy=acc,
+                distance=distance_geo,
+            )
+            attendance.recompute_from_events()
+
+        attendance.refresh_from_db()
         return Response(
             {
                 "message": "Check-out successful",
@@ -857,10 +984,7 @@ class KioskFaceCheckInView(APIView):
             return Response({"error": "Face not recognized."}, status=403)
 
         today = timezone.localdate()
-        attendance, created = Attendance.objects.get_or_create(
-            employee=employee,
-            date=today,
-        )
+        attendance, created = Attendance.get_or_create_for_date(employee, today)
 
         from leave_management.models import LeaveRequest
         has_approved_leave = LeaveRequest.objects.filter(
@@ -876,15 +1000,33 @@ class KioskFaceCheckInView(APIView):
                 status=400,
             )
 
-        if not created and attendance.check_in is not None:
+        # Check if employee has an effective shift
+        effective_shift = employee.get_effective_shift()
+        if effective_shift is None:
+            return Response(
+                {"error": "You must have a shift assigned before checking in. Please contact admin."},
+                status=400,
+            )
+
+        # Check current state via events
+        state, _ = _get_last_event_state(employee, today)
+        if state == 'CHECKED_IN':
             return Response(
                 {"error": f"Hello {employee.user.first_name}, you are already checked in today."},
                 status=400,
             )
 
-        attendance.check_in = timezone.now()
-        attendance.status = "INCOMPLETE"
-        attendance.save()
+        now = timezone.now()
+
+        with transaction.atomic():
+            AttendanceEvent.objects.create(
+                employee=employee,
+                shift=effective_shift,
+                timestamp=now,
+                event_type="CHECK_IN",
+                source="KIOSK",
+            )
+            attendance.recompute_from_events()
 
         AttendanceAuditLog.objects.create(
             event_type="CHECK_IN",
@@ -893,6 +1035,7 @@ class KioskFaceCheckInView(APIView):
             distance=distance,
         )
 
+        attendance.refresh_from_db()
         return Response(
             {
                 "message": f"Welcome, {employee.user.first_name}!",
@@ -947,35 +1090,33 @@ class KioskFaceCheckOutView(APIView):
                 status=400,
             )
 
-        if attendance.check_in is None:
+        # Check current state via events
+        state, last_event = _get_last_event_state(employee, today)
+        if state == 'NOT_CHECKED_IN':
             return Response(
                 {"error": f"Hello {employee.user.first_name}, you have not checked in today."},
                 status=400,
             )
-
-        if attendance.check_out is not None:
+        if state == 'CHECKED_OUT':
             return Response(
                 {"error": f"Hello {employee.user.first_name}, you are already checked out today."},
                 status=400,
             )
 
-        cooldown_seconds = 300
-        time_since_check_in = (timezone.now() - attendance.check_in).total_seconds()
-        if time_since_check_in < cooldown_seconds:
-            remaining = int(cooldown_seconds - time_since_check_in)
-            return Response(
-                {
-                    "error": f"Safety Cooldown: Please wait {remaining} more seconds before checking out.",
-                },
-                status=400,
-            )
+        now = timezone.now()
+        
+        # Get effective shift for event recording
+        effective_shift = employee.get_effective_shift()
 
-        attendance.check_out = timezone.now()
-        attendance.working_duration = (
-            attendance.check_out - attendance.check_in
-        )
-        attendance.status = "PRESENT"
-        attendance.save()
+        with transaction.atomic():
+            AttendanceEvent.objects.create(
+                employee=employee,
+                shift=effective_shift,
+                timestamp=now,
+                event_type="CHECK_OUT",
+                source="KIOSK",
+            )
+            attendance.recompute_from_events()
 
         AttendanceAuditLog.objects.create(
             event_type="CHECK_OUT",
@@ -984,6 +1125,7 @@ class KioskFaceCheckOutView(APIView):
             distance=distance,
         )
 
+        attendance.refresh_from_db()
         return Response(
             {
                 "message": f"Goodbye, {employee.user.first_name}! Check-out successful.",
@@ -1019,3 +1161,346 @@ class FaceVerifyView(APIView):
             },
             status=200,
         )
+
+
+# ============================================================================
+# SHIFT ASSIGNMENT VIEWS
+# ============================================================================
+
+class ShiftListView(APIView):
+    """List active shifts configured for employee's employment type."""
+    permission_classes = [IsEmployee]
+
+    def get(self, request):
+        employee = request.user.employee
+        
+        # Get shifts configured for this employee's employment type
+        shifts = Shift.objects.filter(
+            employment_type=employee.employment_type,
+            is_active=True
+        ).order_by("code")
+        
+        data = [
+            {
+                "id": s.id,
+                "code": s.code,
+                "name": s.name,
+                "start_time": s.start_time.strftime("%H:%M"),
+                "end_time": s.end_time.strftime("%H:%M"),
+            }
+            for s in shifts
+        ]
+        
+        return Response({
+            "shifts": data,
+            "count": len(data),
+            "employment_type": employee.employment_type
+        })
+
+
+class EmployeeShiftSelfAssignView(APIView):
+    """Employee self-assigns a shift (only if no shift assigned and from their employment type)."""
+    permission_classes = [IsEmployee]
+
+    def post(self, request):
+        employee = request.user.employee
+        
+        # Check if already has shift
+        if employee.shift is not None:
+            return Response(
+                {"error": "You already have a shift assigned. Contact admin to change it."},
+                status=400,
+            )
+        
+        shift_id = request.data.get("shift_id")
+        if not shift_id:
+            return Response({"error": "shift_id is required"}, status=400)
+        
+        try:
+            shift = Shift.objects.get(id=shift_id, is_active=True)
+        except Shift.DoesNotExist:
+            return Response({"error": "Invalid or inactive shift"}, status=400)
+        
+        # Validate shift belongs to employee's employment type
+        if shift.employment_type and shift.employment_type != employee.employment_type:
+            return Response(
+                {"error": f"This shift is configured for {shift.employment_type} employees only"},
+                status=400,
+            )
+        
+        # Atomic check-and-set to prevent race conditions
+        with transaction.atomic():
+            # Lock the employee row to prevent concurrent assignment
+            employee = Employee.objects.select_for_update().get(pk=employee.pk)
+            if employee.shift is not None:
+                return Response(
+                    {"error": "Shift already assigned by another request"},
+                    status=409,
+                )
+            employee.shift = shift
+            employee.save(update_fields=["shift"])
+        
+        return Response(
+            {
+                "message": "Shift self-assigned successfully",
+                "shift": {
+                    "id": shift.id,
+                    "code": shift.code,
+                    "name": shift.name,
+                    "start_time": shift.start_time.strftime("%H:%M"),
+                    "end_time": shift.end_time.strftime("%H:%M"),
+                }
+            },
+            status=200,
+        )
+
+
+class AdminEmployeeShiftAssignView(APIView):
+    """Manager and Admin can assign employee shifts."""
+    permission_classes = [IsManagerOrAdmin]
+
+    def post(self, request):
+        employee_email = request.data.get("employee_email")
+        shift_id = request.data.get("shift_id")  # null to remove
+        
+        if not employee_email:
+            return Response({"error": "employee_email is required"}, status=400)
+        
+        try:
+            employee = Employee.objects.get(user__email=employee_email)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found"}, status=404)
+        
+        if shift_id is not None:
+            try:
+                shift = Shift.objects.get(id=shift_id)
+                # Admin can assign inactive shifts too
+            except Shift.DoesNotExist:
+                return Response({"error": "Shift not found"}, status=400)
+            employee.shift = shift
+            message = f"Shift '{shift.code}' assigned to {employee_email}"
+        else:
+            employee.shift = None
+            message = f"Shift removed from {employee_email}"
+        
+        employee.save(update_fields=["shift"])
+        
+        return Response({"message": message, "employee_email": employee_email, "shift_id": shift_id})
+
+
+class AdminEmployeeShiftBulkAssignView(APIView):
+    """Manager and Admin can bulk assign shifts."""
+    permission_classes = [IsManagerOrAdmin]
+
+    def post(self, request):
+        shift_id = request.data.get("shift_id")
+        employee_emails = request.data.get("employee_emails", [])  # list
+        section = request.data.get("section")  # optional filter
+        employment_type = request.data.get("employment_type")  # optional filter
+        
+        if shift_id is None and not employee_emails and not section and not employment_type:
+            return Response({"error": "Provide shift_id and at least one target filter"}, status=400)
+        
+        if shift_id is not None:
+            try:
+                shift = Shift.objects.get(id=shift_id)
+            except Shift.DoesNotExist:
+                return Response({"error": "Shift not found"}, status=400)
+        else:
+            shift = None  # remove shift
+        
+        # Build queryset
+        queryset = Employee.objects.filter(is_active=True)
+        if employee_emails:
+            queryset = queryset.filter(user__email__in=employee_emails)
+        if section:
+            queryset = queryset.filter(section=section)
+        if employment_type:
+            queryset = queryset.filter(employment_type=employment_type)
+        
+        count = queryset.update(shift=shift)
+        
+        action = "assigned" if shift else "removed from"
+        return Response({"message": f"Shift {action} {count} employees", "count": count})
+
+
+class MyShiftView(APIView):
+    """Get current employee's effective shift (assigned or auto-assigned from configuration)."""
+    permission_classes = [IsEmployee]
+
+    def get(self, request):
+        employee = request.user.employee
+        
+        # Get effective shift (assigned or single configured shift)
+        effective_shift = employee.get_effective_shift()
+        
+        if effective_shift is None:
+            # Check if there are configured shifts for this employment type
+            from attendance.models import Shift
+            configured_count = Shift.objects.filter(
+                employment_type=employee.employment_type,
+                is_active=True
+            ).count()
+            
+            if configured_count == 0:
+                return Response({
+                    "shift": None, 
+                    "message": "No shifts configured for your employment type",
+                    "requires_configuration": True
+                })
+            else:
+                return Response({
+                    "shift": None,
+                    "message": "Please select a shift",
+                    "requires_selection": True,
+                    "available_shifts_count": configured_count
+                })
+        
+        shift = effective_shift
+        # TimeField values may be datetime.time or string depending on DB
+        def fmt_time(t):
+            if hasattr(t, 'strftime'):
+                return t.strftime("%H:%M")
+            return str(t)
+        
+        return Response({
+            "shift": {
+                "id": shift.id,
+                "code": shift.code,
+                "name": shift.name,
+                "start_time": fmt_time(shift.start_time),
+                "end_time": fmt_time(shift.end_time),
+                "is_active": shift.is_active,
+            }
+        })
+
+
+# ============================================================================
+# Employment Type Shift Configuration APIs
+# ============================================================================
+
+
+class AdminShiftConfigurationView(APIView):
+    """Only SuperUser can configure global shifts - Manager cannot."""
+    permission_classes = [IsAdminOrAppAdmin]  # Keep SuperUser/Admin only
+
+    def get(self, request):
+        """Get all shifts grouped by employment type."""
+        shifts = Shift.objects.filter(is_active=True).order_by("employment_type", "code")
+        
+        # Group by employment type
+        config = {
+            "PERMANENT": [],
+            "CONTRACT": [],
+            "INTERN": [],
+            "UNASSIGNED": []  # Legacy shifts with no employment_type
+        }
+        
+        for shift in shifts:
+            emp_type = shift.employment_type or "UNASSIGNED"
+            config[emp_type].append({
+                "id": shift.id,
+                "code": shift.code,
+                "name": shift.name,
+                "start_time": shift.start_time.strftime("%H:%M"),
+                "end_time": shift.end_time.strftime("%H:%M"),
+            })
+        
+        return Response({
+            "configuration": config,
+            "employment_types": ["PERMANENT", "CONTRACT", "INTERN"]
+        })
+    
+    def post(self, request):
+        """Configure shifts for an employment type."""
+        employment_type = request.data.get("employment_type")
+        shifts_data = request.data.get("shifts", [])
+        
+        if not employment_type or employment_type not in ["PERMANENT", "CONTRACT", "INTERN"]:
+            return Response({"error": "Valid employment_type required"}, status=400)
+        
+        if not isinstance(shifts_data, list):
+            return Response({"error": "shifts must be an array"}, status=400)
+        
+        with transaction.atomic():
+            # Deactivate existing shifts for this employment type
+            Shift.objects.filter(employment_type=employment_type, is_active=True).update(is_active=False)
+            
+            # Create new shifts
+            created_shifts = []
+            for i, shift_data in enumerate(shifts_data):
+                name = shift_data.get("name", "").strip()
+                start_time = shift_data.get("start_time")
+                end_time = shift_data.get("end_time")
+                custom_code = shift_data.get("code", "").strip().upper()
+                
+                if not name:
+                    return Response({"error": f"Shift {i+1}: name is required"}, status=400)
+                
+                try:
+                    from datetime import time
+                    if isinstance(start_time, str):
+                        hour, minute = map(int, start_time.split(":"))
+                        start_time = time(hour, minute)
+                    if isinstance(end_time, str):
+                        hour, minute = map(int, end_time.split(":"))
+                        end_time = time(hour, minute)
+                except (ValueError, AttributeError):
+                    return Response({"error": f"Shift {i+1}: invalid time format (use HH:MM)"}, status=400)
+                
+                # Use custom code if provided, otherwise generate
+                if custom_code:
+                    # Check if custom code is already in use
+                    if Shift.objects.filter(code=custom_code, is_active=True).exists():
+                        return Response({"error": f"Shift {i+1}: code '{custom_code}' is already in use"}, status=400)
+                    code = custom_code
+                else:
+                    # Generate unique code
+                    base_code = f"{employment_type[:4]}{i+1}"
+                    code = base_code
+                    counter = 1
+                    while Shift.objects.filter(code=code).exists():
+                        code = f"{base_code}_{counter}"
+                        counter += 1
+                
+                shift = Shift.objects.create(
+                    name=name,
+                    code=code,
+                    start_time=start_time,
+                    end_time=end_time,
+                    employment_type=employment_type,
+                    is_active=True,
+                )
+                created_shifts.append({
+                    "id": shift.id,
+                    "code": shift.code,
+                    "name": shift.name,
+                    "start_time": shift.start_time.strftime("%H:%M"),
+                    "end_time": shift.end_time.strftime("%H:%M"),
+                })
+        
+        return Response({
+            "message": f"Configured {len(created_shifts)} shifts for {employment_type}",
+            "employment_type": employment_type,
+            "shifts": created_shifts
+        })
+
+
+class AdminAllShiftsView(APIView):
+    """Manager and Admin can view all shifts."""
+    permission_classes = [IsManagerOrAdmin]
+    
+    def get(self, request):
+        """Get all shifts for admin management (includes legacy shifts)."""
+        shifts = Shift.objects.filter(is_active=True).order_by("employment_type", "code")
+        data = []
+        for shift in shifts:
+            data.append({
+                "id": shift.id,
+                "code": shift.code,
+                "name": shift.name,
+                "start_time": shift.start_time.strftime("%H:%M"),
+                "end_time": shift.end_time.strftime("%H:%M"),
+                "employment_type": shift.employment_type or None,
+            })
+        return Response({"shifts": data})

@@ -87,9 +87,12 @@ export const Route = createFileRoute("/attendance")({
 // ── Admin table ───────────────────────────────────────────────────────────────
 // API shape: { employee (email), date, status, check_in, check_out, working_duration }
 
-function AdminAttendanceTable({ records, employees, date }) {
+function AdminAttendanceTable({ records, employees, date, user }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  
+  // Check if user is a Manager (not SuperUser)
+  const isManager = user?.is_system_admin && !user?.is_superuser;
 
   const getEmployeeName = (emp) => {
     if (typeof emp === 'string') return emp;
@@ -287,7 +290,7 @@ function AdminAttendanceTable({ records, employees, date }) {
                     Checkout
                   </Button>
                 )}
-                {record.date === todayISO() && (
+                {!isManager && record.date === todayISO() && (
                   <Button
                     size="small"
                     variant="outlined"
@@ -365,6 +368,7 @@ async function exportToExcel(records, date) {
 // ── Admin attendance page ─────────────────────────────────────────────────────
 
 function AdminAttendancePage() {
+  const { user } = useAuth();
   const { selectedScope } = useOrganizationScope();
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [records, setRecords] = useState(null);
@@ -567,7 +571,7 @@ function AdminAttendancePage() {
           </Typography>
         </Box>
       )}
-      {!loading && !error && (records?.length > 0 || employees?.length > 0) && <AdminAttendanceTable records={filteredRecords} employees={employees} date={selectedDate} />}
+      {!loading && !error && (records?.length > 0 || employees?.length > 0) && <AdminAttendanceTable records={filteredRecords} employees={employees} date={selectedDate} user={user} />}
 
       {/* Reset Modal */}
       <Dialog open={resetModal.open} onClose={() => setResetModal({ ...resetModal, open: false })} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: "16px", boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)" } }}>
@@ -738,6 +742,7 @@ function EmployeeAttendancePage() {
 
 function AttendancePage() {
   const { user, loginType } = useAuth();
-  const isAdmin = (user?.is_superuser || user?.is_staff) && (loginType === "admin" || loginType === "systemadmin");
+  // Show admin attendance page for SuperUsers, Admins (is_staff), and Managers (is_system_admin)
+  const isAdmin = (user?.is_superuser || user?.is_staff || user?.is_system_admin) && (loginType === "admin" || loginType === "systemadmin");
   return isAdmin ? <AdminAttendancePage /> : <EmployeeAttendancePage />;
 }

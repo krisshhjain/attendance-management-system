@@ -13,6 +13,13 @@ from .views import (
     WebsiteFacialCheckInView,
     WebsiteFacialCheckOutView,
     MyTeamView,
+    ShiftListView,
+    EmployeeShiftSelfAssignView,
+    AdminEmployeeShiftAssignView,
+    AdminEmployeeShiftBulkAssignView,
+    AdminShiftConfigurationView,
+    AdminAllShiftsView,
+    MyShiftView,
 )
 
 
@@ -27,4 +34,12 @@ urlpatterns = [
     path("kiosk/check-out/", KioskFaceCheckOutView.as_view(), name="kiosk-check-out"),
     path("verify-face/", FaceVerifyView.as_view(), name="verify-face"),
     path("my-team/", MyTeamView.as_view(), name="my-team"),
-]
+    # Shift assignment endpoints
+    path("shifts/", ShiftListView.as_view(), name="shift-list"),
+    path("my-shift/", MyShiftView.as_view(), name="my-shift"),
+    path("my-shift/assign/", EmployeeShiftSelfAssignView.as_view(), name="self-assign-shift"),
+    path("admin/shift/assign/", AdminEmployeeShiftAssignView.as_view(), name="admin-assign-shift"),
+    path("admin/shift/bulk-assign/", AdminEmployeeShiftBulkAssignView.as_view(), name="admin-bulk-assign-shift"),
+    path("admin/shift/configure/", AdminShiftConfigurationView.as_view(), name="admin-shift-configure"),
+    path("admin/shift/all/", AdminAllShiftsView.as_view(), name="admin-shifts-all"),
+]
