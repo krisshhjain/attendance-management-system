@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, getToday } from "../../lib/attendance.js";
 import { getCurrentCoordinates } from "../../lib/location.js";
-import { ATTENDANCE_GEOFENCE, calculateHaversineDistance } from "../../lib/geofence.js";
-import { ApiError } from "../../lib/api.js";
+import { ATTENDANCE_GEOFENCE, calculateHaversineDistance, isLocationInsideGeofence } from "../../lib/geofence.js";
+import { ApiError, fetchOfficeLocations } from "../../lib/api.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { ErrorState, LoadingState } from "../States.jsx";
 import { Box, Button, Typography, Paper, CircularProgress, Divider } from "@mui/material";
@@ -56,15 +56,16 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         throw new Error("Your location accuracy is too low. Please enable precise location and try again.");
       }
 
-      const distance = calculateHaversineDistance(
-        coords.latitude,
-        coords.longitude,
-        ATTENDANCE_GEOFENCE.latitude,
-        ATTENDANCE_GEOFENCE.longitude
-      );
+      let locations = [];
+      try {
+        locations = await fetchOfficeLocations();
+      } catch (e) {
+        // Fallback to default constants
+      }
 
-      if (distance > ATTENDANCE_GEOFENCE.radiusMeters) {
-        throw new Error("You are outside the allowed attendance area. Please move closer to the workplace and try again.");
+      const isInside = isLocationInsideGeofence(coords.latitude, coords.longitude, locations);
+      if (!isInside) {
+        throw new Error("You are outside the allowed attendance area. Please move closer to an office location and try again.");
       }
 
       setLocationData(coords);

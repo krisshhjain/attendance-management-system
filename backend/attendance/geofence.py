@@ -38,14 +38,11 @@ def calculate_haversine_distance(
 
 def validate_attendance_geofence(latitude, longitude, accuracy):
     """
-    Validates device coordinates against the workplace geofence.
+    Validates device coordinates against dynamically configured workplace office locations.
 
     Returns:
         (is_valid: bool, error_message: str | None, distance: float | None, parsed_coords: tuple | None)
     """
-    # Debug print
-    print(f"[GEOFENCE DEBUG] RADIUS: {GEOFENCE_RADIUS_METERS}, MAX_ACC: {MAX_ACCURACY_METERS}")
-    
     if latitude is None or longitude is None:
         return (
             False,
@@ -74,20 +71,44 @@ def validate_attendance_geofence(latitude, longitude, accuracy):
             (lat, lon, acc),
         )
 
-    # Distance calculation
-    distance = calculate_haversine_distance(
-        lat, lon, WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE
-    )
-    
-    print(f"[GEOFENCE DEBUG] Distance: {distance}m, Radius: {GEOFENCE_RADIUS_METERS}m, Pass: {distance <= GEOFENCE_RADIUS_METERS}")
+    # Fetch active office locations dynamically from DB
+    try:
+        from .models import OfficeLocation
+        locations = list(OfficeLocation.objects.filter(is_active=True))
+    except Exception:
+        locations = []
 
-    # Radius check: If distance is > 150 meters, reject it
-    if distance > GEOFENCE_RADIUS_METERS:
+    if locations:
+        best_distance = float("inf")
+        nearest_location = None
+        for loc in locations:
+            dist = calculate_haversine_distance(lat, lon, loc.latitude, loc.longitude)
+            if dist <= loc.radius_meters:
+                print(f"[GEOFENCE DEBUG] Matched Office: {loc.name}, Distance: {dist:.1f}m <= Radius: {loc.radius_meters}m")
+                return True, None, dist, (lat, lon, acc)
+            if dist < best_distance:
+                best_distance = dist
+                nearest_location = loc
+
+        print(f"[GEOFENCE DEBUG] Outside all offices. Nearest: {nearest_location.name} ({best_distance:.1f}m)")
         return (
             False,
-            f"You are outside the allowed attendance area. Distance: {distance:.1f}m, Allowed: {GEOFENCE_RADIUS_METERS}m. Please move closer to the workplace and try again.",
-            distance,
+            f"You are outside the allowed attendance area. Nearest location: {nearest_location.name} ({best_distance:.1f}m away, allowed: {nearest_location.radius_meters}m). Please move closer to the workplace and try again.",
+            best_distance,
             (lat, lon, acc),
         )
+    else:
+        # Fallback to default constants if DB table is empty
+        distance = calculate_haversine_distance(
+            lat, lon, WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE
+        )
+        print(f"[GEOFENCE DEBUG] Fallback Distance: {distance}m, Radius: {GEOFENCE_RADIUS_METERS}m, Pass: {distance <= GEOFENCE_RADIUS_METERS}")
+        if distance > GEOFENCE_RADIUS_METERS:
+            return (
+                False,
+                f"You are outside the allowed attendance area. Distance: {distance:.1f}m, Allowed: {GEOFENCE_RADIUS_METERS}m. Please move closer to the workplace and try again.",
+                distance,
+                (lat, lon, acc),
+            )
+        return True, None, distance, (lat, lon, acc)
 
-    return True, None, distance, (lat, lon, acc)

@@ -57,6 +57,10 @@ import {
   createLeavePolicy,
   updateLeavePolicy,
   deleteLeavePolicy,
+  fetchOfficeLocations,
+  createOfficeLocation,
+  updateOfficeLocation,
+  deleteOfficeLocation,
 } from "../lib/api.js";
 
 export const Route = createFileRoute("/administration")({
@@ -468,6 +472,132 @@ function Administration() {
     }
   }, [currentTab, isStaff]);
 
+  // ---------------------------------------------------------------------------
+  // TAB 4: OFFICE LOCATIONS MANAGEMENT (Super Admin)
+  // ---------------------------------------------------------------------------
+  const [officeLocations, setOfficeLocations] = useState([]);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [locationModal, setLocationModal] = useState({ open: false, location: null });
+  const [locSubmitting, setLocSubmitting] = useState(false);
+  const [locError, setLocError] = useState(null);
+
+  const [locName, setLocName] = useState("");
+  const [locLat, setLocLat] = useState("");
+  const [locLon, setLocLon] = useState("");
+  const [locRadius, setLocRadius] = useState(150);
+  const [locActive, setLocActive] = useState(true);
+
+  const loadOfficeLocations = async () => {
+    setLoadingLocations(true);
+    try {
+      const data = await fetchOfficeLocations();
+      setOfficeLocations(data ?? []);
+    } catch (err) {
+      setError(err.message || "Failed to load office locations.");
+    } finally {
+      setLoadingLocations(false);
+    }
+  };
+
+  useEffect(() => {
+    if ((isSuperUser || isSystemAdmin) && currentTab === 4) {
+      loadOfficeLocations();
+    }
+  }, [currentTab, isSuperUser, isSystemAdmin]);
+
+  const handleOpenLocationModal = (location = null) => {
+    setLocError(null);
+    if (location) {
+      setLocName(location.name);
+      setLocLat(String(location.latitude));
+      setLocLon(String(location.longitude));
+      setLocRadius(location.radius_meters || 150);
+      setLocActive(location.is_active !== false);
+      setLocationModal({ open: true, location });
+    } else {
+      setLocName("");
+      setLocLat("");
+      setLocLon("");
+      setLocRadius(150);
+      setLocActive(true);
+      setLocationModal({ open: true, location: null });
+    }
+  };
+
+  const handleSaveLocation = async (e) => {
+    e.preventDefault();
+    setLocError(null);
+
+    const name = locName.trim();
+    if (!name) {
+      setLocError("Location name cannot be empty.");
+      return;
+    }
+
+    const lat = parseFloat(locLat);
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      setLocError("Latitude must be a valid number between -90 and 90.");
+      return;
+    }
+
+    const lon = parseFloat(locLon);
+    if (isNaN(lon) || lon < -180 || lon > 180) {
+      setLocError("Longitude must be a valid number between -180 and 180.");
+      return;
+    }
+
+    const radius = parseFloat(locRadius) || 150;
+    if (radius <= 0) {
+      setLocError("Radius must be a positive number.");
+      return;
+    }
+
+    const isDuplicate = officeLocations.some(
+      (loc) => loc.name.toLowerCase() === name.toLowerCase() && loc.id !== locationModal.location?.id
+    );
+    if (isDuplicate) {
+      setLocError(`A location named '${name}' already exists.`);
+      return;
+    }
+
+    setLocSubmitting(true);
+    const payload = {
+      name,
+      latitude: lat,
+      longitude: lon,
+      radius_meters: radius,
+      is_active: locActive,
+    };
+
+    try {
+      if (locationModal.location) {
+        await updateOfficeLocation(locationModal.location.id, payload);
+        setSuccessMsg(`Office location '${name}' updated successfully.`);
+      } else {
+        await createOfficeLocation(payload);
+        setSuccessMsg(`New office location '${name}' added successfully.`);
+      }
+      setLocationModal({ open: false, location: null });
+      await loadOfficeLocations();
+    } catch (err) {
+      setLocError(err.message || "Failed to save office location.");
+    } finally {
+      setLocSubmitting(false);
+    }
+  };
+
+  const handleDeleteLocation = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete office location '${name}'?`)) return;
+    try {
+      await deleteOfficeLocation(id);
+      setSuccessMsg(`Office location '${name}' deleted successfully.`);
+      await loadOfficeLocations();
+    } catch (err) {
+      setError(err.message || "Failed to delete office location.");
+    }
+  };
+
+
   if (!isStaff) {
     return (
       <RequireAuth>
@@ -524,6 +654,7 @@ function Administration() {
             {(canManagePolicies || isSystemAdmin) && <Tab label={isSystemAdmin ? "Leave Policies (View Only)" : "Leave Policies (Super Admin)"} sx={{ fontWeight: 600, textTransform: "none" }} />}
             {canViewLeaveTypes && <Tab label={isSystemAdmin ? "Leave Types (View Only)" : "Leave Types (Super Admin)"} sx={{ fontWeight: 600, textTransform: "none" }} />}
             <Tab label="Employee Balances Overview" sx={{ fontWeight: 600, textTransform: "none" }} />
+            {(isSuperUser || isSystemAdmin) && <Tab label="Office Locations" sx={{ fontWeight: 600, textTransform: "none" }} />}
           </Tabs>
 
           {/* TAB 0: LEAVE REQUESTS */}
@@ -987,7 +1118,171 @@ function Administration() {
               )}
             </Box>
           )}
+
+          {/* TAB 4: OFFICE LOCATIONS */}
+          {currentTab === 4 && (
+            <Box sx={{ p: 3 }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5, flexWrap: "wrap", gap: 1.5 }}>
+                <Box>
+                  <Typography variant="h6" fontWeight={700}>
+                    Workplace Office Locations
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Manage dynamic geofenced office locations used for employee attendance validation.
+                  </Typography>
+                </Box>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<AddIcon />}
+                  onClick={() => handleOpenLocationModal(null)}
+                  sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+                >
+                  + Add Location
+                </Button>
+              </Box>
+
+              {loadingLocations ? (
+                <Box sx={{ display: "flex", p: 6, justifyContent: "center" }}>
+                  <CircularProgress size={32} />
+                </Box>
+              ) : officeLocations.length === 0 ? (
+                <Box sx={{ p: 6, textAlign: "center", color: "text.secondary" }}>
+                  <Typography variant="body1" fontWeight={600}>
+                    No office locations configured. Add a location to enable geofence validation.
+                  </Typography>
+                </Box>
+              ) : (
+                <TableContainer>
+                  <Table sx={{ minWidth: 700 }}>
+                    <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
+                      <TableRow>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>Location Name</TableCell>
+                        <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>Latitude</TableCell>
+                        <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>Longitude</TableCell>
+                        <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>Radius (meters)</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>Status</TableCell>
+                        <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {officeLocations.map((loc) => (
+                        <TableRow key={loc.id} hover>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={600}>
+                              {loc.name}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" fontFamily="monospace">
+                              {loc.latitude}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" fontFamily="monospace">
+                              {loc.longitude}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2">
+                              {loc.radius_meters} m
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={loc.is_active ? "Active" : "Inactive"}
+                              color={loc.is_active ? "success" : "default"}
+                              size="small"
+                              sx={{ fontWeight: 600 }}
+                            />
+                          </TableCell>
+                          <TableCell align="right">
+                            <IconButton size="small" color="primary" onClick={() => handleOpenLocationModal(loc)}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton size="small" color="error" onClick={() => handleDeleteLocation(loc.id, loc.name)}>
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Box>
+          )}
         </Paper>
+
+        {/* ADD/EDIT LOCATION DIALOG */}
+        <Dialog open={locationModal.open} onClose={() => setLocationModal({ open: false, location: null })} maxWidth="xs" fullWidth>
+          <form onSubmit={handleSaveLocation}>
+            <DialogTitle sx={{ fontWeight: 700, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              {locationModal.location ? "Edit Office Location" : "Add Office Location"}
+              <IconButton size="small" onClick={() => setLocationModal({ open: false, location: null })}>
+                <CloseIcon />
+              </IconButton>
+            </DialogTitle>
+            <DialogContent dividers sx={{ display: "flex", flexDirection: "column", gap: 2.5, pt: 2 }}>
+              {locError && (
+                <Alert severity="error" sx={{ borderRadius: 1.5 }}>
+                  {locError}
+                </Alert>
+              )}
+              <TextField
+                label="Location Name"
+                placeholder="e.g. Sector-127 Office"
+                required
+                fullWidth
+                value={locName}
+                onChange={(e) => setLocName(e.target.value)}
+              />
+              <TextField
+                label="Latitude"
+                placeholder="e.g. 28.53004"
+                type="number"
+                inputProps={{ step: "any" }}
+                required
+                fullWidth
+                value={locLat}
+                onChange={(e) => setLocLat(e.target.value)}
+                helperText="Must be between -90 and 90"
+              />
+              <TextField
+                label="Longitude"
+                placeholder="e.g. 77.34955"
+                type="number"
+                inputProps={{ step: "any" }}
+                required
+                fullWidth
+                value={locLon}
+                onChange={(e) => setLocLon(e.target.value)}
+                helperText="Must be between -180 and 180"
+              />
+              <TextField
+                label="Allowed Geofence Radius (meters)"
+                type="number"
+                fullWidth
+                value={locRadius}
+                onChange={(e) => setLocRadius(e.target.value)}
+                helperText="Default is 150 meters"
+              />
+              <FormControlLabel
+                control={<Switch checked={locActive} onChange={(e) => setLocActive(e.target.checked)} color="primary" />}
+                label="Active Location"
+              />
+            </DialogContent>
+            <DialogActions sx={{ p: 2 }}>
+              <Button onClick={() => setLocationModal({ open: false, location: null })} color="inherit">
+                Cancel
+              </Button>
+              <Button type="submit" variant="contained" color="primary" disabled={locSubmitting} sx={{ fontWeight: 600 }}>
+                {locSubmitting ? "Saving..." : "Save Location"}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
+
 
         {/* APPROVE / DENY / CANCEL ACTION DIALOG */}
         <Dialog open={actionModal.open} onClose={handleCloseAction} maxWidth="xs" fullWidth>

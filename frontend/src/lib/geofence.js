@@ -26,7 +26,18 @@ export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-export function isLocationInsideGeofence(latitude, longitude) {
+export function isLocationInsideGeofence(latitude, longitude, officeLocations = []) {
+  if (Array.isArray(officeLocations) && officeLocations.length > 0) {
+    const activeLocations = officeLocations.filter((loc) => loc.is_active !== false);
+    if (activeLocations.length > 0) {
+      return activeLocations.some((loc) => {
+        const dist = calculateHaversineDistance(latitude, longitude, loc.latitude, loc.longitude);
+        const radius = loc.radius_meters || ATTENDANCE_GEOFENCE.radiusMeters;
+        return dist <= radius;
+      });
+    }
+  }
+
   const distance = calculateHaversineDistance(
     latitude,
     longitude,
@@ -35,4 +46,5 @@ export function isLocationInsideGeofence(latitude, longitude) {
   );
   return distance <= ATTENDANCE_GEOFENCE.radiusMeters;
 }
+
 
