@@ -1,0 +1,217 @@
+/*
+ * employee-dashboard.css
+ *
+ * Tailwind CSS v4 styles for the Employee Dashboard UI.
+ * Imported ONLY by the /employee-dashboard route — does not affect
+ * the existing MUI-based Super Admin dashboard or any other route.
+ *
+ * We import only `tailwindcss/utilities` (no preflight/reset) so
+ * Tailwind utility classes are available for the Figma components
+ * without Tailwind's CSS reset conflicting with MUI's CssBaseline.
+ */
+@import "tailwindcss";
+
+/* ─── Typography scale used by Figma components ─────────────────────────── */
+.type-caption {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.type-meta {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* ─── Dark mode CSS variables (from Figma index.css) ────────────────────── */
+.dark {
+  --bg-primary: #0d1526;
+  --bg-secondary: #111d35;
+  --bg-tertiary: #19263f;
+  --surface: #1a2840;
+  --surface-nested: #1f3050;
+  --surface-input: #1a2840;
+  --surface-hover: #1f3050;
+  --border: #243651;
+  --border-subtle: #1d2f4a;
+  --text-primary: #e8eef8;
+  --text-secondary: #a8b8d0;
+  --text-muted: #6b82a0;
+  --text-tertiary: #4d6280;
+  --accent-primary: #818cf8;
+  --accent-surface: rgba(99, 102, 241, 0.12);
+  --accent-border: rgba(99, 102, 241, 0.25);
+  --status-present: #34d399;
+  --status-present-bg: rgba(52, 211, 153, 0.12);
+  --status-present-border: rgba(52, 211, 153, 0.3);
+  --status-absent: #f87171;
+  --status-absent-bg: rgba(248, 113, 113, 0.12);
+  --status-absent-border: rgba(248, 113, 113, 0.3);
+  --status-leave: #fbbf24;
+  --status-leave-bg: rgba(251, 191, 36, 0.12);
+  --status-leave-border: rgba(251, 191, 36, 0.3);
+  --status-wfh: #a78bfa;
+  --status-wfh-bg: rgba(167, 139, 250, 0.12);
+  --status-wfh-border: rgba(167, 139, 250, 0.3);
+  --status-on-duty: #60a5fa;
+  --status-on-duty-bg: rgba(96, 165, 250, 0.12);
+  --status-on-duty-border: rgba(96, 165, 250, 0.3);
+  --status-missing: #fb923c;
+  --status-missing-bg: rgba(251, 146, 60, 0.12);
+  --status-missing-border: rgba(251, 146, 60, 0.3);
+}
+
+/* ─── Dark mode surface overrides ───────────────────────────────────────── */
+.dark [class~="bg-white"] {
+  background-color: var(--surface) !important;
+}
+.dark [class~="bg-slate-50"] {
+  background-color: var(--bg-primary) !important;
+}
+.dark [class*="bg-slate-50/"] {
+  background-color: rgba(19, 29, 49, 0.75) !important;
+}
+.dark [class~="bg-slate-100"] {
+  background-color: var(--bg-tertiary) !important;
+}
+.dark [class*="bg-slate-100/"] {
+  background-color: rgba(25, 38, 63, 0.75) !important;
+}
+.dark [class~="bg-slate-200"] {
+  background-color: var(--border) !important;
+}
+
+/* ─── Dark mode borders ──────────────────────────────────────────────────── */
+.dark [class~="border-slate-200"],
+.dark [class~="border-slate-300"],
+.dark [class~="border-slate-100"] {
+  border-color: var(--border) !important;
+}
+.dark [class~="divide-slate-200"] > :not(:last-child),
+.dark [class~="divide-slate-100"] > :not(:last-child) {
+  border-color: var(--border) !important;
+}
+
+/* ─── Dark mode text ─────────────────────────────────────────────────────── */
+.dark [class~="text-slate-900"],
+.dark [class~="text-slate-800"] {
+  color: var(--text-primary) !important;
+}
+.dark [class~="text-slate-700"],
+.dark [class~="text-slate-600"] {
+  color: var(--text-secondary) !important;
+}
+.dark [class~="text-slate-500"] {
+  color: var(--text-muted) !important;
+}
+.dark [class~="text-slate-400"] {
+  color: var(--text-tertiary) !important;
+}
+
+/* ─── Dark mode accent (indigo) ─────────────────────────────────────────── */
+.dark [class*="bg-indigo-50"] {
+  background-color: var(--accent-surface) !important;
+}
+.dark [class~="text-indigo-700"],
+.dark [class~="text-indigo-600"] {
+  color: var(--accent-primary) !important;
+}
+.dark [class~="bg-indigo-100"] {
+  background-color: var(--accent-surface) !important;
+}
+.dark [class~="border-indigo-200"],
+.dark [class~="border-indigo-300"] {
+  border-color: var(--accent-border) !important;
+}
+
+/* ─── Dark mode status colours ───────────────────────────────────────────── */
+/* Present / Approved (Emerald) */
+.dark [class*="bg-emerald-50"] { background-color: var(--status-present-bg) !important; }
+.dark [class~="text-emerald-700"],.dark [class~="text-emerald-800"],.dark [class~="text-emerald-600"] { color: var(--status-present) !important; }
+.dark [class~="bg-emerald-500"] { background-color: var(--status-present) !important; }
+
+/* WFH (Violet) */
+.dark [class*="bg-violet-50"] { background-color: var(--status-wfh-bg) !important; }
+.dark [class~="text-violet-700"],.dark [class~="text-violet-600"] { color: var(--status-wfh) !important; }
+.dark [class~="bg-violet-500"] { background-color: var(--status-wfh) !important; }
+
+/* On Duty (Blue) */
+.dark [class*="bg-blue-50"] { background-color: var(--status-on-duty-bg) !important; }
+.dark [class~="text-blue-700"],.dark [class~="text-blue-600"] { color: var(--status-on-duty) !important; }
+.dark [class~="bg-blue-500"] { background-color: var(--status-on-duty) !important; }
+
+/* Leave / Pending / Half Day (Amber) */
+.dark [class*="bg-amber-50"] { background-color: var(--status-leave-bg) !important; }
+.dark [class~="text-amber-700"],.dark [class~="text-amber-600"] { color: var(--status-leave) !important; }
+.dark [class~="bg-amber-500"] { background-color: var(--status-leave) !important; }
+
+/* Absent / Rejected (Rose) */
+.dark [class*="bg-rose-50"] { background-color: var(--status-absent-bg) !important; }
+.dark [class~="text-rose-700"],.dark [class~="text-rose-600"] { color: var(--status-absent) !important; }
+.dark [class~="bg-rose-500"] { background-color: var(--status-absent) !important; }
+
+/* Missing Check-out (Orange) */
+.dark [class*="bg-orange-50"] { background-color: var(--status-missing-bg) !important; }
+.dark [class~="text-orange-700"],.dark [class~="text-orange-600"] { color: var(--status-missing) !important; }
+.dark [class~="bg-orange-500"] { background-color: var(--status-missing) !important; }
+
+/* ─── Dark mode form inputs ───────────────────────────────────────────────── */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: var(--surface-input) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--text-tertiary) !important;
+}
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25) !important;
+}
+
+/* ─── Dark mode buttons ─────────────────────────────────────────────────── */
+.dark button[class*="bg-white"] {
+  background-color: var(--surface-nested) !important;
+  border-color: var(--border) !important;
+  color: var(--text-secondary) !important;
+}
+.dark button:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed;
+}
+
+/* ─── Dark mode tables ──────────────────────────────────────────────────── */
+.dark table thead {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-muted) !important;
+}
+.dark table thead th {
+  border-color: var(--border) !important;
+}
+.dark table tbody tr:hover {
+  background-color: var(--surface-hover) !important;
+}
+
+/* ─── Scan animation (face verification UI) ─────────────────────────────── */
+@keyframes scan {
+  0%, 100% { transform: translateY(-4rem); opacity: 0.3; }
+  50% { transform: translateY(4rem); opacity: 1; }
+}
+.scan-line {
+  animation: scan 1.2s ease-in-out infinite;
+}
+
+/* ─── Scrollbar in dark mode ─────────────────────────────────────────────── */
+.dark ::-webkit-scrollbar { width: 6px; height: 6px; }
+.dark ::-webkit-scrollbar-track { background: var(--bg-primary); }
+.dark ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
+.dark ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ─── Stats grid responsive breakpoint ──────────────────────────────────── */
+@media (max-width: 360px) {
+  .stats-grid { grid-template-columns: minmax(0, 1fr); }
+}
