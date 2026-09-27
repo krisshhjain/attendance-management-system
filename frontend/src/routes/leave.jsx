@@ -111,24 +111,31 @@ function LeaveBalanceCard({ balance }) {
 
   return (
     <Paper
+      elevation={0}
       sx={{
         p: 2.5,
-        borderRadius: 3,
+        borderRadius: "16px",
         border: "1px solid",
         borderColor: "divider",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+        bgcolor: "white",
+        boxShadow: "0px 1px 3px rgba(15,23,42,0.03)",
         display: "flex",
         flexDirection: "column",
-        justify: "space-between",
+        justifyContent: "space-between",
         gap: 1.5,
+        transition: "transform 0.2s, box-shadow 0.2s",
+        "&:hover": {
+          transform: "translateY(-2px)",
+          boxShadow: "0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -1px rgba(0, 0, 0, 0.06)",
+        },
       }}
     >
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <Box>
-          <Typography variant="body2" color="text.secondary" fontWeight={600} sx={{ textTransform: "uppercase", letterSpacing: "0.5px", fontSize: "0.75rem" }}>
+          <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", fontSize: "0.75rem" }}>
             {balance.leave_type_name}
           </Typography>
-          <Typography variant="caption" color="text.disabled">
+          <Typography variant="caption" sx={{ color: "#94a3b8" }}>
             {balance.leave_type_code} {balance.is_paid ? "• Paid" : "• Unpaid"}
           </Typography>
         </Box>
@@ -136,21 +143,21 @@ function LeaveBalanceCard({ balance }) {
           label={`${available} Left`}
           color={available > 0 ? "primary" : "default"}
           size="small"
-          sx={{ fontWeight: 700, borderRadius: 1.5 }}
+          sx={{ fontWeight: 700, borderRadius: "8px" }}
         />
       </Box>
 
       <Box sx={{ my: 0.5 }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", mb: 0.5 }}>
-          <Typography variant="h4" fontWeight={700} color="primary.main">
+          <Typography variant="h4" sx={{ fontWeight: 700, color: "#4f46e5" }}>
             {available}
           </Typography>
           <Box sx={{ textAlign: "right" }}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{ color: "#64748b" }}>
               of {totalPossible} days
             </Typography>
             {entitlement > 0 && entitlement >= 12 && (
-              <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: -0.5 }}>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mt: -0.5 }}>
                 ≈ {Math.round(entitlement / 12)} days per month
               </Typography>
             )}
@@ -162,25 +169,25 @@ function LeaveBalanceCard({ balance }) {
           sx={{
             height: 6,
             borderRadius: 3,
-            bgcolor: "action.hover",
-            "& .MuiLinearProgress-bar": { bgcolor: "primary.main", borderRadius: 3 },
+            bgcolor: "#f1f5f9",
+            "& .MuiLinearProgress-bar": { bgcolor: "#4f46e5", borderRadius: 3 },
           }}
         />
       </Box>
 
-      <Box sx={{ display: "flex", gap: 2, pt: 1, borderTop: "1px solid", borderColor: "divider", fontSize: "0.75rem" }}>
+      <Box sx={{ display: "flex", gap: 2, pt: 1, borderTop: "1px solid #f1f5f9", fontSize: "0.75rem" }}>
         <Box>
-          <Typography variant="caption" color="text.secondary">Used: </Typography>
-          <Typography variant="caption" fontWeight={600}>{used}</Typography>
+          <Typography variant="caption" sx={{ color: "#64748b" }}>Used: </Typography>
+          <Typography variant="caption" sx={{ fontWeight: 600, color: "#0f172a" }}>{used}</Typography>
         </Box>
         <Box>
-          <Typography variant="caption" color="text.secondary">Pending: </Typography>
-          <Typography variant="caption" fontWeight={600} color="warning.main">{pending}</Typography>
+          <Typography variant="caption" sx={{ color: "#64748b" }}>Pending: </Typography>
+          <Typography variant="caption" sx={{ fontWeight: 600, color: "#d97706" }}>{pending}</Typography>
         </Box>
         {carried > 0 && (
           <Box>
-            <Typography variant="caption" color="text.secondary">Carried: </Typography>
-            <Typography variant="caption" fontWeight={600}>{carried}</Typography>
+            <Typography variant="caption" sx={{ color: "#64748b" }}>Carried: </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: "#0f172a" }}>{carried}</Typography>
           </Box>
         )}
       </Box>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
+import { ShiftConfigurationPanel } from "../components/ShiftConfigurationPanel.jsx";
+import { ManagerManagement } from "../components/ManagerManagement.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import {
   Box,
@@ -102,10 +104,11 @@ function StatusChip({ status }) {
 function Administration() {
   const { user, loginType } = useAuth();
   const isSystemAdmin = loginType === "systemadmin";
+  const isManager = Boolean(user?.is_system_admin && !user?.is_superuser);
   const isSuperUser = Boolean(user?.is_superuser || loginType === "admin");
   const canManagePolicies = isSuperUser && !isSystemAdmin;
   const canViewLeaveTypes = isSystemAdmin || isSuperUser;
-  const isStaff = Boolean(user?.is_staff || isSuperUser);
+  const isStaff = Boolean(user?.is_staff || isSuperUser || isManager);  // Allow Managers too
 
   const [currentTab, setCurrentTab] = useState(0);
 
@@ -490,63 +493,147 @@ function Administration() {
 
   return (
     <RequireAuth>
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        {/* Header */}
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px" }}>
-            Administration & Leave Policy Engine
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 3, pb: 4 }}>
+        {/* Modern Header with Gradient */}
+        <Box 
+          sx={{ 
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            borderRadius: 4,
+            p: 4,
+            color: "white",
+            boxShadow: "0 8px 32px rgba(102, 126, 234, 0.2)"
+          }}
+        >
+          <Typography variant="h4" sx={{ fontWeight: 800, mb: 1, letterSpacing: "-0.5px" }}>
+            Administration Center
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Manage employee leave requests, configure rule policies per employee tier, and audit system balances.
+          <Typography variant="body1" sx={{ opacity: 0.95, fontSize: "15px" }}>
+            Manage leave requests, policies, and employee balances
           </Typography>
         </Box>
 
         {/* Global Notifications */}
         {error && (
-          <Alert severity="error" onClose={() => setError(null)} sx={{ borderRadius: 2 }}>
+          <Alert 
+            severity="error" 
+            onClose={() => setError(null)} 
+            sx={{ 
+              borderRadius: 3, 
+              border: "1px solid",
+              borderColor: "error.light",
+              "& .MuiAlert-icon": { fontSize: 24 }
+            }}
+          >
             {error}
           </Alert>
         )}
         {successMsg && (
-          <Alert severity="success" onClose={() => setSuccessMsg(null)} sx={{ borderRadius: 2 }}>
+          <Alert 
+            severity="success" 
+            onClose={() => setSuccessMsg(null)} 
+            sx={{ 
+              borderRadius: 3,
+              border: "1px solid",
+              borderColor: "success.light",
+              "& .MuiAlert-icon": { fontSize: 24 }
+            }}
+          >
             {successMsg}
           </Alert>
         )}
 
-        {/* Navigation Tabs */}
-        <Paper sx={{ borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none" }}>
+        {/* Modern Navigation Tabs */}
+        <Paper 
+          elevation={0}
+          sx={{ 
+            borderRadius: 4, 
+            border: "1px solid", 
+            borderColor: "divider", 
+            overflow: "hidden",
+            bgcolor: "white"
+          }}
+        >
           <Tabs
             value={currentTab}
             onChange={(e, val) => setCurrentTab(val)}
-            sx={{ borderBottom: "1px solid", borderColor: "divider", px: 2 }}
+            variant="scrollable"
+            scrollButtons="auto"
+            sx={{ 
+              borderBottom: "2px solid", 
+              borderColor: "divider",
+              px: 2,
+              "& .MuiTab-root": {
+                fontWeight: 600,
+                textTransform: "none",
+                fontSize: "15px",
+                minHeight: 64,
+                color: "#64748b",
+                "&.Mui-selected": {
+                  color: "#667eea"
+                }
+              },
+              "& .MuiTabs-indicator": {
+                backgroundColor: "#667eea",
+                height: 3,
+                borderRadius: "3px 3px 0 0"
+              }
+            }}
           >
-            <Tab label="Leave Requests" sx={{ fontWeight: 600, textTransform: "none" }} />
-            {(canManagePolicies || isSystemAdmin) && <Tab label={isSystemAdmin ? "Leave Policies (View Only)" : "Leave Policies (Super Admin)"} sx={{ fontWeight: 600, textTransform: "none" }} />}
-            {canViewLeaveTypes && <Tab label={isSystemAdmin ? "Leave Types (View Only)" : "Leave Types (Super Admin)"} sx={{ fontWeight: 600, textTransform: "none" }} />}
-            <Tab label="Employee Balances Overview" sx={{ fontWeight: 600, textTransform: "none" }} />
+            <Tab label="Leave Requests" />
+            {(canManagePolicies || isSystemAdmin) && <Tab label={isSystemAdmin ? "Leave Policies (View Only)" : "Leave Policies"} />}
+            {canViewLeaveTypes && <Tab label={isSystemAdmin ? "Leave Types (View Only)" : "Leave Types"} />}
+            <Tab label="Employee Balances" />
+            {isSuperUser && <Tab label="Manager Management" />}
+            {isStaff && loginType !== "systemadmin" && <Tab label="Configure Shifts" sx={{ fontWeight: 600, textTransform: "none" }} />}
           </Tabs>
 
           {/* TAB 0: LEAVE REQUESTS */}
           {currentTab === 0 && (
-            <Box sx={{ p: 3 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", gap: 1.5 }}>
-                <Typography variant="h6" fontWeight={700}>
-                  Employee Leave Requests
+            <Box sx={{ p: 4 }}>
+              {/* Section Header */}
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="h5" fontWeight={700} sx={{ mb: 1, color: "#0f172a" }}>
+                  Leave Requests Management
                 </Typography>
-                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                  {["PENDING", "APPROVED", "DENIED", "CANCELLED", "ALL"].map((st) => (
-                    <Chip
-                      key={st}
-                      label={st}
-                      clickable
-                      color={statusFilter === st ? "primary" : "default"}
-                      variant={statusFilter === st ? "filled" : "outlined"}
-                      onClick={() => setStatusFilter(st)}
-                      size="small"
-                      sx={{ fontWeight: 600 }}
-                    />
-                  ))}
-                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  Review and approve or deny employee leave requests
+                </Typography>
+              </Box>
+
+              {/* Filter Chips */}
+              <Box sx={{ 
+                display: "flex", 
+                gap: 1.5, 
+                mb: 3, 
+                flexWrap: "wrap",
+                p: 2,
+                bgcolor: "#f8fafc",
+                borderRadius: 3,
+                border: "1px solid",
+                borderColor: "#e2e8f0"
+              }}>
+                {["PENDING", "APPROVED", "DENIED", "CANCELLED", "ALL"].map((st) => (
+                  <Chip
+                    key={st}
+                    label={st}
+                    clickable
+                    color={statusFilter === st ? "primary" : "default"}
+                    variant={statusFilter === st ? "filled" : "outlined"}
+                    onClick={() => setStatusFilter(st)}
+                    sx={{ 
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      height: 36,
+                      ...(statusFilter === st && {
+                        bgcolor: "#667eea",
+                        color: "white",
+                        "&:hover": {
+                          bgcolor: "#5568d3"
+                        }
+                      })
+                    }}
+                  />
+                ))}
               </Box>
 
               {loadingRequests ? (
@@ -562,14 +649,14 @@ function Administration() {
               ) : (
                 <TableContainer>
                   <Table sx={{ minWidth: 700 }}>
-                    <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
+                    <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 700 }}>Employee</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Leave Type</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Dates & Duration</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Reason</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Employee</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Dates & Duration</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Reason</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
+                        <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -737,15 +824,15 @@ function Administration() {
               ) : (
                 <TableContainer>
                   <Table sx={{ minWidth: 700 }}>
-                    <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
+                    <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 700 }}>Leave Type</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Entitlement (Yr/Mo)</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Carry Forward</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Notice & Rules</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Effective From</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                        {!isSystemAdmin && <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>}
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Entitlement (Yr/Mo)</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Carry Forward</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Notice & Rules</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Effective From</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
+                        {!isSystemAdmin && <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -851,14 +938,14 @@ function Administration() {
               ) : (
                 <TableContainer>
                   <Table sx={{ minWidth: 700 }}>
-                    <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
+                    <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 700 }}>Name & Code</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Half Day & Dates</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Notice & Docs</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                        {!isSystemAdmin && <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>}
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Name & Code</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Category</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Half Day & Dates</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Notice & Docs</TableCell>
+                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
+                        {!isSystemAdmin && <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -947,7 +1034,7 @@ function Administration() {
               ) : (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {filteredBalances.map((empObj) => (
-                    <Paper key={empObj.employee_id} variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
+                    <Paper key={empObj.employee_id} elevation={0} sx={{ p: 3, borderRadius: "16px", border: "1px solid", borderColor: "divider", bgcolor: "white", boxShadow: "0px 1px 3px rgba(15,23,42,0.03)", mb: 2 }}>
                       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5 }}>
                         <Typography variant="subtitle1" fontWeight={700} color="primary.main">
                           {empObj.employee_email}
@@ -957,14 +1044,14 @@ function Administration() {
 
                       <TableContainer>
                         <Table size="small">
-                          <TableHead sx={{ bgcolor: "rgba(0,0,0,0.02)" }}>
+                          <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                             <TableRow>
-                              <TableCell sx={{ fontWeight: 700 }}>Leave Type</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Annual Entitlement</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Carried Forward</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Used (Approved)</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Pending</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700 }}>Available Balance</TableCell>
+                              <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Annual Entitlement</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Carried Forward</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Used (Approved)</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Pending</TableCell>
+                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Available Balance</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -986,6 +1073,16 @@ function Administration() {
                 </Box>
               )}
             </Box>
+          )}
+
+          {/* TAB 4: MANAGER MANAGEMENT */}
+          {isSuperUser && currentTab === 4 && (
+            <ManagerManagement />
+          )}
+
+          {/* TAB 5: SHIFT CONFIGURATION */}
+          {isStaff && loginType !== "systemadmin" && currentTab === 5 && (
+            <ShiftConfigurationPanel />
           )}
         </Paper>
 

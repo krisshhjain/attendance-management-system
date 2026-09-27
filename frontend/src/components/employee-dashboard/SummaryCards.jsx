@@ -47,7 +47,7 @@ export function SummaryCards({ data }) {
         color="secondary"
       />
       <StatCard
-        title="Working Duration"
+        title={!data.check_out && data.status === "CHECKED_IN" ? "Elapsed Time" : "Working Duration"}
         value={formatDuration(data.working_duration)}
         icon={<TimerIcon />}
         color="primary"

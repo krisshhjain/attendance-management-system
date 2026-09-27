@@ -30,10 +30,10 @@ function Employees() {
     <RequireAuth>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px" }}>
+          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a", fontSize: "24px" }}>
             Employees
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5, fontSize: "14px" }}>
             View and manage employee details.
           </Typography>
         </Box>

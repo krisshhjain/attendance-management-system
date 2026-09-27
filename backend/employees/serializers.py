@@ -79,6 +79,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(source="user.first_name")
     last_name = serializers.CharField(source="user.last_name")
     has_face_enrolled = serializers.SerializerMethodField()
+    shift = serializers.SerializerMethodField()
 
     class Meta:
         model = Employee
@@ -95,6 +96,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             "subsection",
             "app_access",
             "has_face_enrolled",
+            "shift",
         ]
 
     def get_has_face_enrolled(self, obj):
@@ -102,3 +104,14 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             return obj.face_profile.status == "ACTIVE"
         except Employee.face_profile.RelatedObjectDoesNotExist:
             return False
+    
+    def get_shift(self, obj):
+        if obj.shift is None:
+            return None
+        return {
+            "id": obj.shift.id,
+            "code": obj.shift.code,
+            "name": obj.shift.name,
+            "start_time": obj.shift.start_time.strftime("%H:%M") if hasattr(obj.shift.start_time, 'strftime') else str(obj.shift.start_time),
+            "end_time": obj.shift.end_time.strftime("%H:%M") if hasattr(obj.shift.end_time, 'strftime') else str(obj.shift.end_time),
+        }

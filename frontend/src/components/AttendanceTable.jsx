@@ -12,9 +12,20 @@ import {
 
 export function AttendanceTable({ records }) {
   return (
-    <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: "1px solid", borderColor: "divider" }}>
+    <TableContainer
+      component={Paper}
+      elevation={0}
+      sx={{
+        borderRadius: "16px",
+        border: "1px solid",
+        borderColor: "divider",
+        bgcolor: "white",
+        boxShadow: "0px 1px 3px rgba(15,23,42,0.03)",
+        overflow: "hidden",
+      }}
+    >
       <Table sx={{ minWidth: 640 }}>
-        <TableHead sx={{ bgcolor: "background.default" }}>
+        <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
           <TableRow>
             {["Date", "Status", "Check In", "Check Out", "Working Duration"].map((head) => (
               <TableCell

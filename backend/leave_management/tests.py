@@ -238,7 +238,8 @@ class LeaveManagementTestCase(TestCase):
     def test_cancel_removes_attendance(self):
         # Admin approves, attendance created
         start = timezone.localdate() + timedelta(days=2)
-        if start.weekday() in (5, 6):  # Ensure it's a weekday for attendance
+        from config.business_rules import is_working_day
+        if not is_working_day(start):  # Ensure it's a weekday for attendance
             start += timedelta(days=2)
         end = start
 

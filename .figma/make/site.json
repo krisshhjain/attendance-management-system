@@ -1,0 +1,10 @@
+{
+  "description": "Streamline attendance management with a professional dashboard for super admins, offering real-time insights, employee tracking, and reporting features.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

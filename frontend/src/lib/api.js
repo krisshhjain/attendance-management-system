@@ -273,3 +273,38 @@ export async function uploadFile(file) {
 
   return response.json();
 }
+
+// Shift Management API functions
+export async function fetchMyShift() {
+  return apiRequest("/attendance/my-shift/");
+}
+
+export async function fetchActiveShifts() {
+  return apiRequest("/attendance/shifts/");
+}
+
+export async function selfAssignShift(shiftId) {
+  return apiRequest("/attendance/my-shift/assign/", {
+    method: "POST",
+    body: { shift_id: shiftId },
+  });
+}
+
+// Admin Shift Configuration API functions
+export async function fetchAdminShiftConfiguration() {
+  return apiRequest("/attendance/admin/shift/configure/");
+}
+
+export async function configureEmploymentTypeShifts(employmentType, shifts) {
+  return apiRequest("/attendance/admin/shift/configure/", {
+    method: "POST",
+    body: {
+      employment_type: employmentType,
+      shifts: shifts,
+    },
+  });
+}
+
+export async function fetchAllShifts() {
+  return apiRequest("/attendance/admin/shift/all/");
+}

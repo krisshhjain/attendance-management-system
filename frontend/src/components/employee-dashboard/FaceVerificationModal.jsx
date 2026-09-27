@@ -5,7 +5,7 @@ import { apiRequest } from "../../lib/api.js";
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
-export function FaceVerificationModal({ open, onClose, onSuccess, actionType }) {
+export function FaceVerificationModal({ open, onClose, onSuccess, actionType, locationData }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -26,7 +26,12 @@ export function FaceVerificationModal({ open, onClose, onSuccess, actionType }) 
     try {
       await apiRequest(endpoint, {
         method: "POST",
-        body: { image: base64Image },
+        body: { 
+          image: base64Image,
+          latitude: locationData?.latitude,
+          longitude: locationData?.longitude,
+          accuracy: locationData?.accuracy,
+        },
       });
 
       setSuccess(true);
@@ -65,7 +70,7 @@ export function FaceVerificationModal({ open, onClose, onSuccess, actionType }) 
         <Typography variant="h5" fontWeight={700}>Face Verification</Typography>
       </DialogTitle>
       
-      <DialogContent sx={{ px: 4, pb: 4, pt: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <DialogContent sx={{ px: 4, pb: 4, pt: 1, display: "flex", flexDirection: "column", alignItems: "center", minHeight: 450, justifyContent: "center" }}>
         {success ? (
           <Box sx={{ py: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
             <CheckCircleOutlineIcon color="success" sx={{ fontSize: 64 }} />
