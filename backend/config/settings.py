@@ -152,3 +152,11 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Facial Recognition Service
 FACE_SERVICE_URL = os.environ.get('FACE_SERVICE_URL', 'http://host.docker.internal:8001')
 
+# HR Copilot LLM Configuration
+# Force enable local Qwen3-8B model for natural language processing
+os.environ.setdefault('HR_COPILOT_LLM_PROVIDER', 'local_ollama_qwen')
+os.environ.setdefault('HR_COPILOT_LLM_URL', 'http://127.0.0.1:11434')
+os.environ.setdefault('HR_COPILOT_LLM_MODEL', 'qwen3-8b-q4km-local')
+os.environ.setdefault('HR_COPILOT_LLM_TIMEOUT_SECONDS', '120')  # Increased timeout for Qwen3-8B
+os.environ.setdefault('HR_COPILOT_LLM_TEMPERATURE', '0')  # Faster, deterministic responses
+
