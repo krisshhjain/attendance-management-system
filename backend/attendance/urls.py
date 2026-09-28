@@ -21,6 +21,7 @@ from .views import (
     AdminAllShiftsView,
     MyShiftView,
     RegularizationRequestCreateView,
+    RegularizationRequestQuotaView,
     RegularizationRequestListView,
     RegularizationRequestDetailView,
     RegularizationRequestApproveView,
@@ -49,6 +50,7 @@ urlpatterns = [
     path("admin/shift/all/", AdminAllShiftsView.as_view(), name="admin-shifts-all"),
     # Employee regularization endpoints
     path("regularization/", RegularizationRequestCreateView.as_view(), name="regularization-create"),
+    path("regularization/quota/", RegularizationRequestQuotaView.as_view(), name="regularization-quota"),
     path("regularization/list/", RegularizationRequestListView.as_view(), name="regularization-list"),
     path("regularization/<int:request_id>/", RegularizationRequestDetailView.as_view(), name="regularization-detail"),
     # Admin regularization endpoints

@@ -308,3 +308,40 @@ export async function configureEmploymentTypeShifts(employmentType, shifts) {
 export async function fetchAllShifts() {
   return apiRequest("/attendance/admin/shift/all/");
 }
+
+// Regularization APIs
+export async function fetchMyRegularizationRequests(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return apiRequest(`/attendance/regularization/list/${query ? `?${query}` : ""}`);
+}
+
+export async function fetchMyRegularizationQuota() {
+  return apiRequest("/attendance/regularization/quota/");
+}
+
+export async function createRegularizationRequest(data) {
+  return apiRequest("/attendance/regularization/", { method: "POST", body: data });
+}
+
+export async function fetchAdminRegularizationRequests(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return apiRequest(`/attendance/admin/regularization/${query ? `?${query}` : ""}`);
+}
+
+export async function fetchAdminRegularizationRequest(id) {
+  return apiRequest(`/attendance/admin/regularization/${id}/`);
+}
+
+export async function approveRegularizationRequest(id, data) {
+  return apiRequest(`/attendance/admin/regularization/${id}/approve/`, {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function rejectRegularizationRequest(id, rejectionReason) {
+  return apiRequest(`/attendance/admin/regularization/${id}/reject/`, {
+    method: "POST",
+    body: { rejection_reason: rejectionReason },
+  });
+}

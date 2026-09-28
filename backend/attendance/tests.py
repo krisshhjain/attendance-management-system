@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time as datetime_time, timedelta
 from unittest.mock import patch, Mock
 import requests
 from django.contrib.auth import get_user_model
@@ -18,8 +18,273 @@ from attendance.geofence import (
     calculate_haversine_distance,
 )
 from attendance.face_service import process_enrollment, find_closest_match, FaceExtractionError
+from attendance.models import RegularizationRequest
 
 User = get_user_model()
+
+
+class RegularizationWorkflowTests(APITestCase):
+    def setUp(self):
+        self.attendance_date = timezone.localdate()
+        while self.attendance_date.weekday() >= 5:
+            self.attendance_date -= timedelta(days=1)
+        while timezone.localdate() - self.attendance_date > timedelta(days=2):
+            self.attendance_date += timedelta(days=1)
+            while self.attendance_date.weekday() >= 5:
+                self.attendance_date -= timedelta(days=1)
+        self.employee_user = User.objects.create_user(
+            email="regularization.employee@example.com",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            user=self.employee_user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=self.attendance_date - timedelta(days=30),
+            is_active=True,
+        )
+        self.admin_user = User.objects.create_user(
+            email="regularization.admin@example.com",
+            password="password123",
+            is_staff=True,
+        )
+        self.check_in = timezone.make_aware(
+            datetime.combine(self.attendance_date, datetime_time(9, 0)),
+            timezone.get_current_timezone(),
+        )
+        self.check_out = timezone.make_aware(
+            datetime.combine(self.attendance_date, datetime_time(17, 0)),
+            timezone.get_current_timezone(),
+        )
+        self.attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=self.attendance_date,
+            check_in=self.check_in,
+            check_out=self.check_out,
+            status="PRESENT",
+        )
+        self.original_check_in_event = AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=self.check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        self.original_check_out_event = AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=self.check_out,
+            event_type="CHECK_OUT",
+            source="MOBILE",
+        )
+        self.request = RegularizationRequest.objects.create(
+            employee=self.employee,
+            attendance_date=self.attendance_date,
+            request_type="INCORRECT_ATTENDANCE",
+            existing_check_in=self.check_in,
+            existing_check_out=self.check_out,
+            requested_check_in=self.check_in + timedelta(minutes=30),
+            requested_check_out=self.check_out + timedelta(minutes=30),
+            reason="The recorded times need correction.",
+        )
+
+    def test_employee_can_create_pending_request(self):
+        self.request.delete()
+        self.client.force_authenticate(user=self.employee_user)
+        response = self.client.post("/api/attendance/regularization/", {
+            "attendance_date": self.attendance_date.isoformat(),
+            "request_type": "FORGOT_CHECK_OUT",
+            "requested_check_out": (self.check_out + timedelta(minutes=15)).isoformat(),
+            "reason": "I forgot to check out.",
+        }, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        created = RegularizationRequest.objects.get(id=response.data["request_id"])
+        self.assertEqual(created.status, "PENDING")
+        self.assertEqual(created.employee, self.employee)
+
+    def test_weekly_quota_counts_submitted_requests_and_blocks_second(self):
+        self.request.status = "REJECTED"
+        self.request.save(update_fields=["status", "updated_at"])
+        self.client.force_authenticate(user=self.employee_user)
+
+        quota = self.client.get("/api/attendance/regularization/quota/")
+        self.assertEqual(quota.status_code, status.HTTP_200_OK)
+        self.assertEqual(quota.data["weekly_limit"], 1)
+        self.assertEqual(quota.data["weekly_used"], 1)
+        self.assertEqual(quota.data["weekly_remaining"], 0)
+        self.assertEqual(quota.data["monthly_used"], 1)
+        self.assertEqual(quota.data["monthly_limit"], 4)
+        self.assertEqual(quota.data["monthly_remaining"], 3)
+
+        blocked = self.client.post("/api/attendance/regularization/", {
+            "attendance_date": self.attendance_date.isoformat(),
+            "request_type": "FORGOT_CHECK_OUT",
+            "requested_check_out": (self.check_out + timedelta(minutes=15)).isoformat(),
+            "reason": "Second request this week.",
+        }, format="json")
+        self.assertEqual(blocked.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(blocked.data["weekly_used"], 1)
+        self.assertIn("calendar week", blocked.data["detail"])
+
+    def test_monthly_quota_blocks_fifth_request_across_weeks(self):
+        self.request.status = "REJECTED"
+        self.request.save(update_fields=["status", "updated_at"])
+        anchor = date(2026, 9, 30)
+        first_created = timezone.make_aware(datetime.combine(date(2026, 9, 1), datetime_time(12, 0)))
+        RegularizationRequest.objects.filter(id=self.request.id).update(created_at=first_created)
+        for day in (7, 14, 21):
+            request_row = RegularizationRequest.objects.create(
+                employee=self.employee,
+                attendance_date=self.attendance_date,
+                request_type="INCORRECT_ATTENDANCE",
+                reason="Earlier monthly request.",
+                status="REJECTED",
+            )
+            created = timezone.make_aware(datetime.combine(date(2026, 9, day), datetime_time(12, 0)))
+            RegularizationRequest.objects.filter(id=request_row.id).update(created_at=created)
+        self.client.force_authenticate(user=self.employee_user)
+        with patch("attendance.views.timezone.localdate", return_value=anchor):
+            quota = self.client.get("/api/attendance/regularization/quota/")
+            self.assertEqual(quota.data["weekly_used"], 0)
+            self.assertEqual(quota.data["monthly_used"], 4)
+            self.assertEqual(quota.data["monthly_remaining"], 0)
+            blocked = self.client.post("/api/attendance/regularization/", {
+                "attendance_date": anchor.isoformat(),
+                "request_type": "FORGOT_CHECK_OUT",
+                "requested_check_out": timezone.make_aware(datetime.combine(anchor, datetime_time(17, 15))).isoformat(),
+                "reason": "Fifth request this month.",
+            }, format="json")
+        self.assertEqual(blocked.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(blocked.data["monthly_limit"], 4)
+        self.assertEqual(blocked.data["monthly_used"], 4)
+        self.assertEqual(blocked.data["monthly_remaining"], 0)
+
+    def test_monthly_quota_resets_for_new_calendar_month(self):
+        self.request.created_at = timezone.now() - timedelta(days=40)
+        self.request.save(update_fields=["created_at"])
+        self.client.force_authenticate(user=self.employee_user)
+        quota = self.client.get("/api/attendance/regularization/quota/")
+        self.assertEqual(quota.status_code, status.HTTP_200_OK)
+        self.assertEqual(quota.data["monthly_used"], 0)
+        self.assertEqual(quota.data["monthly_remaining"], 4)
+        self.assertEqual(quota.data["weekly_used"], 0)
+        self.assertEqual(quota.data["weekly_remaining"], 1)
+
+    def test_employee_can_submit_grouped_days_and_admin_approve_them(self):
+        self.request.delete()
+        anchor = date(2026, 9, 30)
+        second_date = date(2026, 9, 29)
+        self.attendance_date = anchor
+        self.check_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(9, 0)))
+        self.check_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(17, 0)))
+        self.client.force_authenticate(user=self.employee_user)
+        with patch("attendance.views.timezone.localdate", return_value=anchor):
+            response = self.client.post("/api/attendance/regularization/", {
+                "period_type": "WEEK",
+                "days": [
+                    {
+                        "attendance_date": self.attendance_date.isoformat(),
+                        "request_type": "INCORRECT_ATTENDANCE",
+                        "requested_check_in": (self.check_in + timedelta(minutes=10)).isoformat(),
+                        "requested_check_out": self.check_out.isoformat(),
+                        "reason": "Correct first day.",
+                    },
+                    {
+                        "attendance_date": second_date.isoformat(),
+                        "request_type": "FORGOT_CHECK_OUT",
+                        "requested_check_out": timezone.make_aware(datetime.combine(second_date, datetime_time(17, 0))).isoformat(),
+                        "reason": "Forgot to check out.",
+                    },
+                ],
+            }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        request_id = response.data["request_id"]
+        self.assertEqual(RegularizationRequest.objects.get(id=request_id).days.count(), 2)
+        quota = self.client.get("/api/attendance/regularization/quota/")
+        self.assertEqual(quota.data["monthly_used"], 1)
+        self.assertEqual(quota.data["weekly_used"], 1)
+
+        self.client.force_authenticate(user=self.admin_user)
+        with patch("attendance.views.timezone.localdate", return_value=anchor):
+            review = self.client.get(f"/api/attendance/admin/regularization/{request_id}/")
+            self.assertEqual(review.status_code, status.HTTP_200_OK, review.data)
+            approve = self.client.post(f"/api/attendance/admin/regularization/{request_id}/approve/", {
+                "days": [
+                    {"id": day["id"], "check_in": day["requested_check_in"], "check_out": day["requested_check_out"]}
+                    for day in review.data["days"]
+                ],
+            }, format="json")
+        self.assertEqual(approve.status_code, status.HTTP_200_OK, approve.data)
+        self.assertEqual(approve.data["approved_days"], 2)
+        self.assertEqual(RegularizationRequest.objects.get(id=request_id).status, "APPROVED")
+
+    def test_admin_approval_applies_final_times_and_audits_correction(self):
+        self.client.force_authenticate(user=self.admin_user)
+        final_check_in = self.check_in + timedelta(hours=1)
+        final_check_out = self.check_out + timedelta(hours=1)
+        response = self.client.post(
+            f"/api/attendance/admin/regularization/{self.request.id}/approve/",
+            {"check_in": final_check_in.isoformat(), "check_out": final_check_out.isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.request.refresh_from_db()
+        self.attendance.refresh_from_db()
+        self.assertEqual(self.request.status, "APPROVED")
+        self.assertEqual(self.request.reviewed_by, self.admin_user)
+        self.assertIsNotNone(self.request.reviewed_at)
+        self.assertEqual(self.request.approved_check_in, final_check_in)
+        self.assertEqual(self.request.approved_check_out, final_check_out)
+        self.assertEqual(self.attendance.check_in, final_check_in)
+        self.assertEqual(self.attendance.check_out, final_check_out)
+        self.assertEqual(self.request.attendance_correction.correction_type, "REGULARIZATION")
+        self.assertEqual(
+            datetime.fromisoformat(self.request.attendance_correction.previous_data["check_in"]),
+            self.check_in,
+        )
+
+    def test_admin_cannot_approve_with_invalid_final_times(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            f"/api/attendance/admin/regularization/{self.request.id}/approve/",
+            {"check_in": self.check_out.isoformat(), "check_out": self.check_in.isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.request.refresh_from_db()
+        self.attendance.refresh_from_db()
+        self.assertEqual(self.request.status, "PENDING")
+        self.assertEqual(self.attendance.check_in, self.check_in)
+        self.assertEqual(self.attendance.check_out, self.check_out)
+
+    def test_rejection_requires_reason_and_does_not_change_attendance(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            f"/api/attendance/admin/regularization/{self.request.id}/reject/",
+            {"rejection_reason": "The submitted times cannot be verified."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.request.refresh_from_db()
+        self.attendance.refresh_from_db()
+        self.assertEqual(self.request.status, "REJECTED")
+        self.assertEqual(self.request.rejection_reason, "The submitted times cannot be verified.")
+        self.assertEqual(self.request.reviewed_by, self.admin_user)
+        self.assertEqual(self.attendance.check_in, self.check_in)
+        self.assertEqual(self.attendance.check_out, self.check_out)
+        self.assertEqual(AttendanceEvent.objects.filter(employee=self.employee).count(), 2)
+
+    def test_employee_cannot_approve_regularization(self):
+        self.client.force_authenticate(user=self.employee_user)
+        response = self.client.post(
+            f"/api/attendance/admin/regularization/{self.request.id}/approve/",
+            {"check_in": self.check_in.isoformat(), "check_out": self.check_out.isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class AttendanceGeofenceTests(APITestCase):

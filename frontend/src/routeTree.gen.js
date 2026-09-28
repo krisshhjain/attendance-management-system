@@ -9,6 +9,7 @@ import { Route as HRCopilotRouteImport } from './routes/hr-copilot.jsx'
 import { Route as SettingsRouteImport } from './routes/settings.jsx'
 import { Route as LeaveRouteImport } from './routes/leave.jsx'
 import { Route as AdministrationRouteImport } from './routes/administration.jsx'
+import { Route as AdministrationRegularizationIdRouteImport } from './routes/administration.regularization.$id.jsx'
 import { Route as EmployeesRouteImport } from './routes/employees.jsx'
 import { Route as MyTeamRouteImport } from './routes/my-team.jsx'
 import { Route as RegularizationRouteImport } from './routes/regularization.jsx'
@@ -73,6 +74,12 @@ const AdministrationRoute = AdministrationRouteImport.update({
   getParentRoute: () => rootRouteImport,
 })
 
+const AdministrationRegularizationIdRoute = AdministrationRegularizationIdRouteImport.update({
+  id: '/administration/regularization/$id',
+  path: '/administration/regularization/$id',
+  getParentRoute: () => rootRouteImport,
+})
+
 const EmployeesRoute = EmployeesRouteImport.update({
   id: '/employees',
   path: '/employees',
@@ -102,6 +109,7 @@ const rootRouteChildren = {
   SettingsRoute: SettingsRoute,
   LeaveRoute: LeaveRoute,
   AdministrationRoute: AdministrationRoute,
+  AdministrationRegularizationIdRoute: AdministrationRegularizationIdRoute,
   EmployeesRoute: EmployeesRoute,
   MyTeamRoute: MyTeamRoute,
   RegularizationRoute: RegularizationRoute,

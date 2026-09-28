@@ -1,511 +1,310 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { RequireAuth } from "../components/RequireAuth.jsx";
 import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Dialog,
-  DialogContent,
-  Divider,
-  FormControl,
-  InputAdornment,
-  MenuItem,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-  useMediaQuery,
-  useTheme,
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
+  DialogContent, DialogTitle, MenuItem, Paper, Table, TableBody,
+  TableCell, TableContainer, TableHead, TableRow, TextField, Typography,
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
-import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
-import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
-import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
+import { RequireAuth } from "../components/RequireAuth.jsx";
+import { createRegularizationRequest, fetchMyRegularizationQuota, fetchMyRegularizationRequests, uploadFile } from "../lib/api.js";
+import { getHistory } from "../lib/attendance.js";
+
+const REQUEST_TYPES = [
+  { value: "FORGOT_CHECK_IN", label: "Forgot Check-In" },
+  { value: "FORGOT_CHECK_OUT", label: "Forgot Check-Out" },
+  { value: "INCORRECT_ATTENDANCE", label: "Incorrect Attendance" },
+  { value: "SYSTEM_ISSUE", label: "System Issue" },
+];
+const STATUS_COLORS = { PENDING: "warning", APPROVED: "success", REJECTED: "error" };
+const TODAY = () => localDateString();
+
+function localDateString(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+function shiftDate(value, offset) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day + offset, 12);
+  return localDateString(date);
+}
+function weekdaysBetween(start, end) {
+  const dates = [];
+  for (let value = start; value <= end; value = shiftDate(value, 1)) {
+    const [year, month, day] = value.split("-").map(Number);
+    const weekday = new Date(year, month - 1, day, 12).getDay();
+    if (weekday !== 0 && weekday !== 6) dates.push(value);
+  }
+  return dates;
+}
+function isWorkingDay(value) {
+  const [year, month, day] = value.split("-").map(Number);
+  const weekday = new Date(year, month - 1, day, 12).getDay();
+  return weekday !== 0 && weekday !== 6;
+}
+function formatTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function dateLabel(value) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 12).toLocaleDateString();
+}
+function weekStart(value) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 12);
+  return shiftDate(value, -((date.getDay() + 6) % 7));
+}
+function weekLabel(monday) {
+  const sunday = shiftDate(monday, 6);
+  const [startYear, startMonth, startDay] = monday.split("-").map(Number);
+  const [endYear, endMonth, endDay] = sunday.split("-").map(Number);
+  const start = new Date(startYear, startMonth - 1, startDay, 12);
+  const end = new Date(endYear, endMonth - 1, endDay, 12);
+  const sameMonth = start.getMonth() === end.getMonth();
+  return sameMonth
+    ? `${start.toLocaleString([], { month: "short" })} ${start.getDate()} – ${end.toLocaleString([], { month: "short" })} ${end.getDate()}, ${end.getFullYear()}`
+    : `${start.toLocaleString([], { month: "short" })} ${start.getDate()} – ${end.toLocaleString([], { month: "short" })} ${end.getDate()}, ${end.getFullYear()}`;
+}
+function monthLabel(value) {
+  const [year, month] = value.split("-").map(Number);
+  return new Date(year, month - 1, 1, 12).toLocaleString([], { month: "long", year: "numeric" });
+}
+function getAvailableWeeks() {
+  const today = TODAY();
+  const currentMonday = weekStart(today);
+  return [-2, -1, 0, 1, 2].map((offset) => shiftDate(currentMonday, offset * 7));
+}
+function getAvailableMonths() {
+  const [year, month] = TODAY().split("-").map(Number);
+  return [-2, -1, 0, 1, 2].map((offset) => {
+    const date = new Date(year, month - 1 + offset, 1, 12);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  });
+}
 
 export const Route = createFileRoute("/regularization")({
-  component: () => (
-    <RequireAuth>
-      <RegularizationPage />
-    </RequireAuth>
-  ),
+  component: () => <RequireAuth><RegularizationPage /></RequireAuth>,
 });
 
-function StatCard({ label, count, tone }) {
-  const palette = {
-    warning: { color: "#d97706", border: "rgba(245, 158, 11, 0.25)" },
-    success: { color: "#16a34a", border: "rgba(34, 197, 94, 0.25)" },
-    error: { color: "#dc2626", border: "rgba(239, 68, 68, 0.25)" },
-  };
-
-  const styles = palette[tone] || palette.warning;
-
-  return (
-    <Card
-      elevation={0}
-      sx={{
-        flex: 1,
-        minWidth: 180,
-        borderRadius: "12px",
-        border: `1px solid ${styles.border}`,
-        backgroundColor: "#fff",
-      }}
-    >
-      <CardContent sx={{ p: 2.25, pb: "16px !important" }}>
-        <Typography variant="caption" sx={{ color: "#64748b", fontWeight: 500, display: "block", mb: 1 }}>
-          {label}
-        </Typography>
-        <Typography
-          variant="h6"
-          sx={{
-            color: styles.color,
-            fontWeight: 700,
-            fontSize: "1.06rem",
-            lineHeight: 1.2,
-          }}
-        >
-          {count} requests
-        </Typography>
-      </CardContent>
-    </Card>
-  );
-}
-
-function makeRecordForDate(dateValue) {
-  if (!dateValue) return null;
-  const dateObj = new Date(`${dateValue}T00:00:00`);
-
-  return {
-    date: dateValue,
-    label: dateObj.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    }),
-    checkIn: "",
-    checkOut: "",
-    totalHours: "00h 00m",
-    reason: "Forgot to Check Out",
-    description: "",
-  };
-}
-
 function RegularizationPage() {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const [isRequesting, setIsRequesting] = useState(false);
-  const [selectedDate, setSelectedDate] = useState("2026-09-28");
-  const [workLocation, setWorkLocation] = useState("Office");
-  const [attachmentName, setAttachmentName] = useState("");
-  const [records, setRecords] = useState(() => [makeRecordForDate("2026-09-28")]);
+  const [requests, setRequests] = useState([]);
+  const [quota, setQuota] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [periodType, setPeriodType] = useState("DAY");
+  const [periodValue, setPeriodValue] = useState(TODAY());
+  const [attachment, setAttachment] = useState(null);
+  const [days, setDays] = useState({});
+  const cutoff = new Date(TODAY()); cutoff.setDate(cutoff.getDate() - 2);
+  const cutoffString = localDateString(cutoff);
 
-  const requestSummary = [
-    { label: "Pending", count: 0, tone: "warning" },
-    { label: "Approved", count: 0, tone: "success" },
-    { label: "Rejected", count: 0, tone: "error" },
-  ];
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setPageError("");
+    try {
+      const [requestData, attendanceData, quotaData] = await Promise.all([
+        fetchMyRegularizationRequests(),
+        getHistory(),
+        fetchMyRegularizationQuota(),
+      ]);
+      setRequests(Array.isArray(requestData) ? requestData : []);
+      setHistory(Array.isArray(attendanceData) ? attendanceData : []);
+      setQuota(quotaData);
+    } catch (error) {
+      setPageError(error.message || "Failed to load regularization information.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  const currentRow = useMemo(() => {
-    if (!selectedDate) return null;
-    return records.find((row) => row.date === selectedDate) || makeRecordForDate(selectedDate);
-  }, [records, selectedDate]);
+  const summary = useMemo(() => ({
+    PENDING: requests.filter((item) => item.status === "PENDING").length,
+    APPROVED: requests.filter((item) => item.status === "APPROVED").length,
+    REJECTED: requests.filter((item) => item.status === "REJECTED").length,
+  }), [requests]);
 
-  const handleDateChange = (value) => {
-    setSelectedDate(value);
-    const nextRow = makeRecordForDate(value);
-    setRecords((prev) => {
-      if (!value) return prev;
-      const filtered = prev.filter((entry) => entry.date !== value);
-      return [...filtered, nextRow];
-    });
-  };
+  const generatedDates = useMemo(() => {
+    const today = TODAY();
+    if (periodType === "DAY") return [periodValue].filter((date) => date <= today);
+    if (periodType === "WEEK") {
+      return weekdaysBetween(periodValue, shiftDate(periodValue, 6)).filter((date) => date <= today);
+    }
+    const [year, month] = periodValue.split("-").map(Number);
+    const first = `${year}-${String(month).padStart(2, "0")}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    return weekdaysBetween(first, `${year}-${String(month).padStart(2, "0")}-${lastDay}`).filter((date) => date <= today);
+  }, [periodType, periodValue]);
 
-  const handleAttachment = (event) => {
-    const file = event.target.files?.[0];
-    setAttachmentName(file ? file.name : "");
-  };
-
-  const handleSubmit = () => {
-    const payload = {
-      date: selectedDate,
-      work_location: workLocation,
-      attachment: attachmentName,
-      records: records.filter((row) => row.date === selectedDate),
-    };
-
-    console.log("Regularization payload:", payload);
-    setIsRequesting(false);
-  };
-
-  return (
-    <Box sx={{ maxWidth: 1200, width: "100%", mx: "auto", px: { xs: 2, sm: 3 }, py: 2 }}>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: { xs: "flex-start", sm: "center" },
-          justifyContent: "space-between",
-          gap: 2,
-          mb: 2,
-          pb: 1,
-          flexDirection: { xs: "column", sm: "row" },
-        }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: "#111827", fontSize: { xs: "1.75rem", md: "2rem" }, lineHeight: 1.2 }}>
-            Regularization
-          </Typography>
-          <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5 }}>
-            Request corrections for missing or incorrect attendance records.
-          </Typography>
-        </Box>
-
-        <Button
-          variant="contained"
-          onClick={() => setIsRequesting(true)}
-          sx={{
-            borderRadius: "10px",
-            px: 2.25,
-            py: 1,
-            background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-            textTransform: "none",
-            fontWeight: 700,
-            boxShadow: "0 8px 18px rgba(79, 70, 229, 0.22)",
-            "&:hover": {
-              background: "linear-gradient(135deg, #4338ca 0%, #6d28d9 100%)",
-            },
-          }}
-        >
-          + Request Regularization
-        </Button>
-      </Box>
-
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "repeat(3, minmax(180px, 1fr))" },
-          gap: 2,
-          mb: 3,
-        }}
-      >
-        {requestSummary.map((item) => (
-          <StatCard key={item.label} label={item.label} count={item.count} tone={item.tone} />
-        ))}
-      </Box>
-
-      <Card
-        elevation={0}
-        sx={{
-          width: "100%",
-          borderRadius: "14px",
-          border: "1px solid #e2e8f0",
-          backgroundColor: "#fff",
-          overflow: "hidden",
-        }}
-      >
-        <Box sx={{ px: 2.5, py: 1.8, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: "#111827", fontSize: "1.03rem" }}>
-              My Requests
-            </Typography>
-            <Typography variant="body2" sx={{ color: "#64748b" }}>
-              Track regularization requests and approval status
-            </Typography>
-          </Box>
-        </Box>
-
-        <Divider />
-
-        <Box
-          sx={{
-            minHeight: 260,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            textAlign: "center",
-            px: 3,
-            py: 4,
-          }}
-        >
-          <Stack spacing={1.75} alignItems="center">
-            <Box
-              sx={{
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                backgroundColor: "#f1f5f9",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#64748b",
-              }}
-            >
-              <NotificationsNoneOutlinedIcon fontSize="small" />
-            </Box>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: "#1f2937" }}>
-              No regularization requests
-            </Typography>
-            <Typography variant="body2" sx={{ color: "#64748b", maxWidth: 420 }}>
-              Submitted attendance corrections will appear here.
-            </Typography>
-          </Stack>
-        </Box>
-      </Card>
-
-      <Dialog
-        open={isRequesting}
-        onClose={() => setIsRequesting(false)}
-        maxWidth="xl"
-        fullWidth
-        fullScreen={isMobile}
-        PaperProps={{
-          sx: {
-            borderRadius: isMobile ? 0 : 2,
-            overflow: "hidden",
-            backgroundColor: "#f8fafc",
-            boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)",
-            m: isMobile ? 0 : 3,
-            width: isMobile ? "100%" : "auto",
-          },
-        }}
-      >
-        <DialogContent sx={{ p: 0 }}>
-          <Box sx={{ p: 3, pb: 2.5 }}>
-            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-              <Box>
-                <Typography variant="h4" sx={{ fontWeight: 700, color: "#111827", fontSize: "1.2rem", lineHeight: 1.2 }}>
-                  Request Regularization
-                </Typography>
-                <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5 }}>
-                  Correct attendance details for the selected work period.
-                </Typography>
-              </Box>
-
-              <Button
-                variant="outlined"
-                onClick={() => setIsRequesting(false)}
-                sx={{
-                  borderRadius: "10px",
-                  borderColor: "#dbe3ef",
-                  color: "#334155",
-                  textTransform: "none",
-                  fontWeight: 600,
-                }}
-              >
-                Back to requests
-              </Button>
-            </Box>
-
-            <Box sx={{ border: "1px solid #e2e8f0", borderRadius: "12px", backgroundColor: "#fff", p: 2.5 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#111827", mb: 1.2 }}>
-                Request details
-              </Typography>
-              <Typography variant="body2" sx={{ color: "#64748b", mb: 2.5 }}>
-                Select a period and provide the corrected work records.
-              </Typography>
-
-              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, minmax(0, 1fr))" }, gap: 2.5, mb: 2.5 }}>
-                <FormControl fullWidth>
-                  <TextField
-                    select
-                    label="Period"
-                    defaultValue="Day"
-                    size="small"
-                    sx={{ backgroundColor: "#fff" }}
-                  >
-                    <MenuItem value="Day">Day</MenuItem>
-                  </TextField>
-                </FormControl>
-
-                <TextField
-                  label="Date"
-                  type="date"
-                  size="small"
-                  value={selectedDate}
-                  onChange={(event) => handleDateChange(event.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <CalendarTodayOutlinedIcon fontSize="small" sx={{ color: "#64748b" }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-
-                <TextField
-                  select
-                  label="Work location"
-                  size="small"
-                  value={workLocation}
-                  onChange={(event) => setWorkLocation(event.target.value)}
-                  sx={{ backgroundColor: "#fff" }}
-                >
-                  <MenuItem value="Office">Office</MenuItem>
-                  <MenuItem value="Remote">Remote</MenuItem>
-                  <MenuItem value="Field">Field</MenuItem>
-                </TextField>
-              </Box>
-
-              <Box
-                sx={{
-                  border: "1px dashed #93c5fd",
-                  borderRadius: "12px",
-                  backgroundColor: "#f8fbff",
-                  minHeight: 140,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                  mb: 2.5,
-                  p: 2,
-                }}
-              >
-                <Stack alignItems="center" spacing={0.8}>
-                  <CloudUploadOutlinedIcon sx={{ fontSize: 26, color: "#4f46e5" }} />
-                  <Typography variant="body1" sx={{ fontWeight: 600, color: "#111827" }}>
-                    Upload supporting document
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: "#64748b" }}>
-                    PDF, XLS, DOC or image • Maximum 5MB
-                  </Typography>
-                  <Button
-                    component="label"
-                    variant="outlined"
-                    sx={{
-                      borderRadius: "8px",
-                      textTransform: "none",
-                      borderColor: "#dbe3ef",
-                      color: "#334155",
-                      mt: 0.5,
-                    }}
-                  >
-                    Choose file
-                    <input hidden type="file" onChange={handleAttachment} />
-                  </Button>
-                  {attachmentName && (
-                    <Typography variant="caption" sx={{ color: "#16a34a", fontWeight: 600 }}>
-                      {attachmentName}
-                    </Typography>
-                  )}
-                </Stack>
-              </Box>
-
-              <Box sx={{ mb: 1.5 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#111827", fontSize: "1rem", mb: 1 }}>
-                  Worked Day
-                </Typography>
-                <Typography variant="caption" sx={{ color: "#64748b" }}>
-                  1 attendance record in this day
-                </Typography>
-              </Box>
-
-              {currentRow ? (
-                <Box sx={{ border: "1px solid #e2e8f0", borderRadius: "12px", backgroundColor: "#fff", overflowX: "auto" }}>
-                  <TableContainer sx={{ overflowX: "auto" }}>
-                    <Table size="small" sx={{ minWidth: { xs: 720, md: 0 } }}>
-                      <TableHead>
-                        <TableRow sx={{ backgroundColor: "#f8fafc" }}>
-                          <TableCell sx={{ fontWeight: 700, color: "#475569", py: 1.25 }}>Date</TableCell>
-                          <TableCell sx={{ fontWeight: 700, color: "#475569", py: 1.25 }}>Check-in</TableCell>
-                          <TableCell sx={{ fontWeight: 700, color: "#475569", py: 1.25 }}>Check-out</TableCell>
-                          <TableCell sx={{ fontWeight: 700, color: "#475569", py: 1.25 }}>Total hours</TableCell>
-                          <TableCell sx={{ fontWeight: 700, color: "#475569", py: 1.25 }}>Reason</TableCell>
-                          <TableCell sx={{ fontWeight: 700, color: "#475569", py: 1.25 }}>Description</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        <TableRow>
-                          <TableCell sx={{ py: 1.5 }}>
-                            <TextField
-                              size="small"
-                              value={currentRow.label}
-                              InputProps={{ readOnly: true }}
-                              sx={{ minWidth: 120 }}
-                            />
-                          </TableCell>
-                          <TableCell sx={{ py: 1.5 }}>
-                            <TextField size="small" value={currentRow.checkIn} placeholder="--:--" sx={{ minWidth: 110 }} />
-                          </TableCell>
-                          <TableCell sx={{ py: 1.5 }}>
-                            <TextField size="small" value={currentRow.checkOut} placeholder="--:--" sx={{ minWidth: 110 }} />
-                          </TableCell>
-                          <TableCell sx={{ py: 1.5 }}>
-                            <TextField size="small" value={currentRow.totalHours} sx={{ minWidth: 110 }} />
-                          </TableCell>
-                          <TableCell sx={{ py: 1.5 }}>
-                            <TextField
-                              select
-                              size="small"
-                              value={currentRow.reason}
-                              sx={{ minWidth: 180 }}
-                            >
-                              <MenuItem value="Forgot to Check Out">Forgot to Check Out</MenuItem>
-                              <MenuItem value="Wrong shift time">Wrong shift time</MenuItem>
-                              <MenuItem value="Missed punch">Missed punch</MenuItem>
-                              <MenuItem value="Travel delay">Travel delay</MenuItem>
-                            </TextField>
-                          </TableCell>
-                          <TableCell sx={{ py: 1.5 }}>
-                            <TextField
-                              size="small"
-                              value={currentRow.description}
-                              placeholder="Add explanation"
-                              sx={{ minWidth: 200 }}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Box>
-              ) : (
-                <Alert severity="info">Select a date to populate the correction form.</Alert>
-              )}
-
-              <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1.5, pt: 3 }}>
-                <Button
-                  variant="outlined"
-                  onClick={() => setIsRequesting(false)}
-                  sx={{
-                    minWidth: 120,
-                    borderRadius: "10px",
-                    borderColor: "#dbe3ef",
-                    color: "#334155",
-                    textTransform: "none",
-                    fontWeight: 600,
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={handleSubmit}
-                  sx={{
-                    minWidth: 150,
-                    borderRadius: "10px",
-                    background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-                    textTransform: "none",
-                    fontWeight: 700,
-                    boxShadow: "0 8px 18px rgba(79, 70, 229, 0.2)",
-                    "&:hover": {
-                      background: "linear-gradient(135deg, #4338ca 0%, #6d28d9 100%)",
-                    },
-                  }}
-                >
-                  Submit Request
-                </Button>
-              </Box>
-            </Box>
-          </Box>
-        </DialogContent>
-      </Dialog>
-    </Box>
+  // Keep all selected-period rows visible; this separate list controls submission eligibility.
+  const generatedPeriodDates = useMemo(
+    () => generatedDates.filter(isWorkingDay),
+    [generatedDates],
   );
+  const submissionDates = generatedPeriodDates.filter((date) => date >= cutoffString);
+  const normalizeDate = (value) => String(value ?? "").slice(0, 10);
+  const attendanceByDate = useMemo(() => Object.fromEntries(
+    history.map((row) => [normalizeDate(row.date), row]),
+  ), [history]);
+  const pendingDates = useMemo(() => new Set(requests.filter((item) => item.status === "PENDING").flatMap((item) => item.days?.map((day) => day.attendance_date) || [item.attendance_date])), [requests]);
+
+  const openForm = () => {
+    setFormError(""); setAttachment(null); setDays({}); setPeriodType("DAY"); setPeriodValue(TODAY()); setDialogOpen(true);
+  };
+  const setDayField = (date, field, value) => setDays((current) => ({
+    ...current,
+    [date]: { request_type: "INCORRECT_ATTENDANCE", reason: "", description: "", requested_check_in: "", requested_check_out: "", ...current[date], [field]: value },
+  }));
+
+  const handleSubmit = async (event) => {
+    event.preventDefault(); setFormError("");
+    const selectedDays = submissionDates.filter((date) => {
+      const day = days[date];
+      return day && (day.requested_check_in || day.requested_check_out || day.reason.trim() || day.description.trim());
+    });
+    if (!selectedDays.length) { setFormError("Choose at least one attendance date and enter a correction."); return; }
+    for (const date of selectedDays) {
+      const day = days[date];
+      if (!day.reason.trim()) { setFormError(`${dateLabel(date)}: add a reason.`); return; }
+      if (!day.requested_check_in && !day.requested_check_out) { setFormError(`${dateLabel(date)}: enter a corrected check-in or check-out.`); return; }
+      if (day.requested_check_in && day.requested_check_out && day.requested_check_out <= day.requested_check_in) { setFormError(`${dateLabel(date)}: check-out must be later than check-in.`); return; }
+    }
+    setSubmitting(true);
+    try {
+      let attachmentUrl = "";
+      if (attachment) {
+        const upload = await uploadFile(attachment);
+        attachmentUrl = upload.file_url;
+      }
+      const payloadDays = selectedDays.map((date) => {
+        const day = days[date];
+        return {
+          attendance_date: date,
+          request_type: day.request_type,
+          requested_check_in: day.requested_check_in ? `${date}T${day.requested_check_in}:00` : null,
+          requested_check_out: day.requested_check_out ? `${date}T${day.requested_check_out}:00` : null,
+          reason: day.reason.trim(),
+          description: day.description.trim(),
+        };
+      });
+      await createRegularizationRequest({ period_type: periodType, days: payloadDays, attachment: attachmentUrl });
+      setQuota((current) => current ? {
+        ...current,
+        weekly_used: Math.min(current.weekly_limit, current.weekly_used + 1),
+        weekly_remaining: Math.max(0, current.weekly_limit - current.weekly_used - 1),
+        monthly_used: Math.min(current.monthly_limit, current.monthly_used + 1),
+        monthly_remaining: Math.max(0, current.monthly_limit - current.monthly_used - 1),
+      } : current);
+      setDialogOpen(false);
+      await loadData();
+    } catch (error) { setFormError(error.message || "Failed to submit the request."); }
+    finally { setSubmitting(false); }
+  };
+
+  const fileLimit = 5 * 1024 * 1024;
+  const fileAccepted = ".pdf,.jpg,.jpeg,.png,.doc,.docx";
+  const weeklyQuotaExhausted = Boolean(quota && quota.weekly_used >= quota.weekly_limit);
+  const monthlyQuotaExhausted = Boolean(quota && quota.monthly_used >= quota.monthly_limit);
+  const quotaExhausted = weeklyQuotaExhausted || monthlyQuotaExhausted;
+  return <Box sx={{ maxWidth: 1280, mx: "auto", p: { xs: 2, md: 4 } }}>
+    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "stretch", sm: "center" }, gap: 2, flexDirection: { xs: "column", sm: "row" }, mb: 3 }}>
+      <Box><Typography variant="h4" fontWeight={750}>Regularization</Typography><Typography color="text.secondary" sx={{ mt: 0.5 }}>Request corrections for one day, a week, or a month.</Typography></Box>
+      <Button variant="contained" onClick={openForm}>Request correction</Button>
+    </Box>
+    {pageError && <Alert severity="error" sx={{ mb: 2 }}>{pageError}</Alert>}
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: 2, mb: 3 }}>
+      {Object.entries(summary).map(([status, count]) => <Paper key={status} variant="outlined" sx={{ p: 2 }}><Typography variant="body2" color="text.secondary">{status}</Typography><Typography variant="h5" fontWeight={700}>{count}</Typography></Paper>)}
+    </Box>
+    <Paper variant="outlined" sx={{ p: 2, mb: 3, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+      <Box sx={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        <Box><Typography variant="subtitle2" color="text.secondary">This week · {quota ? `${dateLabel(quota.week_start)} – ${dateLabel(quota.week_end)}` : "Loading…"}</Typography>
+          <Typography fontWeight={700}>{quota ? `${quota.weekly_used} of ${quota.weekly_limit} requests used` : "Weekly usage unavailable"}</Typography></Box>
+        <Box><Typography variant="subtitle2" color="text.secondary">This month · {quota ? monthLabel(quota.month) : "Loading…"}</Typography>
+          <Typography fontWeight={700}>{quota ? `${quota.monthly_used} of ${quota.monthly_limit} requests used` : "Monthly usage unavailable"}</Typography></Box>
+      </Box>
+      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+        <Chip label={quota ? `${quota.weekly_remaining} left this week` : "— left this week"} color={quota?.weekly_remaining === 0 ? "warning" : "default"} variant="outlined" />
+        <Chip label={quota ? `${quota.monthly_remaining} left this month` : "— left this month"} color={quota?.monthly_remaining === 0 ? "warning" : "default"} variant="outlined" />
+      </Box>
+    </Paper>
+    <Paper variant="outlined">
+      <Box sx={{ p: 2 }}><Typography variant="h6" fontWeight={700}>My requests</Typography></Box>
+      {loading ? <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}><CircularProgress size={28} /></Box> : requests.length === 0 ? <Typography color="text.secondary" sx={{ p: 3 }}>You have not submitted any regularization requests.</Typography> :
+        <TableContainer><Table size="small"><TableHead><TableRow><TableCell>Period</TableCell><TableCell>Type</TableCell><TableCell>Requested times</TableCell><TableCell>Reason</TableCell><TableCell>Status</TableCell><TableCell>Review note</TableCell></TableRow></TableHead><TableBody>
+          {requests.map((item) => <TableRow key={item.id} hover>
+            <TableCell>{item.period_type && item.period_type !== "DAY" ? `${dateLabel(String(item.period_start).slice(0, 10))} – ${dateLabel(String(item.period_end).slice(0, 10))}` : dateLabel(item.attendance_date)}</TableCell>
+            <TableCell>{item.period_type || "DAY"}{item.day_count > 1 ? ` (${item.day_count} days)` : ""}</TableCell>
+            <TableCell>{formatTime(item.requested_check_in)} / {formatTime(item.requested_check_out)}</TableCell>
+            <TableCell sx={{ maxWidth: 250 }}>{item.reason}</TableCell>
+            <TableCell><Chip label={item.status} color={STATUS_COLORS[item.status] || "default"} size="small" /></TableCell>
+            <TableCell>{item.rejection_reason || item.reviewed_by_name || "—"}</TableCell>
+          </TableRow>)}
+        </TableBody></Table></TableContainer>}
+    </Paper>
+
+    <Dialog open={dialogOpen} onClose={() => !submitting && setDialogOpen(false)} fullWidth maxWidth="lg">
+      <Box component="form" onSubmit={handleSubmit}>
+        <DialogTitle>Request attendance correction</DialogTitle>
+        <DialogContent sx={{ display: "grid", gap: 2, pt: "8px !important" }}>
+          {formError && <Alert severity="error">{formError}</Alert>}
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
+            <TextField select label="Period" value={periodType} onChange={(event) => { setPeriodType(event.target.value); setDays({}); }}>
+              <MenuItem value="DAY">Single day</MenuItem><MenuItem value="WEEK">Week</MenuItem><MenuItem value="MONTH">Month</MenuItem>
+            </TextField>
+            {periodType === "DAY" ? <TextField label="Date" type="date" value={periodValue} onChange={(event) => { setPeriodValue(event.target.value); setDays({}); }} inputProps={{ max: TODAY() }} InputLabelProps={{ shrink: true }} /> :
+              periodType === "WEEK" ? <TextField select label="Week" value={periodValue} onChange={(event) => { setPeriodValue(event.target.value); setDays({}); }}>
+                {getAvailableWeeks().map((monday) => <MenuItem key={monday} value={monday}>{weekLabel(monday)}</MenuItem>)}
+              </TextField> : <TextField select label="Month" value={periodValue.slice(0, 7)} onChange={(event) => { setPeriodValue(`${event.target.value}-01`); setDays({}); }}>
+                {getAvailableMonths().map((month) => <MenuItem key={month} value={month}>{monthLabel(month)}</MenuItem>)}
+              </TextField>}
+          </Box>
+          <Alert severity={quotaExhausted ? "warning" : "info"}>
+            You can submit up to 1 regularization request per calendar week and 4 per calendar month. Each request may include multiple attendance dates. Attendance corrections remain subject to the existing 48-hour window. Weekends are excluded; company holidays are not configured in the current calendar.
+          </Alert>
+          {weeklyQuotaExhausted && <Alert severity="error">You have used this week’s 1 regularization request.</Alert>}
+          {monthlyQuotaExhausted && <Alert severity="error">You have used all 4 regularization requests available for this month.</Alert>}
+          {generatedPeriodDates.length === 0 ? (
+            <Paper variant="outlined" sx={{ p: 3, textAlign: "center" }}>
+              <Typography color="text.secondary">No past weekdays are available in this period.</Typography>
+            </Paper>
+          ) : generatedPeriodDates.map((date) => {
+            const day = days[date] || {};
+            const attendance = attendanceByDate[date];
+            const eligible = date >= cutoffString && !pendingDates.has(date);
+            return <Paper key={date} data-attendance-date={date} variant="outlined" sx={{ p: 2, minWidth: 0 }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1, alignItems: "center", mb: 1 }}>
+                <Typography fontWeight={700}>{dateLabel(date)}</Typography>
+                {!eligible && <Chip size="small" color="warning" label={pendingDates.has(date) ? "Pending request" : "Outside 48 hours"} />}
+                <Chip size="small" variant="outlined" label={attendance ? attendance.status : "No attendance row"} />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Current: {formatTime(attendance?.check_in)} – {formatTime(attendance?.check_out)}</Typography>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr 1fr" }, gap: 1.5 }}>
+                <TextField select label="Request type" value={day.request_type || "INCORRECT_ATTENDANCE"} disabled={!eligible} onChange={(event) => setDayField(date, "request_type", event.target.value)}>
+                  {REQUEST_TYPES.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}
+                </TextField>
+                <TextField label="Corrected check-in" type="time" value={day.requested_check_in || ""} disabled={!eligible} onChange={(event) => setDayField(date, "requested_check_in", event.target.value)} InputLabelProps={{ shrink: true }} />
+                <TextField label="Corrected check-out" type="time" value={day.requested_check_out || ""} disabled={!eligible} onChange={(event) => setDayField(date, "requested_check_out", event.target.value)} InputLabelProps={{ shrink: true }} />
+                <TextField label="Reason" value={day.reason || ""} disabled={!eligible} onChange={(event) => setDayField(date, "reason", event.target.value)} />
+              </Box>
+              {eligible && <TextField fullWidth label="Additional details (optional)" value={day.description || ""} onChange={(event) => setDayField(date, "description", event.target.value)} sx={{ mt: 1.5 }} />}
+            </Paper>;
+          })}
+          <Box><Button component="label" variant="outlined">{attachment ? attachment.name : "Attach supporting document"}<input hidden type="file" accept={fileAccepted} onChange={(event) => { const file = event.target.files?.[0] || null; if (file && file.size > fileLimit) { setFormError("Attachment must be 5 MB or smaller."); setAttachment(null); } else { setFormError(""); setAttachment(file); } }} /></Button><Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>PDF, image, or Word document; max 5 MB</Typography></Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: "space-between" }}>
+          <Typography variant="body2" color={quotaExhausted ? "error.main" : "text.secondary"}>
+            {quota ? `${quota.weekly_used} / ${quota.weekly_limit} this week · ${quota.monthly_used} / ${quota.monthly_limit} this month` : "Quota usage unavailable"}
+          </Typography>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <Button onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
+            <Button type="submit" variant="contained" disabled={submitting || quotaExhausted}>{submitting ? "Submitting…" : "Submit request"}</Button>
+          </Box>
+        </DialogActions>
+      </Box>
+    </Dialog>
+  </Box>;
 }
