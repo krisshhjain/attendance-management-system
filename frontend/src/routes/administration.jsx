@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import React, { useState, useEffect, useCallback } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { ShiftConfigurationPanel } from "../components/ShiftConfigurationPanel.jsx";
 import { ManagerManagement } from "../components/ManagerManagement.jsx";
@@ -59,6 +59,7 @@ import {
   createLeavePolicy,
   updateLeavePolicy,
   deleteLeavePolicy,
+  fetchAdminRegularizationRequests,
   fetchOfficeLocations,
   createOfficeLocation,
   updateOfficeLocation,
@@ -83,6 +84,7 @@ function StatusChip({ status }) {
       icon = <AccessTimeIcon fontSize="small" />;
       break;
     case "DENIED":
+    case "REJECTED":
       color = "error";
       icon = <ErrorIcon fontSize="small" />;
       break;
@@ -143,7 +145,7 @@ function Administration() {
   };
 
   useEffect(() => {
-    if (isSuperUser && currentTab === 6) loadOfficeLocations();
+    if (isSuperUser && currentTab === 7) loadOfficeLocations();
   }, [currentTab, isSuperUser]);
 
   const handleOpenLocationModal = (location = null) => {
@@ -204,6 +206,29 @@ function Administration() {
   const [requests, setRequests] = useState([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [statusFilter, setStatusFilter] = useState("PENDING");
+
+  const [regRequests, setRegRequests] = useState([]);
+  const [loadingRegRequests, setLoadingRegRequests] = useState(false);
+  const [regStatusFilter, setRegStatusFilter] = useState("PENDING");
+  const [regError, setRegError] = useState("");
+
+  const loadRegRequests = useCallback(async () => {
+    setLoadingRegRequests(true);
+    setRegError("");
+    try {
+      const params = regStatusFilter === "ALL" ? {} : { status: regStatusFilter };
+      const data = await fetchAdminRegularizationRequests(params);
+      setRegRequests(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setRegError(err.message || "Failed to load regularization requests.");
+    } finally {
+      setLoadingRegRequests(false);
+    }
+  }, [regStatusFilter]);
+
+  useEffect(() => {
+    if (isStaff && currentTab === 4) loadRegRequests();
+  }, [currentTab, isStaff, loadRegRequests]);
 
   // Approve/Deny Modal state
   const [actionModal, setActionModal] = useState({ open: false, type: "", request: null, remarks: "" });
@@ -661,13 +686,14 @@ function Administration() {
               }
             }}
           >
-            <Tab label="Leave Requests" />
-            {(canManagePolicies || isSystemAdmin) && <Tab label={isSystemAdmin ? "Leave Policies (View Only)" : "Leave Policies"} />}
-            {canViewLeaveTypes && <Tab label={isSystemAdmin ? "Leave Types (View Only)" : "Leave Types"} />}
-            <Tab label="Employee Balances" />
-            {isSuperUser && <Tab label="Manager Management" />}
-            {isStaff && loginType !== "systemadmin" && <Tab label="Configure Shifts" sx={{ fontWeight: 600, textTransform: "none" }} />}
-            {isSuperUser && <Tab label="Office Locations" sx={{ fontWeight: 600, textTransform: "none" }} />}
+            <Tab label="Leave Requests" value={0} />
+            {(canManagePolicies || isSystemAdmin) && <Tab label={isSystemAdmin ? "Leave Policies (View Only)" : "Leave Policies"} value={1} />}
+            {canViewLeaveTypes && <Tab label={isSystemAdmin ? "Leave Types (View Only)" : "Leave Types"} value={2} />}
+            <Tab label="Employee Balances" value={3} />
+            {isStaff && <Tab label="Regularization" value={4} />}
+            {isSuperUser && <Tab label="Manager Management" value={5} />}
+            {isStaff && loginType !== "systemadmin" && <Tab label="Configure Shifts" value={6} sx={{ fontWeight: 600, textTransform: "none" }} />}
+            {isSuperUser && <Tab label="Office Locations" value={7} sx={{ fontWeight: 600, textTransform: "none" }} />}
           </Tabs>
 
           {/* TAB 0: LEAVE REQUESTS */}
@@ -1158,18 +1184,92 @@ function Administration() {
             </Box>
           )}
 
-          {/* TAB 4: MANAGER MANAGEMENT */}
-          {isSuperUser && currentTab === 4 && (
+          {/* TAB 4: REGULARIZATION REQUESTS */}
+          {isStaff && currentTab === 4 && (
+            <Box sx={{ p: 4 }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 2, mb: 3 }}>
+                <Box>
+                  <Typography variant="h5" fontWeight={700}>Regularization Requests</Typography>
+                  <Typography variant="body2" color="text.secondary">Review employee attendance correction requests.</Typography>
+                </Box>
+                <TextField
+                  select
+                  size="small"
+                  label="Status"
+                  value={regStatusFilter}
+                  onChange={(event) => setRegStatusFilter(event.target.value)}
+                  sx={{ minWidth: 150 }}
+                >
+                  {["PENDING", "APPROVED", "REJECTED", "ALL"].map((status) => (
+                    <MenuItem key={status} value={status}>{status}</MenuItem>
+                  ))}
+                </TextField>
+              </Box>
+              {regError && <Alert severity="error" sx={{ mb: 2 }}>{regError}</Alert>}
+              {loadingRegRequests ? (
+                <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}><CircularProgress size={30} /></Box>
+              ) : regRequests.length === 0 ? (
+                <Typography color="text.secondary">No regularization requests found.</Typography>
+              ) : (
+                <TableContainer>
+                  <Table sx={{ minWidth: 850 }}>
+                    <TableHead sx={{ bgcolor: "#f8fafc" }}>
+                      <TableRow>
+                        <TableCell>Employee</TableCell>
+                        <TableCell>Attendance date</TableCell>
+                        <TableCell>Request type</TableCell>
+                        <TableCell>Requested check-in</TableCell>
+                        <TableCell>Requested check-out</TableCell>
+                        <TableCell>Reason</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell align="right">Action</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {regRequests.map((request) => (
+                        <TableRow key={request.id} hover>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={600}>{request.employee_name || request.employee_email}</Typography>
+                            <Typography variant="caption" color="text.secondary">{request.employee_email}</Typography>
+                          </TableCell>
+                          <TableCell>{request.attendance_date ? new Date(`${request.attendance_date}T00:00:00`).toLocaleDateString() : "—"}</TableCell>
+                          <TableCell>{request.request_type?.replaceAll("_", " ")}</TableCell>
+                          <TableCell>{request.requested_check_in ? new Date(request.requested_check_in).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</TableCell>
+                          <TableCell>{request.requested_check_out ? new Date(request.requested_check_out).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</TableCell>
+                          <TableCell sx={{ maxWidth: 220 }}><Typography variant="body2" noWrap title={request.reason}>{request.reason}</Typography></TableCell>
+                          <TableCell><StatusChip status={request.status} /></TableCell>
+                          <TableCell align="right">
+                            <Button
+                              component={Link}
+                              to={`/administration/regularization/${request.id}`}
+                              size="small"
+                              variant={request.status === "PENDING" ? "contained" : "outlined"}
+                              sx={{ textTransform: "none" }}
+                            >
+                              {request.status === "PENDING" ? "Review" : "View"}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Box>
+          )}
+
+          {/* TAB 5: MANAGER MANAGEMENT */}
+          {isSuperUser && currentTab === 5 && (
             <ManagerManagement />
           )}
 
-          {/* TAB 5: SHIFT CONFIGURATION */}
-          {isStaff && loginType !== "systemadmin" && currentTab === 5 && (
+          {/* TAB 6: SHIFT CONFIGURATION */}
+          {isStaff && loginType !== "systemadmin" && currentTab === 6 && (
             <ShiftConfigurationPanel />
           )}
 
-          {/* TAB 6: OFFICE LOCATIONS */}
-          {isSuperUser && currentTab === 6 && (
+          {/* TAB 7: OFFICE LOCATIONS */}
+          {isSuperUser && currentTab === 7 && (
             <Box sx={{ p: 3 }}>
               <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, gap: 2, flexWrap: "wrap" }}>
                 <Box>
