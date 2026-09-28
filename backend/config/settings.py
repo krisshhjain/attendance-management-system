@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "accounts",
     "employees",
     "attendance",
+    "notifications",
     "leave_management",
     "hr_copilot",
     "rest_framework",

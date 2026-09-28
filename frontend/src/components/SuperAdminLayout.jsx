@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Sidebar } from "./Sidebar.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import { SystemAdminChatWidget } from "./SystemAdminChatWidget.jsx";
+import { NotificationBell } from "./notifications/NotificationBell.jsx";
 
 const DRAWER_WIDTH = 260;
 
@@ -144,6 +145,7 @@ export function SuperAdminLayout({ children, title }) {
 
           {/* Right controls */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <NotificationBell />
             {/* Profile dropdown */}
             <div ref={profileRef} style={{ position: "relative" }}>
               <button

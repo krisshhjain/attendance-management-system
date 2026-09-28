@@ -3,6 +3,7 @@ import { Box, AppBar, Toolbar, Typography, Avatar, IconButton, useTheme, useMedi
 import MenuIcon from "@mui/icons-material/Menu";
 import { EmployeeSidebar } from "./EmployeeSidebar.jsx";
 import { useAuth } from "../../lib/auth.jsx";
+import { NotificationBell } from "../notifications/NotificationBell.jsx";
 
 const DRAWER_WIDTH = 240;
 
@@ -75,6 +76,7 @@ export function EmployeeLayout({ children }) {
                 </Avatar>
               </Box>
             </Box>
+            <NotificationBell />
           </Toolbar>
         </AppBar>
         <Box sx={{ p: { xs: 2, sm: 4 }, pt: 2, flexGrow: 1, display: "flex", flexDirection: "column" }}>
