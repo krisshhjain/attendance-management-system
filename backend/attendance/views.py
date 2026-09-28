@@ -21,6 +21,7 @@ from .models import (
     RegularizationRequest,
     calculate_completed_working_duration,
     calculate_working_duration,
+    OfficeLocation,
 )
 from .geofence import validate_attendance_geofence
 from .face_service import find_closest_match, verify_employee_face, FaceExtractionError
@@ -1925,3 +1926,71 @@ class RegularizationRequestRejectView(APIView):
                 {"error": f"Failed to reject request: {str(e)}"},
                 status=500,
             )
+
+
+class OfficeLocationListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        locations = OfficeLocation.objects.all().order_by("-is_active", "name")
+        from .serializers import OfficeLocationSerializer
+
+        serializer = OfficeLocationSerializer(locations, many=True)
+        return Response(serializer.data, status=200)
+
+    def post(self, request):
+        if not (
+            request.user.is_superuser
+            or request.user.is_staff
+            or getattr(request.user, "is_system_admin", False)
+        ):
+            return Response({"error": "Only Superadmin can manage office locations."}, status=403)
+
+        from .serializers import OfficeLocationSerializer
+
+        serializer = OfficeLocationSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+
+class OfficeLocationDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, pk):
+        if not (
+            request.user.is_superuser
+            or request.user.is_staff
+            or getattr(request.user, "is_system_admin", False)
+        ):
+            return Response({"error": "Only Superadmin can manage office locations."}, status=403)
+
+        try:
+            location = OfficeLocation.objects.get(pk=pk)
+        except OfficeLocation.DoesNotExist:
+            return Response({"error": "Office location not found."}, status=404)
+
+        from .serializers import OfficeLocationSerializer
+
+        serializer = OfficeLocationSerializer(location, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+    def delete(self, request, pk):
+        if not (
+            request.user.is_superuser
+            or request.user.is_staff
+            or getattr(request.user, "is_system_admin", False)
+        ):
+            return Response({"error": "Only Superadmin can manage office locations."}, status=403)
+
+        try:
+            location = OfficeLocation.objects.get(pk=pk)
+        except OfficeLocation.DoesNotExist:
+            return Response({"error": "Office location not found."}, status=404)
+
+        location.delete()
+        return Response({"message": "Office location deleted successfully."}, status=200)

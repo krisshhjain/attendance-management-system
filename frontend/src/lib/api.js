@@ -308,3 +308,19 @@ export async function configureEmploymentTypeShifts(employmentType, shifts) {
 export async function fetchAllShifts() {
   return apiRequest("/attendance/admin/shift/all/");
 }
+
+export async function fetchOfficeLocations() {
+  return apiRequest("/attendance/locations/");
+}
+
+export async function createOfficeLocation(data) {
+  return apiRequest("/attendance/locations/", { method: "POST", body: data });
+}
+
+export async function updateOfficeLocation(id, data) {
+  return apiRequest(`/attendance/locations/${id}/`, { method: "PUT", body: data });
+}
+
+export async function deleteOfficeLocation(id) {
+  return apiRequest(`/attendance/locations/${id}/`, { method: "DELETE" });
+}
