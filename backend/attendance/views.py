@@ -13,7 +13,15 @@ from leave_management.permissions import (
 )
 
 from employees.models import Employee
-from .models import Attendance, AttendanceEvent, AttendanceAuditLog, Shift, RegularizationRequest
+from .models import (
+    Attendance,
+    AttendanceEvent,
+    AttendanceAuditLog,
+    Shift,
+    RegularizationRequest,
+    calculate_completed_working_duration,
+    calculate_working_duration,
+)
 from .geofence import validate_attendance_geofence
 from .face_service import find_closest_match, verify_employee_face, FaceExtractionError
 from leave_management.models import LeaveRequest
@@ -244,11 +252,11 @@ class TodayAttendanceView(APIView):
                 "is_working_day": working_day,
             })
 
-        working_duration = attendance.working_duration
+        events = list(employee.attendance_events.filter(timestamp__date=today).order_by("timestamp"))
+        working_duration = calculate_working_duration(events)
+        completed_working_duration = calculate_completed_working_duration(events)
+        active_check_in = events[-1].timestamp if events and events[-1].event_type == "CHECK_IN" else None
         state, last_event = _get_last_event_state(employee, today)
-
-        if attendance.check_in and not attendance.check_out:
-            working_duration = timezone.now() - attendance.check_in
 
         if attendance.status == "LEAVE":
             status = "LEAVE"
@@ -265,6 +273,8 @@ class TodayAttendanceView(APIView):
             "check_in": attendance.check_in,
             "check_out": attendance.check_out,
             "working_duration": working_duration,
+            "completed_working_duration": completed_working_duration,
+            "active_check_in": active_check_in,
             "is_working_day": working_day,
         })
 
@@ -457,12 +467,15 @@ class AttendanceHistoryView(APIView):
 
         data = []
         for attendance in attendance_records:
+            events = list(attendance.employee.attendance_events.filter(
+                timestamp__date=attendance.date
+            ).order_by("timestamp"))
             record = {
                 "date": attendance.date,
                 "status": attendance.status,
                 "check_in": attendance.check_in,
                 "check_out": attendance.check_out,
-                "working_duration": attendance.working_duration,
+                "working_duration": calculate_working_duration(events),
             }
             # Add employee info for managers/admins
             if is_manager_or_admin:
@@ -499,6 +512,9 @@ class AdminAttendanceView(APIView):
         data = []
         for emp in employees:
             att = attendance_map.get(emp.id)
+            events = list(emp.attendance_events.filter(
+                timestamp__date=filter_date
+            ).order_by("timestamp"))
             
             # Determine actual display status
             if att:
@@ -520,7 +536,7 @@ class AdminAttendanceView(APIView):
                 "status": status_display,
                 "check_in": att.check_in if att else None,
                 "check_out": att.check_out if att else None,
-                "working_duration": str(att.working_duration) if att and att.working_duration else None,
+                "working_duration": str(calculate_working_duration(events)) if att else None,
             })
 
         # Sort: Present first, then Incomplete, then Absent/Leave
@@ -562,12 +578,12 @@ class AdminDashboardView(APIView):
         ).count()
 
         attendance_records = today_attendance.select_related("employee", "employee__user").order_by("-check_in")
-        now = timezone.now()
         attendance_data = []
         for attendance in attendance_records:
-            working_duration = attendance.working_duration
-            if attendance.check_in and not attendance.check_out:
-                working_duration = now - attendance.check_in
+            events = list(attendance.employee.attendance_events.filter(
+                timestamp__date=today
+            ).order_by("timestamp"))
+            working_duration = calculate_working_duration(events)
             attendance_data.append({
                 "employee": attendance.employee.user.email,
                 "section": attendance.employee.section,
@@ -698,7 +714,13 @@ class AdminEditAttendanceView(APIView):
         else:
             attendance.check_out = None
 
-        if attendance.check_in and attendance.check_out:
+        events = list(attendance.employee.attendance_events.filter(
+            timestamp__date=target_date
+        ).order_by("timestamp"))
+        if events:
+            attendance.working_duration = calculate_working_duration(events)
+        elif attendance.check_in and attendance.check_out:
+            # Preserve manual correction behavior for a summary with no events.
             attendance.working_duration = attendance.check_out - attendance.check_in
             # Auto-correct status to PRESENT if both times are provided
             if status == "INCOMPLETE":

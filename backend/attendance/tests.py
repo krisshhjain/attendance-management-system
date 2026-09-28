@@ -9,7 +9,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from employees.models import Employee, FaceProfile
-from attendance.models import Attendance
+from attendance.models import Attendance, AttendanceEvent, calculate_working_duration
 from attendance.geofence import (
     WORKPLACE_LATITUDE,
     WORKPLACE_LONGITUDE,
@@ -1452,7 +1452,7 @@ class EventBasedAttendanceTests(APITestCase):
         attendance = Attendance.objects.get(employee=self.employee, date=timezone.localdate())
         self.assertEqual(attendance.check_in, events[0].timestamp)
         self.assertEqual(attendance.check_out, events[1].timestamp)
-        self.assertEqual(attendance.status, "PRESENT")
+        self.assertEqual(attendance.status, "INCOMPLETE")
 
     def test_second_checkout(self):
         """Second checkout updates last check-out to latest event."""
@@ -1532,7 +1532,7 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(attendance.check_in, now - timedelta(hours=2))
         # Check-out should remain the latest check-out (1 hour ago)
         self.assertEqual(attendance.check_out, now - timedelta(hours=1))
-        self.assertEqual(attendance.status, "PRESENT")
+        self.assertEqual(attendance.status, "INCOMPLETE")
 
     def test_last_out_becomes_latest_checkout(self):
         """Last check-out becomes the latest checkout event."""
@@ -1740,8 +1740,8 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(attendance.working_duration, expected_duration)
         self.assertEqual(attendance.status, "PRESENT")
 
-    def test_multiple_intervals_duration_uses_last_checkout_first_checkin(self):
-        """Multiple IN/OUT intervals: working_duration = last_checkout - first_checkin (no break calc)."""
+    def test_multiple_intervals_duration_excludes_breaks(self):
+        """Multiple IN/OUT intervals sum only time spent checked in."""
         now = timezone.now()
         # First interval: 9am - 1pm (4 hours)
         AttendanceEvent.objects.create(
@@ -1774,15 +1774,17 @@ class EventBasedAttendanceTests(APITestCase):
         attendance = Attendance.objects.create(employee=self.employee, date=timezone.localdate())
         attendance.recompute_from_events()
         
-        # Should be 8 hours (last_checkout - first_checkin), not 8-1=7 hours
-        expected_duration = timedelta(hours=8)
+        expected_duration = timedelta(hours=7)
         self.assertEqual(attendance.working_duration, expected_duration)
         self.assertEqual(attendance.status, "PRESENT")
 
     def test_three_intervals_duration(self):
-        """Three intervals: working_duration = last_checkout - first_checkin."""
+        """Three intervals sum independently and exclude both breaks."""
         now = timezone.now()
-        base = now - timedelta(hours=10)
+        today_start = timezone.make_aware(timezone.datetime.combine(
+            timezone.localdate(), timezone.datetime.min.time()
+        ))
+        base = today_start + timedelta(hours=1)
         
         # 3 intervals of 2 hours each with 30 min breaks
         for i in range(3):
@@ -1802,17 +1804,16 @@ class EventBasedAttendanceTests(APITestCase):
         attendance = Attendance.objects.create(employee=self.employee, date=timezone.localdate())
         attendance.recompute_from_events()
         
-        # First check-in at (now-10h), last check-out at (now-3h) = 7 hours span
-        # This is last_checkout - first_checkin, no break deduction
-        expected_duration = timedelta(hours=7)
+        expected_duration = timedelta(hours=6)
         self.assertEqual(attendance.working_duration, expected_duration)
         self.assertEqual(attendance.status, "PRESENT")
 
-    def test_single_checkin_no_checkout_no_duration(self):
-        """Single check-in without checkout: no working_duration."""
+    def test_single_checkin_no_checkout_accumulates_open_interval(self):
+        """An open interval contributes through the current time."""
+        check_in = timezone.now() - timedelta(hours=2)
         AttendanceEvent.objects.create(
             employee=self.employee,
-            timestamp=timezone.now() - timedelta(hours=2),
+            timestamp=check_in,
             event_type="CHECK_IN",
             source="MOBILE",
         )
@@ -1820,10 +1821,64 @@ class EventBasedAttendanceTests(APITestCase):
         attendance = Attendance.objects.create(employee=self.employee, date=timezone.localdate())
         attendance.recompute_from_events()
         
-        self.assertIsNone(attendance.working_duration)
+        self.assertAlmostEqual(
+            attendance.working_duration.total_seconds(),
+            timedelta(hours=2).total_seconds(),
+            delta=2,
+        )
         self.assertEqual(attendance.status, "INCOMPLETE")
         self.assertIsNotNone(attendance.check_in)
         self.assertIsNone(attendance.check_out)
+
+    def test_open_interval_after_checkout_includes_only_current_interval(self):
+        """A current check-in adds to completed intervals without counting the break."""
+        today = timezone.localdate()
+        start = timezone.make_aware(timezone.datetime.combine(today, timezone.datetime.min.time()))
+        events = [
+            AttendanceEvent.objects.create(employee=self.employee, timestamp=start + timedelta(hours=9), event_type="CHECK_IN"),
+            AttendanceEvent.objects.create(employee=self.employee, timestamp=start + timedelta(hours=13), event_type="CHECK_OUT"),
+            AttendanceEvent.objects.create(employee=self.employee, timestamp=start + timedelta(hours=14), event_type="CHECK_IN"),
+        ]
+
+        duration = calculate_working_duration(events, now=start + timedelta(hours=15))
+
+        self.assertEqual(duration, timedelta(hours=5))
+
+    def test_events_from_another_date_are_not_connected(self):
+        """Working duration is calculated only from events on the attendance date."""
+        today = timezone.localdate()
+        today_start = timezone.make_aware(timezone.datetime.combine(today, timezone.datetime.min.time()))
+        yesterday_start = today_start - timedelta(days=1)
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=yesterday_start + timedelta(hours=18), event_type="CHECK_OUT")
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=today_start + timedelta(hours=9), event_type="CHECK_IN")
+
+        attendance = Attendance.objects.create(employee=self.employee, date=today)
+        attendance.recompute_from_events()
+
+        self.assertAlmostEqual(attendance.working_duration.total_seconds(), (timezone.now() - (today_start + timedelta(hours=9))).total_seconds(), delta=2)
+
+    def test_today_and_history_return_event_derived_duration(self):
+        """Today and history APIs expose the same break-excluding duration."""
+        today = timezone.localdate()
+        start = timezone.make_aware(timezone.datetime.combine(today, timezone.datetime.min.time()))
+        for hour, event_type in ((9, "CHECK_IN"), (13, "CHECK_OUT"), (14, "CHECK_IN"), (18, "CHECK_OUT")):
+            AttendanceEvent.objects.create(
+                employee=self.employee,
+                timestamp=start + timedelta(hours=hour),
+                event_type=event_type,
+            )
+
+        attendance = Attendance.objects.create(employee=self.employee, date=today)
+        attendance.recompute_from_events()
+
+        today_response = self.client.get("/api/attendance/today/")
+        history_response = self.client.get("/api/attendance/history/")
+
+        self.assertEqual(today_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(history_response.status_code, status.HTTP_200_OK)
+        expected_duration = timedelta(hours=8)
+        self.assertEqual(today_response.data["working_duration"], expected_duration)
+        self.assertEqual(history_response.data[0]["working_duration"], expected_duration)
 
 
 # ---------------------------------------------------------------------------

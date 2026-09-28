@@ -1,5 +1,48 @@
 from django.conf import settings
 from django.db import models
+from datetime import timedelta
+
+
+def calculate_working_duration(events, now=None):
+    """Sum completed check-in/check-out intervals and the current open interval."""
+    from django.utils import timezone
+
+    if now is None:
+        now = timezone.now()
+
+    working_duration = timedelta(0)
+    open_check_in = None
+
+    for event in events:
+        if event.event_type == "CHECK_IN":
+            if open_check_in is None:
+                open_check_in = event.timestamp
+        elif event.event_type == "CHECK_OUT" and open_check_in is not None:
+            if event.timestamp >= open_check_in:
+                working_duration += event.timestamp - open_check_in
+            open_check_in = None
+
+    if open_check_in is not None and now >= open_check_in:
+        working_duration += now - open_check_in
+
+    return working_duration
+
+
+def calculate_completed_working_duration(events):
+    """Sum only closed intervals, excluding any currently open interval."""
+    working_duration = timedelta(0)
+    open_check_in = None
+
+    for event in events:
+        if event.event_type == "CHECK_IN":
+            if open_check_in is None:
+                open_check_in = event.timestamp
+        elif event.event_type == "CHECK_OUT" and open_check_in is not None:
+            if event.timestamp >= open_check_in:
+                working_duration += event.timestamp - open_check_in
+            open_check_in = None
+
+    return working_duration
 
 
 class Attendance(models.Model):
@@ -91,26 +134,9 @@ class Attendance(models.Model):
                 self.check_in_accuracy = first_check_in.accuracy
                 self.check_in_distance = first_check_in.distance
 
-        # Update check_out: only if latest CHECK_OUT comes AFTER latest CHECK_IN
-        # If there's a CHECK_IN after the last CHECK_OUT, clear check_out
-        if last_check_out and last_check_in:
-            if last_check_out.timestamp > last_check_in.timestamp:
-                # Check-out is after last check-in, use it
-                self.check_out = last_check_out.timestamp
-                if not self.check_out_latitude and last_check_out.latitude:
-                    self.check_out_latitude = last_check_out.latitude
-                    self.check_out_longitude = last_check_out.longitude
-                    self.check_out_accuracy = last_check_out.accuracy
-                    self.check_out_distance = last_check_out.distance
-            else:
-                # Check-in is after last check-out, clear check_out
-                self.check_out = None
-                self.check_out_latitude = None
-                self.check_out_longitude = None
-                self.check_out_accuracy = None
-                self.check_out_distance = None
-        elif last_check_out:
-            # Only check-out exists, use it
+        # Keep the latest checkout in the daily summary even when a later
+        # check-in opens another interval.
+        if last_check_out:
             self.check_out = last_check_out.timestamp
             if not self.check_out_latitude and last_check_out.latitude:
                 self.check_out_latitude = last_check_out.latitude
@@ -118,30 +144,11 @@ class Attendance(models.Model):
                 self.check_out_accuracy = last_check_out.accuracy
                 self.check_out_distance = last_check_out.distance
 
-        # Recompute working_duration and status
-        if self.check_in and self.check_out:
-            events = self.employee.attendance_events.filter(
-                timestamp__date=self.date
-            ).order_by("timestamp")
-            
-            check_in_count = events.filter(event_type="CHECK_IN").count()
-            check_out_count = events.filter(event_type="CHECK_OUT").count()
-            
-            # For single IN/OUT pair: use checkout - checkin (existing behavior)
-            # For multiple intervals: don't calculate complex breaks yet, 
-            # fall back to last_checkout - first_checkin as before
-            if check_in_count == 1 and check_out_count == 1:
-                self.working_duration = self.check_out - self.check_in
-            else:
-                # Multiple intervals - keep simple last_checkout - first_checkin
-                # (Phase 3 will introduce proper break calculations)
-                self.working_duration = self.check_out - self.check_in
-            
-            # Standard status: PRESENT when both check_in and check_out exist
-            self.status = "PRESENT"
-        elif self.check_in:
-            self.working_duration = None
-            self.status = "INCOMPLETE"
+        # Recompute working_duration from each event pair, excluding breaks.
+        latest_event = events.last()
+        if self.check_in:
+            self.working_duration = calculate_working_duration(events)
+            self.status = "INCOMPLETE" if latest_event and latest_event.event_type == "CHECK_IN" else "PRESENT"
         else:
             self.working_duration = None
             # If no events at all and status was INCOMPLETE, keep it

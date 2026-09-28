@@ -9,8 +9,8 @@ import math
 import os
 
 # Workplace geofence constants loaded from environment variables
-WORKPLACE_LATITUDE = float(os.getenv("GEOFENCE_LATITUDE", "28.50416348294485"))
-WORKPLACE_LONGITUDE = float(os.getenv("GEOFENCE_LONGITUDE", "77.37963518485012"))
+WORKPLACE_LATITUDE = float(os.getenv("GEOFENCE_LATITUDE", "28.53004839800301"))
+WORKPLACE_LONGITUDE = float(os.getenv("GEOFENCE_LONGITUDE", "77.34971793979841"))
 GEOFENCE_RADIUS_METERS = float(os.getenv("GEOFENCE_RADIUS_METERS", "150.0"))
 MAX_ACCURACY_METERS = float(os.getenv("GEOFENCE_MAX_ACCURACY_METERS", "200.0"))
 

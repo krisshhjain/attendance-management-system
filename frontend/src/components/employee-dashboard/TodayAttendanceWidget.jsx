@@ -18,6 +18,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
   const [pending, setPending] = useState(false);
   const [pendingText, setPendingText] = useState("");
   const [secondsRemaining, setSecondsRemaining] = useState(0);
+  const [liveWorkingSeconds, setLiveWorkingSeconds] = useState(null);
   const [faceModalOpen, setFaceModalOpen] = useState(false);
   const [faceModalType, setFaceModalType] = useState("in");
   const [locationData, setLocationData] = useState(null);
@@ -55,13 +56,34 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
     return value;
   };
 
-  const liveCheckInTime = data?.check_in ? new Date(data.check_in).getTime() : NaN;
-  const hasOpenAttendance = Boolean(data?.check_in && !data?.check_out && Number.isFinite(liveCheckInTime));
-  const liveWorkingDuration = hasOpenAttendance
-    ? Math.max(0, Math.floor((Date.now() - liveCheckInTime) / 1000))
-    : null;
-  const workingDisplay = liveWorkingDuration !== null
-    ? formatWorkingDuration(liveWorkingDuration)
+  const parseWorkingSeconds = (value) => {
+    if (typeof value === "number") return value;
+    if (typeof value !== "string") return 0;
+    const match = /^(?:(\d+)\s+days?,\s*)?(\d+):(\d{2}):(\d{2})/.exec(value);
+    if (!match) return Number(value) || 0;
+    return (Number(match[1] || 0) * 86400) + (Number(match[2]) * 3600) + (Number(match[3]) * 60) + Number(match[4]);
+  };
+
+  useEffect(() => {
+    const activeCheckIn = data?.active_check_in ? new Date(data.active_check_in).getTime() : NaN;
+    if (status !== "CHECKED_IN" || !Number.isFinite(activeCheckIn)) {
+      setLiveWorkingSeconds(null);
+      return;
+    }
+
+    const updateLiveDuration = () => {
+      const completedSeconds = parseWorkingSeconds(data.completed_working_duration);
+      const currentSeconds = Math.max(0, Math.floor((Date.now() - activeCheckIn) / 1000));
+      setLiveWorkingSeconds(completedSeconds + currentSeconds);
+    };
+
+    updateLiveDuration();
+    const interval = setInterval(updateLiveDuration, 1000);
+    return () => clearInterval(interval);
+  }, [data?.active_check_in, data?.completed_working_duration, status]);
+
+  const workingDisplay = liveWorkingSeconds !== null
+    ? formatWorkingDuration(liveWorkingSeconds)
     : formatWorkingDuration(data?.working_duration);
 
   const handleFaceAction = useCallback(async (type) => {
