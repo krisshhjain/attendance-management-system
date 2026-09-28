@@ -60,6 +60,10 @@ import {
   updateLeavePolicy,
   deleteLeavePolicy,
   fetchAdminRegularizationRequests,
+  fetchOfficeLocations,
+  createOfficeLocation,
+  updateOfficeLocation,
+  deleteOfficeLocation,
 } from "../lib/api.js";
 
 export const Route = createFileRoute("/administration")({
@@ -117,6 +121,84 @@ function Administration() {
   // General Notification state
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+
+  const [officeLocations, setOfficeLocations] = useState([]);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [locationModal, setLocationModal] = useState({ open: false, location: null });
+  const [locSubmitting, setLocSubmitting] = useState(false);
+  const [locError, setLocError] = useState(null);
+  const [locName, setLocName] = useState("");
+  const [locLat, setLocLat] = useState("");
+  const [locLon, setLocLon] = useState("");
+  const [locRadius, setLocRadius] = useState(150);
+  const [locActive, setLocActive] = useState(true);
+
+  const loadOfficeLocations = async () => {
+    setLoadingLocations(true);
+    try {
+      setOfficeLocations((await fetchOfficeLocations()) ?? []);
+    } catch (err) {
+      setError(err.message || "Failed to load office locations.");
+    } finally {
+      setLoadingLocations(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isSuperUser && currentTab === 7) loadOfficeLocations();
+  }, [currentTab, isSuperUser]);
+
+  const handleOpenLocationModal = (location = null) => {
+    setLocError(null);
+    setLocName(location?.name ?? "");
+    setLocLat(location ? String(location.latitude) : "");
+    setLocLon(location ? String(location.longitude) : "");
+    setLocRadius(location?.radius_meters || 150);
+    setLocActive(location?.is_active !== false);
+    setLocationModal({ open: true, location });
+  };
+
+  const handleSaveLocation = async (event) => {
+    event.preventDefault();
+    const name = locName.trim();
+    const latitude = Number(locLat);
+    const longitude = Number(locLon);
+    const radius = Number(locRadius) || 150;
+    if (!name || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180 || radius <= 0) {
+      setLocError("Enter a name, valid coordinates, and a positive radius.");
+      return;
+    }
+
+    setLocSubmitting(true);
+    setLocError(null);
+    try {
+      const payload = { name, latitude, longitude, radius_meters: radius, is_active: locActive };
+      if (locationModal.location) {
+        await updateOfficeLocation(locationModal.location.id, payload);
+        setSuccessMsg(`Office location '${name}' updated successfully.`);
+      } else {
+        await createOfficeLocation(payload);
+        setSuccessMsg(`Office location '${name}' added successfully.`);
+      }
+      setLocationModal({ open: false, location: null });
+      await loadOfficeLocations();
+    } catch (err) {
+      setLocError(err.message || "Failed to save office location.");
+    } finally {
+      setLocSubmitting(false);
+    }
+  };
+
+  const handleDeleteLocation = async (id, name) => {
+    if (!window.confirm(`Delete office location '${name}'?`)) return;
+    try {
+      await deleteOfficeLocation(id);
+      setSuccessMsg(`Office location '${name}' deleted successfully.`);
+      await loadOfficeLocations();
+    } catch (err) {
+      setError(err.message || "Failed to delete office location.");
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // TAB 0: LEAVE REQUESTS STATE
@@ -611,6 +693,7 @@ function Administration() {
             {isStaff && <Tab label="Regularization" value={4} />}
             {isSuperUser && <Tab label="Manager Management" value={5} />}
             {isStaff && loginType !== "systemadmin" && <Tab label="Configure Shifts" value={6} sx={{ fontWeight: 600, textTransform: "none" }} />}
+            {isSuperUser && <Tab label="Office Locations" value={7} sx={{ fontWeight: 600, textTransform: "none" }} />}
           </Tabs>
 
           {/* TAB 0: LEAVE REQUESTS */}
@@ -1184,7 +1267,79 @@ function Administration() {
           {isStaff && loginType !== "systemadmin" && currentTab === 6 && (
             <ShiftConfigurationPanel />
           )}
+
+          {/* TAB 7: OFFICE LOCATIONS */}
+          {isSuperUser && currentTab === 7 && (
+            <Box sx={{ p: 3 }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, gap: 2, flexWrap: "wrap" }}>
+                <Box>
+                  <Typography variant="h6" fontWeight={700}>Workplace Office Locations</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Manage geofenced locations used for attendance validation.
+                  </Typography>
+                </Box>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenLocationModal()}>
+                  Add Location
+                </Button>
+              </Box>
+              {loadingLocations ? (
+                <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}><CircularProgress /></Box>
+              ) : officeLocations.length === 0 ? (
+                <Alert severity="info">No office locations configured.</Alert>
+              ) : (
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Name</TableCell>
+                        <TableCell align="right">Latitude</TableCell>
+                        <TableCell align="right">Longitude</TableCell>
+                        <TableCell align="right">Radius</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell align="right">Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {officeLocations.map((location) => (
+                        <TableRow key={location.id} hover>
+                          <TableCell>{location.name}</TableCell>
+                          <TableCell align="right">{location.latitude}</TableCell>
+                          <TableCell align="right">{location.longitude}</TableCell>
+                          <TableCell align="right">{location.radius_meters} m</TableCell>
+                          <TableCell>
+                            <Chip label={location.is_active ? "Active" : "Inactive"} color={location.is_active ? "success" : "default"} size="small" />
+                          </TableCell>
+                          <TableCell align="right">
+                            <IconButton size="small" onClick={() => handleOpenLocationModal(location)}><EditIcon fontSize="small" /></IconButton>
+                            <IconButton size="small" color="error" onClick={() => handleDeleteLocation(location.id, location.name)}><DeleteIcon fontSize="small" /></IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Box>
+          )}
         </Paper>
+
+        <Dialog open={locationModal.open} onClose={() => setLocationModal({ open: false, location: null })} maxWidth="xs" fullWidth>
+          <form onSubmit={handleSaveLocation}>
+            <DialogTitle>{locationModal.location ? "Edit Office Location" : "Add Office Location"}</DialogTitle>
+            <DialogContent dividers sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {locError && <Alert severity="error">{locError}</Alert>}
+              <TextField label="Location Name" required fullWidth value={locName} onChange={(event) => setLocName(event.target.value)} />
+              <TextField label="Latitude" required fullWidth type="number" inputProps={{ step: "any" }} value={locLat} onChange={(event) => setLocLat(event.target.value)} />
+              <TextField label="Longitude" required fullWidth type="number" inputProps={{ step: "any" }} value={locLon} onChange={(event) => setLocLon(event.target.value)} />
+              <TextField label="Radius (meters)" required fullWidth type="number" inputProps={{ min: 1 }} value={locRadius} onChange={(event) => setLocRadius(event.target.value)} />
+              <FormControlLabel control={<Switch checked={locActive} onChange={(event) => setLocActive(event.target.checked)} />} label="Active location" />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setLocationModal({ open: false, location: null })}>Cancel</Button>
+              <Button type="submit" variant="contained" disabled={locSubmitting}>{locSubmitting ? "Saving..." : "Save Location"}</Button>
+            </DialogActions>
+          </form>
+        </Dialog>
 
         {/* APPROVE / DENY / CANCEL ACTION DIALOG */}
         <Dialog open={actionModal.open} onClose={handleCloseAction} maxWidth="xs" fullWidth>

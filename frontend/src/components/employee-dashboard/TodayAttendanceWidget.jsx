@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, getToday } from "../../lib/attendance.js";
 import { getCurrentCoordinates } from "../../lib/location.js";
-import { ATTENDANCE_GEOFENCE, calculateHaversineDistance } from "../../lib/geofence.js";
-import { ApiError } from "../../lib/api.js";
+import { ATTENDANCE_GEOFENCE, calculateHaversineDistance, isLocationInsideGeofence } from "../../lib/geofence.js";
+import { ApiError, fetchOfficeLocations } from "../../lib/api.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { ErrorState, LoadingState } from "../States.jsx";
 import { Box, Button, Typography, Paper, CircularProgress, Chip } from "@mui/material";
@@ -92,13 +92,26 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
     setPending(true);
     setActionError(null);
     setSuccessMessage(null);
-    setPendingText("Getting location...");
+    setPendingText("Verifying location...");
 
     try {
       const coords = await getCurrentCoordinates();
-      
-      // Store location data and proceed to face capture
-      // Backend will validate geofence
+
+      if (coords.accuracy > ATTENDANCE_GEOFENCE.maxAccuracyMeters) {
+        throw new Error("Your location accuracy is too low. Please enable precise location and try again.");
+      }
+
+      let locations = [];
+      try {
+        locations = await fetchOfficeLocations();
+      } catch {
+        // The geofence helper falls back to the configured default location.
+      }
+
+      if (!isLocationInsideGeofence(coords.latitude, coords.longitude, locations)) {
+        throw new Error("You are outside the allowed attendance area. Please move closer to an office location and try again.");
+      }
+
       setLocationData(coords);
       setFaceModalType(type);
       setFaceModalOpen(true);

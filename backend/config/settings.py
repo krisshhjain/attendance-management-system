@@ -12,6 +12,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -134,6 +137,15 @@ USE_TZ = True
 
 AUTH_USER_MODEL = "accounts.User"
 
+# Celery Configuration
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672//")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND") or None
+CELERY_TIMEZONE = os.environ.get("CELERY_TIMEZONE", "UTC")
+CELERY_WORKER_ENABLE_REMOTE_CONTROL = os.environ.get("CELERY_WORKER_ENABLE_REMOTE_CONTROL", "false").lower() == "true"
+CELERY_WORKER_MINGLE = os.environ.get("CELERY_WORKER_MINGLE", "false").lower() == "true"
+CELERY_WORKER_GOSSIP = os.environ.get("CELERY_WORKER_GOSSIP", "false").lower() == "true"
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/

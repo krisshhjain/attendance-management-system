@@ -26,6 +26,8 @@ from .views import (
     RegularizationRequestDetailView,
     RegularizationRequestApproveView,
     RegularizationRequestRejectView,
+    OfficeLocationListCreateView,
+    OfficeLocationDetailView,
 )
 
 
@@ -58,4 +60,6 @@ urlpatterns = [
     path("admin/regularization/<int:request_id>/", RegularizationRequestDetailView.as_view(), name="admin-regularization-detail"),
     path("admin/regularization/<int:request_id>/approve/", RegularizationRequestApproveView.as_view(), name="admin-regularization-approve"),
     path("admin/regularization/<int:request_id>/reject/", RegularizationRequestRejectView.as_view(), name="admin-regularization-reject"),
+    path("locations/", OfficeLocationListCreateView.as_view(), name="office-locations-list-create"),
+    path("locations/<int:pk>/", OfficeLocationDetailView.as_view(), name="office-locations-detail"),
 ]

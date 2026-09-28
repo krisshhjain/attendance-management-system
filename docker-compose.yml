@@ -1,4 +1,5 @@
 services:
+
   db:
     image: postgres:16
     container_name: attendance_postgres
@@ -17,6 +18,24 @@ services:
       timeout: 5s
       retries: 10
 
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    container_name: attendance_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: attendance_user
+      RABBITMQ_DEFAULT_PASS: attendance_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: ./backend
     container_name: attendance_backend
@@ -26,11 +45,33 @@ services:
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
     depends_on:
       db:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "8000:8000"
+    profiles:
+      - full
+
+  celery_worker:
+    build: ./backend
+    container_name: attendance_celery_worker
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: python -m celery -A config worker -l info --pool=solo
     profiles:
       - full
 
@@ -47,3 +88,4 @@ services:
 
 volumes:
   postgres_data:
+  rabbitmq_data:
