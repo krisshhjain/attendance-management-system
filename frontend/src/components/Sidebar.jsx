@@ -35,16 +35,24 @@ const ICONS = {
   logout: <><path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></>,
   close: <path d="M18 6 6 18M6 6l12 12"/>,
   usercheck: <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><path d="M8.5 11a4 4 0 1 0 0-8"/><path d="M17 11l2 2 4-4"/></>,
+  regularization: <><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></>,
 };
 
 // ── Nav items — all existing routes preserved ─────────────────────────────────
-function getNavItems(loginType) {
+function getNavItems(loginType, user) {
+  const canReviewRegularization = Boolean(
+    user?.is_staff || user?.is_superuser || user?.is_system_admin ||
+    loginType === "admin" || loginType === "systemadmin",
+  );
   const items = [
     { text: "Dashboard",       icon: ICONS.dashboard,       path: "/dashboard" },
     { text: "Attendance",      icon: ICONS.attendance,      path: "/attendance" },
     { text: "Employees",       icon: ICONS.employees,       path: "/employees" },
     { text: "My Leave",        icon: ICONS.leave,           path: "/leave" },
     { text: "Administration",  icon: ICONS.administration,  path: "/administration" },
+    ...(canReviewRegularization
+      ? [{ text: "Regularization", icon: ICONS.regularization, path: "/admin-regularization", activePath: "/administration/regularization/" }]
+      : []),
     ...(loginType === "systemadmin"
       ? [{ text: "HR Copilot", icon: ICONS.hrcopilot, path: "/hr-copilot" }]
       : []),
@@ -62,7 +70,7 @@ function DrawerContent({ onClose, isMobile }) {
   const displayName = email.split("@")[0] || "Super Admin";
   const initials = displayName.slice(0, 2).toUpperCase();
 
-  const navItems = getNavItems(loginType);
+  const navItems = getNavItems(loginType, user);
 
   const handleLogout = () => {
     logout();
@@ -166,7 +174,8 @@ function DrawerContent({ onClose, isMobile }) {
           {navItems.map((item) => {
             const isActive =
               location.pathname === item.path ||
-              (item.path !== "/" && location.pathname.startsWith(item.path));
+              (item.path !== "/" && location.pathname.startsWith(item.path)) ||
+              (item.activePath && location.pathname.startsWith(item.activePath));
 
             return (
               <Link

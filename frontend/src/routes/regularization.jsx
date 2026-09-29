@@ -21,6 +21,9 @@ const TODAY = () => localDateString();
 function localDateString(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
+function requestCountLabel(count) {
+  return `${count} ${count === 1 ? "request" : "requests"}`;
+}
 function shiftDate(value, offset) {
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date(year, month - 1, day + offset, 12);
@@ -263,10 +266,10 @@ function RegularizationPage() {
               </TextField>}
           </Box>
           <Alert severity={quotaExhausted ? "warning" : "info"}>
-            You can submit up to 1 regularization request per calendar week and 4 per calendar month. Each request may include multiple attendance dates. Attendance corrections remain subject to the existing 48-hour window. Weekends are excluded; company holidays are not configured in the current calendar.
+            You can submit up to {requestCountLabel(quota?.weekly_limit ?? 1)} per calendar week and {requestCountLabel(quota?.monthly_limit ?? 4)} per calendar month. Each request may include multiple attendance dates. Attendance corrections remain subject to the existing 48-hour window. Weekends are excluded; company holidays are not configured in the current calendar.
           </Alert>
-          {weeklyQuotaExhausted && <Alert severity="error">You have used this week’s 1 regularization request.</Alert>}
-          {monthlyQuotaExhausted && <Alert severity="error">You have used all 4 regularization requests available for this month.</Alert>}
+          {weeklyQuotaExhausted && <Alert severity="error">You have reached this week’s allowance of {requestCountLabel(quota.weekly_limit)}.</Alert>}
+          {monthlyQuotaExhausted && <Alert severity="error">You have reached this month’s allowance of {requestCountLabel(quota.monthly_limit)}.</Alert>}
           {generatedPeriodDates.length === 0 ? (
             <Paper variant="outlined" sx={{ p: 3, textAlign: "center" }}>
               <Typography color="text.secondary">No past weekdays are available in this period.</Typography>

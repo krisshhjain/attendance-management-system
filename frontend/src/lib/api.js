@@ -328,6 +328,17 @@ export async function fetchAdminRegularizationRequests(params = {}) {
   return apiRequest(`/attendance/admin/regularization/${query ? `?${query}` : ""}`);
 }
 
+export async function fetchAdminRegularizationQuotaPolicy() {
+  return apiRequest("/attendance/admin/regularization/quota-settings/");
+}
+
+export async function updateAdminRegularizationQuotaPolicy(data) {
+  return apiRequest("/attendance/admin/regularization/quota-settings/", {
+    method: "PATCH",
+    body: data,
+  });
+}
+
 export async function fetchAdminRegularizationRequest(id) {
   return apiRequest(`/attendance/admin/regularization/${id}/`);
 }

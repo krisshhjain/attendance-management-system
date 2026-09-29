@@ -4,6 +4,8 @@ This module provides deterministic mapping between LLM outputs and backend tools
 ensuring the LLM cannot arbitrarily select backend sources or tools.
 """
 
+import re
+from datetime import date, timedelta
 from typing import Dict, Any
 from .pipeline import CopilotError
 
@@ -96,7 +98,7 @@ class IntentNormalizer:
         
         # Status normalization mapping
         self.status_mapping = {
-            'absent': 'LEAVE',
+            'absent': 'ABSENT',
             'present': 'PRESENT',
             'incomplete': 'INCOMPLETE', 
             'leave': 'LEAVE',
@@ -121,6 +123,18 @@ class IntentNormalizer:
         intent_name = llm_output.get('intent')
         if not intent_name:
             raise CopilotError("invalid_intent", "Missing intent in LLM output")
+
+        # Keep the LLM as the semantic analyzer, while correcting a clear
+        # imperative attendance write if the model returned an unrelated read intent.
+        inferred_write = self._infer_attendance_write(original_query)
+        if inferred_write:
+            intent_name = 'attendance_update'
+            llm_entities = dict(llm_output.get('entities') or {})
+            for key, value in inferred_write.items():
+                # A clear command in the user's words wins over an incorrect
+                # enum selected by the language model.
+                llm_entities[key] = value
+            llm_output = {**llm_output, 'intent': intent_name, 'entities': llm_entities}
         
         # Normalize the intent structure
         normalized = {
@@ -186,11 +200,14 @@ class IntentNormalizer:
                     if word in query_lower:
                         target_status = status
                         break
+                if not target_status and re.search(r"\b(?:add|record)\s+attendance\b", query_lower):
+                    target_status = "PRESENT"
             
             if target_status:
                 # Normalize status
-                if target_status.lower() in self.status_mapping:
-                    normalized['target_status'] = self.status_mapping[target_status.lower()]
+                status_key = str(target_status).casefold()
+                if status_key in self.status_mapping:
+                    normalized['target_status'] = self.status_mapping[status_key]
                 else:
                     normalized['target_status'] = target_status.upper()
         
@@ -200,6 +217,18 @@ class IntentNormalizer:
             name = str(entities['employee_name']).strip()
             if name:
                 normalized['employee_name'] = name
+
+        # Keep identity/date extraction deterministic for common attendance-write
+        # phrasing; the LLM sometimes returns the right intent but omits entities.
+        if intent in {'attendance_update', 'attendance_create'}:
+            if not normalized.get('employee_name') and not normalized.get('employee_email'):
+                employee_name = self._extract_attendance_employee_name(query)
+                if employee_name:
+                    normalized['employee_name'] = employee_name
+            if not normalized.get('date_range'):
+                target_date = self._extract_attendance_date(query)
+                if target_date:
+                    normalized['date_range'] = {'start': target_date, 'end': target_date}
         
         # Normalize temporal expressions to date ranges if possible
         temporal_expr = entities.get('temporal_expression')
@@ -211,7 +240,84 @@ class IntentNormalizer:
         normalized = {k: v for k, v in normalized.items() if v is not None and v != ""}
         
         return normalized
+
+    @staticmethod
+    def _extract_attendance_employee_name(query: str) -> str | None:
+        patterns = (
+            r"\b(?:please\s+)?(?:mark|make|set|change|update|correct|add)\s+(?P<name>.+?)\s+(?:['’]s\s+)?(?:as\s+)?(?:present|absent|leave|incomplete|attendance|check[ -]?in|check[ -]?out)\b",
+            r"\b(?:attendance|check[ -]?in|check[ -]?out)\s+(?:for|of)\s+(?P<name>.+?)(?=\s+(?:on|for|as|to|with)\b|[,.!?]|$)",
+            r"\b(?:add|record)\s+attendance\s+for\s+(?P<name>.+?)(?=\s+(?:on|for|as)\b|[,.!?]|$)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, query, re.IGNORECASE)
+            if not match:
+                continue
+            name = match.group('name').strip(" \t\r\n,.'’\"")
+            name = re.sub(r"['’]s$", "", name).strip()
+            if name and not re.search(r"\d", name):
+                return name
+        return None
     
+    @staticmethod
+    def _extract_attendance_date(query: str) -> str | None:
+        from datetime import datetime
+        from django.utils import timezone
+        current_year = timezone.localdate().year
+        text_lower = query.casefold()
+        for word, offset in (("today", 0), ("yesterday", -1), ("tomorrow", 1)):
+            if re.search(rf"\b{word}\b", text_lower):
+                return (timezone.localdate() + timedelta(days=offset)).isoformat()
+        for pattern, date_format in (
+            (r"\b\d{4}-\d{2}-\d{2}\b", "%Y-%m-%d"),
+            (r"\b\d{1,2}/\d{1,2}/\d{4}\b", "%d/%m/%Y"),
+            (r"\b\d{1,2}-\d{1,2}-\d{4}\b", "%d-%m-%Y"),
+        ):
+            match = re.search(pattern, query)
+            if match:
+                try:
+                    return datetime.strptime(match.group(0), date_format).date().isoformat()
+                except ValueError as error:
+                    raise CopilotError("invalid_date", "Use a valid calendar date.") from error
+
+        months = {name: index for index, name in enumerate((
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december",
+        ), 1)}
+        month_pattern = "|".join(months)
+        for pattern in (
+            rf"\b(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?P<month>{month_pattern})(?:\s+(?P<year>\d{{4}}))?\b",
+            rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(?P<year>\d{{4}}))?\b",
+        ):
+            match = re.search(pattern, query, re.IGNORECASE)
+            if match:
+                try:
+                    return date(int(match.group("year") or current_year), months[match.group("month").casefold()], int(match.group("day"))).isoformat()
+                except ValueError as error:
+                    raise CopilotError("invalid_date", "Use a valid calendar date.") from error
+        return None
+
+    def _infer_attendance_write(self, query: str) -> Dict[str, Any] | None:
+        if not query or not re.match(r"\s*(?:please\s+)?(?:mark|make|set|change|update|correct|add|record)\b", query, re.IGNORECASE):
+            return None
+        lower = query.casefold()
+        target_status = None
+        for word, status in self.status_mapping.items():
+            if re.search(rf"\b{re.escape(word)}\b", lower):
+                target_status = status
+                break
+        if target_status is None and re.search(r"\b(?:add|record)\s+attendance\b", lower):
+            target_status = 'PRESENT'
+        if target_status is None:
+            return None
+        entities = {'target_status': target_status}
+        employee_name = self._extract_attendance_employee_name(query)
+        if employee_name:
+            entities['employee_name'] = employee_name
+        attendance_date = self._extract_attendance_date(query)
+        if attendance_date:
+            entities['date_range'] = {'start': attendance_date, 'end': attendance_date}
+        return entities
+
     def validate_normalized_intent(self, normalized_intent: Dict[str, Any]) -> bool:
         """Validate that the normalized intent is properly formed."""
         required_fields = ['intent', 'source', 'action_type', 'entities']

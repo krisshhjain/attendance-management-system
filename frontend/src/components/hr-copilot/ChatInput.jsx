@@ -83,6 +83,10 @@ export function ChatInput({ value, onChange, onSend, disabled = false, placehold
 
   function handleSubmit(event) {
     event.preventDefault();
+    sendCurrentMessage();
+  }
+
+  function sendCurrentMessage() {
     const content = value.trim();
     if ((!content && !attachments.length) || disabled) return;
     onSend(content, attachments.map(({ id, name, type, size, file }) => ({ id, name, type, size, file })));
@@ -90,6 +94,13 @@ export function ChatInput({ value, onChange, onSend, disabled = false, placehold
       if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
     });
     setAttachments([]);
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing) {
+      event.preventDefault();
+      sendCurrentMessage();
+    }
   }
 
   function handleDrop(event) {
@@ -127,7 +138,7 @@ export function ChatInput({ value, onChange, onSend, disabled = false, placehold
         <Tooltip title="Attach files">
           <IconButton type="button" aria-label="Attach files" onClick={() => fileInputRef.current?.click()} disabled={disabled} sx={{ mb: 0.25 }}><AttachFileRoundedIcon /></IconButton>
         </Tooltip>
-        <TextField fullWidth multiline maxRows={4} variant="standard" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} InputProps={{ disableUnderline: true }} sx={{ px: 0.75, py: 0.5 }} />
+        <TextField fullWidth multiline maxRows={4} variant="standard" value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder} disabled={disabled} InputProps={{ disableUnderline: true }} sx={{ px: 0.75, py: 0.5 }} />
         <Tooltip title="Send message">
           <IconButton type="submit" aria-label="Send message" color="primary" disabled={disabled || (!value.trim() && !attachments.length)} sx={{ mb: 0.25 }}><SendRoundedIcon /></IconButton>
         </Tooltip>

@@ -25,7 +25,8 @@ ALLOWED_ENTITIES = {
     "employee_name", "employee_email", "department", "is_active", "attendance_status", "leave_status", "date_range",
     "temporal_expression", "missing_information", "ambiguities", "operation_type",
     # Write operation entities (new)
-    "action_type", "target_status", "reason", "duration_days", "leave_type", "bulk_target"
+    "action_type", "target_status", "reason", "duration_days", "leave_type", "bulk_target",
+    "check_in_time", "check_out_time"
 }
 VALID_DATE_RANGE_KEYS = {"start", "end"}
 FINAL_ANSWER_SCHEMA = {
@@ -63,7 +64,8 @@ INTENT_SCHEMA = {
                 "reason": {"type": "string"},
                 "duration_days": {"type": "number"},
                 "leave_type": {"type": "string"},
-                "bulk_target": {"type": "string", "enum": ["section", "subsection", "department"]}
+                "bulk_target": {"type": "string", "enum": ["section", "subsection", "department"]},
+                "check_in_time": {"type": "string"}, "check_out_time": {"type": "string"}
             },
         },
         "missing_information": {"type": "array", "items": {"type": "string"}},
@@ -85,14 +87,19 @@ def get_structured_intent(question, session_id=None, context=None):
     session_context = {}
     if session_id:
         session_context = session_memory.get_compact_context(session_id)
-    elif context:
-        session_context = context
+    if context:
+        session_context = {**session_context, **context}
     
     # Build compact system prompt - focus only on semantic understanding
     system_content = (
         "Extract HR semantic intent as JSON. Focus on WHAT the user wants, not backend implementation.\n"
         "Intents: attendance_lookup, attendance_update, employee_lookup, leave_lookup, leave_create, absence_lookup\n"
-        "Extract: intent, employee_name, temporal_expression, target_status (for updates)\n"
+        "Use attendance_update when the user asks to mark/change an employee's attendance status to PRESENT, ABSENT, or LEAVE. Keep ABSENT distinct from LEAVE; only use LEAVE for an explicit leave status. Use leave_create only when they ask to submit/file a leave request.\n"
+        "Partial write actions are valid: extract every known employee/date/action field even when time or reason is missing; leave missing fields absent and report them in missing_information.\n"
+        "For attendance writes, recognize employee names after mark/make/set and extract dates such as 29th September, September 29, or numeric day/month/year.\n"
+                "When a user says 'Mark [employee] as present for [date]', classify it as attendance_update with target_status PRESENT, preserving employee_name and date_range even when check-in and check-out are missing. For 'absent', use target_status ABSENT; for explicit 'on leave', use target_status LEAVE. Never substitute one for the other.\n"
+        "Extract: intent, employee_name, employee_email, temporal_expression or date_range, target_status (for updates)\n"
+        "For PRESENT attendance updates, also extract check_in_time and check_out_time when provided. For LEAVE attendance changes and leave requests, extract reason when provided.\n"
         "Write operations: 'mark as', 'set to', 'make', 'put on', 'create', 'update', 'change'\n"
         "Read operations: 'who was', 'show', 'list', 'when did', 'how many'\n"
         "Status values: 'absent', 'present', 'incomplete'\n"
@@ -109,7 +116,7 @@ def get_structured_intent(question, session_id=None, context=None):
     ]
     
     try:
-        result = provider.structured_output(messages, schema=INTENT_SCHEMA, options={"num_predict": 64, "temperature": 0})
+        result = provider.structured_output(messages, schema=INTENT_SCHEMA, options={"num_predict": 128, "temperature": 0})
     except LLMProviderError as error:
         raise CopilotError("llm_unavailable", "The local Qwen intent service is unavailable. Please try again.", 503) from error
 
@@ -184,6 +191,32 @@ def get_structured_intent(question, session_id=None, context=None):
         session_memory.update_session_state(session_id, **context_updates)
     
     return normalized_intent
+
+
+def extract_pending_action_fields(question, required_fields):
+    """Use the configured intent provider to extract only fields for an active draft."""
+    try:
+        provider = get_llm_provider()
+    except LLMProviderError as error:
+        raise CopilotError("llm_unavailable", "The local intent service is unavailable. Please try again.", 503) from error
+    fields = set(required_fields)
+    if 'employee_name' in fields or 'employee_email' in fields:
+        fields.update({'employee_name', 'employee_email'})
+    schema = {
+        "type": "object", "additionalProperties": False,
+        "properties": {field: {"type": "string"} for field in fields},
+    }
+    messages = [
+        {"role": "system", "content": "Extract only explicitly supplied values for the requested missing HR action fields. Do not infer missing values. For times, return 24-hour HH:MM; interpret a lone checkout hour from 1 through 11 as PM when it follows a morning check-in. Return an empty object if the message supplies none."},
+        {"role": "user", "content": json.dumps({"missing_fields": required_fields, "reply": question})},
+    ]
+    try:
+        result = provider.structured_output(messages, schema=schema, options={"num_predict": 96, "temperature": 0})
+    except LLMProviderError as error:
+        raise CopilotError("llm_unavailable", "The local intent service is unavailable. Please try again.", 503) from error
+    if not isinstance(result, dict):
+        raise CopilotError("invalid_intent", "The intent service returned an invalid follow-up response.", 503)
+    return {key: value.strip() for key, value in result.items() if key in fields and isinstance(value, str) and value.strip()}
 
 
 def generate_natural_answer(question, intent, data, session_id=None):

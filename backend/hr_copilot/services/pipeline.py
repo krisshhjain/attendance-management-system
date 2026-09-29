@@ -381,7 +381,7 @@ def build_sql(plan):
             "e.is_active = TRUE",
             "e.date_joined <= %s",
             "NOT EXISTS (SELECT 1 FROM attendance_attendance absent_attendance "
-            "WHERE absent_attendance.employee_id = e.id AND absent_attendance.date = %s)",
+            "WHERE absent_attendance.employee_id = e.id AND absent_attendance.date = %s AND absent_attendance.status <> 'ABSENT')",
             "NOT EXISTS (SELECT 1 FROM leave_management_leaverequest approved_leave "
             "WHERE approved_leave.employee_id = e.id AND approved_leave.status = 'APPROVED' "
             "AND approved_leave.start_date <= %s AND approved_leave.end_date >= %s)",

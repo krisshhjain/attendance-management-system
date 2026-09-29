@@ -86,7 +86,7 @@ class SemanticInterpreter:
     def _apply_conversation_context(self, intent: Dict[str, Any], context: Dict[str, Any], question: str) -> Dict[str, Any]:
         """Apply conversation context for follow-up questions."""
         entities = intent.get("entities", {})
-        
+
         # Handle pronoun references to previous employee
         follow_up_reference = re.compile(r"\b(?:he|she|they|them|that employee|the employee)\b", re.IGNORECASE)
         if (context.get("current_employee_id") and 
@@ -238,6 +238,13 @@ class SemanticInterpreter:
     def _resolve_dynamic_entities(self, intent: Dict[str, Any]) -> None:
         """Dynamically resolve entities against the database."""
         entities = intent.get("entities", {})
+
+        department_value = str(entities.get("department") or "").strip().upper()
+        subsection_match = re.fullmatch(r"([A-Z])([0-9]+)", department_value)
+        if subsection_match and not entities.get("subsection"):
+            entities["section"] = subsection_match.group(1)
+            entities["subsection"] = department_value
+            entities.pop("department", None)
         
         # Resolve department names with fuzzy matching
         if entities.get("department"):

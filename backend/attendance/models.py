@@ -49,6 +49,7 @@ class Attendance(models.Model):
     STATUS_CHOICES = [
         ("PRESENT", "Present"),
         ("INCOMPLETE", "Incomplete"),
+        ("ABSENT", "Absent"),
         ("LEAVE", "Leave"),
     ]
 
@@ -159,8 +160,8 @@ class Attendance(models.Model):
         else:
             self.working_duration = None
             # If no events at all and status was INCOMPLETE, keep it
-            # Don't override LEAVE status
-            if self.status != "LEAVE":
+            # Don't override explicit non-attendance statuses.
+            if self.status not in {"LEAVE", "ABSENT"}:
                 self.status = "INCOMPLETE"
 
         self.save(update_fields=[
@@ -728,3 +729,29 @@ class OfficeLocation(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.latitude}, {self.longitude})"
+
+
+class RegularizationQuotaPolicy(models.Model):
+    """Application-wide request limits configured by an app superuser."""
+    weekly_limit = models.PositiveSmallIntegerField(default=1)
+    monthly_limit = models.PositiveSmallIntegerField(default=4)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="regularization_quota_policy_updates",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Regularization quota policy"
+        verbose_name_plural = "Regularization quota policy"
+
+    @classmethod
+    def get_solo(cls):
+        policy, _ = cls.objects.get_or_create(pk=1)
+        return policy
+
+    def __str__(self):
+        return f"Regularization limits: {self.weekly_limit}/week, {self.monthly_limit}/month"
