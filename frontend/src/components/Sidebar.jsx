@@ -36,6 +36,7 @@ const ICONS = {
   close: <path d="M18 6 6 18M6 6l12 12"/>,
   usercheck: <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><path d="M8.5 11a4 4 0 1 0 0-8"/><path d="M17 11l2 2 4-4"/></>,
   regularization: <><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></>,
+  logs: <><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></>,
 };
 
 // ── Nav items — all existing routes preserved ─────────────────────────────────
@@ -55,6 +56,9 @@ function getNavItems(loginType, user) {
       : []),
     ...(loginType === "systemadmin"
       ? [{ text: "HR Copilot", icon: ICONS.hrcopilot, path: "/hr-copilot" }]
+      : []),
+    ...(user?.is_superuser
+      ? [{ text: "System Logs", icon: ICONS.logs, path: "/system-logs" }]
       : []),
   ];
   return items;

@@ -174,6 +174,7 @@ def test_compact_context():
     
     all_measurements = []
     successful_queries = 0
+    avg_chars = 0
     
     for result in results:
         if result.get('intent_success'):

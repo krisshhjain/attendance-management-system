@@ -204,7 +204,7 @@ class SemanticInterpreter:
         
         # For attendance queries without temporal context, use the most recent available data
         # instead of defaulting to "today" which might not have data yet
-        if (source == "attendance" and 
+        if ((source == "attendance" or intent_name == "absence_lookup") and
             intent_name in ("attendance_lookup", "attendance_summary", "absence_lookup", "absence_count") and
             not entities.get("date_range") and 
             not entities.get("temporal_expression")):

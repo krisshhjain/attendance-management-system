@@ -36,11 +36,16 @@ def api(monkeypatch):
         "CopilotQueryAudit",
         SimpleNamespace(objects=SimpleNamespace(create=create_audit)),
     )
+    # These API tests use a lightweight user double rather than a database-backed
+    # User instance. Conversation persistence is covered by the database tests.
+    monkeypatch.setattr(views, "append_message", lambda *args, **kwargs: None)
+    monkeypatch.setattr(views, "load_context", lambda *args, **kwargs: {})
     return factory, audit_records
 
 
 def system_admin(**overrides):
     values = {
+        "id": 1,
         "is_authenticated": True,
         "is_system_admin": True,
         "is_superuser": False,

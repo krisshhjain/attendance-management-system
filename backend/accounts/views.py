@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .serializers import ChangePasswordSerializer, UserProfileSerializer
+from system_logs.services import record_event
 
 
 class LoginView(TokenObtainPairView):
@@ -62,6 +63,18 @@ class ChangePasswordView(APIView):
                 emp.save(update_fields=["must_change_password"])
         except Exception:
             pass
+
+        record_event(
+            event_type="PASSWORD_CHANGED",
+            category="AUTHENTICATION",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=request.user,
+            message="Account password changed.",
+            source="API",
+            request=request,
+        )
 
         return Response(
             {"detail": "Password changed successfully."},

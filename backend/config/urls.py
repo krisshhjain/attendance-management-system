@@ -17,6 +17,7 @@ urlpatterns = [
     path("api/leave/", include("leave_management.urls")),
     path("api/notifications/", include("notifications.urls")),
     path("api/hr-copilot/", include("hr_copilot.urls")),
+    path("api/system-logs/", include("system_logs.urls")),
 ]
 
 if settings.DEBUG:

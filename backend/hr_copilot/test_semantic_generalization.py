@@ -148,7 +148,7 @@ class TestSemanticGeneralization(TestCase):
         ]
         
         # Mock different responses for section vs subsection
-        def mock_response(query):
+        def mock_response(query, **kwargs):
             if "C2" in query:
                 return {
                     "intent": "attendance_lookup",
@@ -159,7 +159,7 @@ class TestSemanticGeneralization(TestCase):
             else:
                 return self.mock_llm_responses["section_c_attendance"]
         
-        mock_llm.side_effect = lambda q: mock_response(q)
+        mock_llm.side_effect = lambda q, **kwargs: mock_response(q, **kwargs)
         
         for query in section_queries:
             with self.subTest(query=query):
@@ -253,7 +253,7 @@ class TestSemanticGeneralization(TestCase):
         ]
         
         # Mock follow-up responses that should include employee_id when pronouns detected
-        def mock_response_with_context(query):
+        def mock_response_with_context(query, **kwargs):
             base_response = {
                 "intent": "attendance_lookup",
                 "source": "attendance",

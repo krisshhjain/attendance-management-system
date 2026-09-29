@@ -3149,3 +3149,99 @@ class AdminShiftAssignmentTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.employee.refresh_from_db()
         self.assertEqual(self.employee.shift, self.shift1)
+
+class AdminEditAttendanceTests(APITestCase):
+    def setUp(self):
+        self.attendance_date = timezone.localdate() - timedelta(days=1)
+        self.employee_user = User.objects.create_user(
+            email="edit.employee@example.com",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            user=self.employee_user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=self.attendance_date - timedelta(days=30),
+            is_active=True,
+        )
+        self.manager_user = User.objects.create_user(
+            email="manager@example.com",
+            password="password123",
+            is_staff=True,
+        )
+        self.superuser = User.objects.create_user(
+            email="super@example.com",
+            password="password123",
+            is_superuser=True,
+        )
+        
+        # Original INCOMPLETE attendance
+        self.check_in_time = timezone.make_aware(
+            datetime.combine(self.attendance_date, datetime_time(9, 0))
+        )
+        self.attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=self.attendance_date,
+            check_in=self.check_in_time,
+            check_out=None,
+            status="INCOMPLETE",
+        )
+        self.event_check_in = AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=self.check_in_time,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+
+    def test_manager_edit_incomplete_to_present(self):
+        self.client.force_authenticate(user=self.manager_user)
+        
+        new_check_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(9, 30)))
+        new_check_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(17, 30)))
+
+        response = self.client.post("/api/admin/attendance/edit/", {
+            "employee": self.employee_user.email,
+            "date": self.attendance_date.isoformat(),
+            "reason": "Forgot to check out and check-in was late.",
+            "status": "PRESENT",
+            "check_in": new_check_in.isoformat(),
+            "check_out": new_check_out.isoformat()
+        }, format="json")
+
+        self.assertEqual(response.status_code, 200)
+
+        # Verify DB state
+        self.attendance.refresh_from_db()
+        self.assertEqual(self.attendance.status, "PRESENT")
+        self.assertEqual(self.attendance.check_in, new_check_in)
+        self.assertEqual(self.attendance.check_out, new_check_out)
+
+        # Verify ADMIN events created
+        admin_events = AttendanceEvent.objects.filter(employee=self.employee, source="ADMIN")
+        self.assertEqual(admin_events.count(), 2)
+
+    def test_superuser_edit_incomplete_to_present(self):
+        self.client.force_authenticate(user=self.superuser)
+        
+        new_check_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(9, 0)))
+        new_check_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(17, 0)))
+
+        response = self.client.post("/api/admin/attendance/edit/", {
+            "employee": self.employee_user.email,
+            "date": self.attendance_date.isoformat(),
+            "reason": "System issue fix",
+            "status": "PRESENT",
+            "check_in": new_check_in.isoformat(),
+            "check_out": new_check_out.isoformat()
+        }, format="json")
+
+        self.assertEqual(response.status_code, 200)
+
+        # Verify DB state
+        self.attendance.refresh_from_db()
+        self.assertEqual(self.attendance.status, "PRESENT")
+        self.assertEqual(self.attendance.check_in, new_check_in)
+        self.assertEqual(self.attendance.check_out, new_check_out)
+
+        admin_events = AttendanceEvent.objects.filter(employee=self.employee, source="ADMIN")
+        self.assertEqual(admin_events.count(), 2)

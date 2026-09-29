@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 
 from .models import Notification
 from .serializers import NotificationSerializer
+from system_logs.services import record_event
 
 
 class NotificationListView(APIView):
@@ -33,8 +34,22 @@ class NotificationReadView(APIView):
             user=request.user,
         )
         if not notification.is_read:
+            before_state = {"is_read": notification.is_read}
             notification.is_read = True
             notification.save(update_fields=["is_read"])
+            record_event(
+                event_type="NOTIFICATION_READ",
+                category="NOTIFICATION",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=notification,
+                message="Notification marked as read.",
+                source="API",
+                request=request,
+                before_state=before_state,
+                after_state={"is_read": notification.is_read},
+            )
         return Response(NotificationSerializer(notification).data)
 
     def post(self, request, pk):
@@ -53,10 +68,27 @@ class NotificationDeleteView(APIView):
             pk=pk,
             user=request.user,
         )
-        if notification.notification_type != "ATTENDANCE":
-            return Response(
-                {"detail": "Only transient attendance notifications can be deleted."},
-                status=400,
-            )
+
+        before_state = {
+            "notification_type": notification.notification_type,
+            "is_read": notification.is_read,
+            "attendance_event_id": notification.attendance_event_id,
+        }
         notification.delete()
+        record_event(
+            event_type="NOTIFICATION_DELETED",
+            category="NOTIFICATION",
+            severity="WARNING",
+            status="SUCCESS",
+            actor=request.user,
+            target={
+                "type": "notifications.Notification",
+                "id": pk,
+                "label": "Notification",
+            },
+            message="Notification deleted.",
+            source="API",
+            request=request,
+            before_state=before_state,
+        )
         return Response(status=204)

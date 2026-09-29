@@ -15,6 +15,7 @@ import PeopleIcon from "@mui/icons-material/People";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import PersonOffOutlinedIcon from "@mui/icons-material/PersonOffOutlined";
 import BusinessCenterOutlinedIcon from "@mui/icons-material/BusinessCenterOutlined";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import { OrganizationScopeFilters } from "../components/dashboard/OrganizationScopeFilters.jsx";
 import { filterScopedRecords, useOrganizationScope } from "../lib/organizationScope.jsx";
 
@@ -39,14 +40,17 @@ function SuperAdminDashboard() {
   const hasScopedEmployeeData = Array.isArray(employees);
   const hasScopedAttendanceData = Array.isArray(scopedAttendance);
 
-  const presentRecords = scopedAttendance?.filter((record) => record.status === "PRESENT" || record.status === "INCOMPLETE") || [];
+  const presentRecords = scopedAttendance?.filter((record) => record.status === "PRESENT") || [];
+  const incompleteRecords = scopedAttendance?.filter((record) => record.status === "INCOMPLETE") || [];
   const leaveRecords = scopedAttendance?.filter((record) => record.status === "LEAVE") || [];
   
   const presentEmails = new Set(presentRecords.map(r => r.employee));
+  const incompleteEmails = new Set(incompleteRecords.map(r => r.employee));
   const leaveEmails = new Set(leaveRecords.map(r => r.employee));
 
   const attendanceSummary = hasScopedAttendanceData ? {
     present_today: presentRecords.length,
+    incomplete_today: incompleteRecords.length,
     checked_in_today: scopedAttendance.filter((record) => record.check_in && !record.check_out).length,
     completed_today: scopedAttendance.filter((record) => record.check_in && record.check_out).length,
     on_leave: leaveRecords.length,
@@ -63,10 +67,11 @@ function SuperAdminDashboard() {
 
   const totalEmployees = scopedData?.total_employees || 0;
   const presentToday = scopedData?.present_today || 0;
+  const incompleteToday = scopedData?.incomplete_today || 0;
   const onLeave = scopedData?.on_leave || 0;
   
   const isWorkingDay = scopedData?.is_working_day ?? true;
-  const absentToday = isWorkingDay ? Math.max(0, totalEmployees - presentToday - onLeave) : 0;
+  const absentToday = isWorkingDay ? Math.max(0, totalEmployees - presentToday - incompleteToday - onLeave) : 0;
 
   const getEmployeeName = (emp) => {
     if (typeof emp === 'string') return emp;
@@ -82,6 +87,12 @@ function SuperAdminDashboard() {
         email: r.employee,
         dept: r.section || "---"
       }));
+    } else if (type === "INCOMPLETE") {
+      return incompleteRecords.map(r => ({
+        name: r.employee_name || r.employee,
+        email: r.employee,
+        dept: r.section || "---"
+      }));
     } else if (type === "LEAVE") {
       return leaveRecords.map(r => ({
         name: r.employee_name || r.employee,
@@ -90,7 +101,7 @@ function SuperAdminDashboard() {
       }));
     } else if (type === "ABSENT") {
       return scopedEmployees
-        .filter(e => !presentEmails.has(e.user?.email) && !leaveEmails.has(e.user?.email))
+        .filter(e => !presentEmails.has(e.user?.email) && !incompleteEmails.has(e.user?.email) && !leaveEmails.has(e.user?.email))
         .map(e => ({
           name: getEmployeeName(e),
           email: e.user?.email,
@@ -119,9 +130,10 @@ function SuperAdminDashboard() {
       
       {loginType === "systemadmin" && <OrganizationScopeFilters user={user} employees={employeeRecords} />}
       
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 3 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)", lg: "repeat(5, 1fr)" }, gap: 3 }}>
         <StatCard title="Total Employees" value={totalEmployees} icon={<PeopleIcon fontSize="small" />} colorClass="primary" subtitle="Across all departments" onClick={() => navigate({ to: "/employees" })} />
-        <StatCard title="Present Today" value={presentToday} icon={<CheckCircleOutlineIcon fontSize="small" />} colorClass="success" subtitle="Currently checked in" onClick={() => handleOpenModal("Present Today", "PRESENT")} />
+        <StatCard title="Present Today" value={presentToday} icon={<CheckCircleOutlineIcon fontSize="small" />} colorClass="success" subtitle="Completed shift" onClick={() => handleOpenModal("Present Today", "PRESENT")} />
+        <StatCard title="Incomplete" value={incompleteToday} icon={<AccessTimeIcon fontSize="small" />} colorClass="info" subtitle="Currently checked in" onClick={() => handleOpenModal("Incomplete Today", "INCOMPLETE")} />
         <StatCard title="Absent Today" value={absentToday} icon={<PersonOffOutlinedIcon fontSize="small" />} colorClass="error" subtitle="Not arrived yet" onClick={() => handleOpenModal("Absent Today", "ABSENT")} />
         <StatCard title="On Leave" value={onLeave} icon={<BusinessCenterOutlinedIcon fontSize="small" />} colorClass="warning" subtitle="Approved leaves today" onClick={() => handleOpenModal("On Leave Today", "LEAVE")} />
       </Box>

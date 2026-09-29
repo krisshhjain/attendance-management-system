@@ -14,6 +14,7 @@ from notifications.services import (
     queue_deduplicated_notification_after_commit,
     get_or_create_notification,
 )
+from system_logs.services import record_event
 
 
 def _is_regularization_correction(event):
@@ -136,6 +137,21 @@ def check_consecutive_absences(run_date=None):
             subject = "Attendance alert: 2 consecutive absences"
             deduplication_prefix = (
                 f"ABSENCE_ALERT:{employee.pk}:{second_absence_date}:{first_absence_date}"
+            )
+
+            record_event(
+                event_type="ABSENCE_DETECTED",
+                category="ATTENDANCE",
+                severity="WARNING",
+                status="SUCCESS",
+                actor="SYSTEM",
+                target=employee,
+                message="Consecutive employee absence detected.",
+                source="CELERY",
+                metadata={
+                    "first_absence_date": str(first_absence_date),
+                    "second_absence_date": str(second_absence_date),
+                },
             )
 
             for manager in managers:

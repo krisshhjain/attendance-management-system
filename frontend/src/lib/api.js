@@ -372,3 +372,36 @@ export async function updateOfficeLocation(id, data) {
 export async function deleteOfficeLocation(id) {
   return apiRequest(`/attendance/locations/${id}/`, { method: "DELETE" });
 }
+
+export async function fetchSystemLogs(params = {}) {
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== "" && value !== null),
+  ).toString();
+  return apiRequest(`/system-logs/${query ? `?${query}` : ""}`);
+}
+
+export async function fetchSystemLogActors(search = "") {
+  const query = search ? `?${new URLSearchParams({ search }).toString()}` : "";
+  return apiRequest(`/system-logs/actors/${query}`);
+}
+
+export async function downloadSystemLogs(params = {}, format = "csv") {
+  const query = new URLSearchParams({ ...params, export_format: format }).toString();
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}/system-logs/export/?${query}`, {
+      headers: { Authorization: `Bearer ${tokenStore.access}` },
+    });
+  } catch {
+    throw new ApiError("Unable to reach the server. Check your connection and try again.", 0);
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 401) tokenStore.clear();
+    throw new ApiError(friendlyMessage(response.status, payload), response.status);
+  }
+  return {
+    blob: await response.blob(),
+    filename: format === "xlsx" ? "system-logs.xlsx" : "system-logs.csv",
+  };
+}

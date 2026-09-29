@@ -1,4 +1,5 @@
 from datetime import datetime
+from copy import deepcopy
 from django.utils import timezone
 from django.db import IntegrityError, transaction
 from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
@@ -34,6 +35,7 @@ from notifications.services import (
     queue_manager_notifications_after_commit,
     queue_notification_after_commit,
 )
+from system_logs.services import record_event
 
 
 def _regularization_created_message(request_obj):
@@ -43,6 +45,60 @@ def _regularization_created_message(request_obj):
         f"{request_obj.period_start or request_obj.attendance_date} to "
         f"{request_obj.period_end or request_obj.attendance_date}."
     )
+
+
+def _attendance_log_state(attendance):
+    return {
+        "employee_id": attendance.employee_id,
+        "date": attendance.date.isoformat(),
+        "check_in": attendance.check_in.isoformat() if attendance.check_in else None,
+        "check_out": attendance.check_out.isoformat() if attendance.check_out else None,
+        "status": attendance.status,
+        "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
+    }
+
+
+def _regularization_log_state(request_obj):
+    return {
+        "request_id": request_obj.id,
+        "employee_id": request_obj.employee_id,
+        "attendance_date": request_obj.attendance_date.isoformat(),
+        "request_type": request_obj.request_type,
+        "status": request_obj.status,
+        "requested_check_in": request_obj.requested_check_in.isoformat() if request_obj.requested_check_in else None,
+        "requested_check_out": request_obj.requested_check_out.isoformat() if request_obj.requested_check_out else None,
+        "approved_check_in": request_obj.approved_check_in.isoformat() if request_obj.approved_check_in else None,
+        "approved_check_out": request_obj.approved_check_out.isoformat() if request_obj.approved_check_out else None,
+        "reviewed_by_id": request_obj.reviewed_by_id,
+        "period_type": request_obj.period_type,
+        "period_start": request_obj.period_start.isoformat() if request_obj.period_start else None,
+        "period_end": request_obj.period_end.isoformat() if request_obj.period_end else None,
+    }
+
+
+def _shift_log_state(shift):
+    if shift is None:
+        return None
+    return {
+        "shift_id": shift.id,
+        "code": shift.code,
+        "name": shift.name,
+        "employment_type": shift.employment_type,
+        "start_time": shift.start_time.strftime("%H:%M"),
+        "end_time": shift.end_time.strftime("%H:%M"),
+        "is_active": shift.is_active,
+    }
+
+
+def _location_log_state(location):
+    return {
+        "location_id": location.id,
+        "name": location.name,
+        "latitude": location.latitude,
+        "longitude": location.longitude,
+        "radius_meters": location.radius_meters,
+        "is_active": location.is_active,
+    }
 
 
 def _queue_regularization_outcome(request_obj, status_value, reason=""):
@@ -124,6 +180,7 @@ class CheckInView(APIView):
 
         # Get or create attendance record
         attendance, created = Attendance.get_or_create_for_date(employee, today)
+        before_state = _attendance_log_state(attendance)
 
         if attendance.status in {"LEAVE", "ABSENT"}:
             return Response(
@@ -180,6 +237,19 @@ class CheckInView(APIView):
             attendance.recompute_from_events()
 
         attendance.refresh_from_db()
+        record_event(
+            event_type="CHECK_IN",
+            category="ATTENDANCE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Attendance check-in recorded.",
+            source="MOBILE",
+            request=request,
+            before_state=before_state,
+            after_state=_attendance_log_state(attendance),
+        )
         return Response(
             {
                 "message": "Attendance marked successfully.",
@@ -220,6 +290,7 @@ class CheckOutView(APIView):
                 {"error": "You have not checked in today"},
                 status=400,
             )
+        before_state = _attendance_log_state(attendance)
 
         # Check current state via events
         state, last_event = _get_last_event_state(employee, today)
@@ -255,6 +326,19 @@ class CheckOutView(APIView):
             attendance.recompute_from_events()
 
         attendance.refresh_from_db()
+        record_event(
+            event_type="CHECK_OUT",
+            category="ATTENDANCE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Attendance check-out recorded.",
+            source="MOBILE",
+            request=request,
+            before_state=before_state,
+            after_state=_attendance_log_state(attendance),
+        )
         return Response(
             {
                 "message": "Check-out successful",
@@ -667,6 +751,7 @@ class AdminResetAttendanceView(APIView):
             return Response({"error": "No attendance record found for today"}, status=404)
 
         reset_type = request.data.get("reset_type", "both")
+        target_employee = attendance.employee
 
         previous_data = {
             "check_in": str(attendance.check_in) if attendance.check_in else None,
@@ -698,6 +783,20 @@ class AdminResetAttendanceView(APIView):
                 reason=reason,
                 previous_data=previous_data
             )
+
+        record_event(
+            event_type="ATTENDANCE_RESET",
+            category="ATTENDANCE",
+            severity="WARNING",
+            status="SUCCESS",
+            actor=request.user,
+            target=target_employee,
+            message="Attendance record reset by an administrator.",
+            source="ADMIN",
+            request=request,
+            before_state=previous_data,
+            after_state={"reset_type": reset_type, "attendance_exists": attendance is not None},
+        )
 
         return Response({"message": "Attendance successfully reset for today."})
 
@@ -742,41 +841,62 @@ class AdminEditAttendanceView(APIView):
             "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
         }
 
+        parsed_check_in = None
         if check_in_str:
             try:
-                attendance.check_in = datetime.fromisoformat(check_in_str.replace('Z', '+00:00'))
+                parsed_check_in = datetime.fromisoformat(check_in_str.replace('Z', '+00:00'))
             except ValueError:
                 return Response({"error": "Invalid check_in time format"}, status=400)
-        else:
-            attendance.check_in = None
 
+        parsed_check_out = None
         if check_out_str:
             try:
-                attendance.check_out = datetime.fromisoformat(check_out_str.replace('Z', '+00:00'))
+                parsed_check_out = datetime.fromisoformat(check_out_str.replace('Z', '+00:00'))
             except ValueError:
                 return Response({"error": "Invalid check_out time format"}, status=400)
-        else:
-            attendance.check_out = None
 
-        events = list(attendance.employee.attendance_events.filter(
-            timestamp__date=target_date
-        ).order_by("timestamp"))
-        if events:
-            attendance.working_duration = calculate_working_duration(events)
-        elif attendance.check_in and attendance.check_out:
-            # Preserve manual correction behavior for a summary with no events.
-            attendance.working_duration = attendance.check_out - attendance.check_in
-            # Auto-correct status to PRESENT if both times are provided
-            if status == "INCOMPLETE":
-                attendance.status = "PRESENT"
+        with transaction.atomic():
+            # Remove any existing ADMIN events for this day to allow a clean override
+            AttendanceEvent.objects.filter(
+                employee=attendance.employee,
+                timestamp__date=target_date,
+                source="ADMIN"
+            ).delete()
+
+            effective_shift = attendance.employee.get_effective_shift()
+
+            if parsed_check_in:
+                AttendanceEvent.objects.create(
+                    employee=attendance.employee,
+                    shift=effective_shift,
+                    timestamp=parsed_check_in,
+                    event_type="CHECK_IN",
+                    source="ADMIN",
+                )
+
+            if parsed_check_out:
+                AttendanceEvent.objects.create(
+                    employee=attendance.employee,
+                    shift=effective_shift,
+                    timestamp=parsed_check_out,
+                    event_type="CHECK_OUT",
+                    source="ADMIN",
+                )
+
+            attendance.recompute_from_events()
+
+            # Apply final status logic
+            if status in ["ABSENT", "LEAVE"]:
+                attendance.status = status
+            elif parsed_check_in and parsed_check_out:
+                if status == "INCOMPLETE":
+                    attendance.status = "PRESENT"
+                else:
+                    attendance.status = status
             else:
                 attendance.status = status
-        else:
-            attendance.working_duration = None
-            # If only check-in or no times, keep the provided status
-            attendance.status = status
 
-        attendance.save()
+            attendance.save()
 
         from .models import AttendanceCorrection
         AttendanceCorrection.objects.create(
@@ -785,6 +905,20 @@ class AdminEditAttendanceView(APIView):
             correction_type="EDIT",
             reason=reason,
             previous_data=previous_data
+        )
+
+        record_event(
+            event_type="ATTENDANCE_EDIT",
+            category="ATTENDANCE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=attendance.employee,
+            message="Attendance record edited by an administrator.",
+            source="ADMIN",
+            request=request,
+            before_state=previous_data,
+            after_state=_attendance_log_state(attendance),
         )
 
         return Response({"message": "Attendance successfully edited."})
@@ -825,6 +959,7 @@ class AdminForceCheckoutView(APIView):
         count = 0
         now = timezone.now()
         for att in attendances:
+            before_state = _attendance_log_state(att)
             # Get effective shift for each employee
             effective_shift = att.employee.get_effective_shift()
             with transaction.atomic():
@@ -836,6 +971,20 @@ class AdminForceCheckoutView(APIView):
                     source="ADMIN",
                 )
                 att.recompute_from_events()
+            att.refresh_from_db()
+            record_event(
+                event_type="ADMIN_FORCE_CHECKOUT",
+                category="ATTENDANCE",
+                severity="WARNING",
+                status="SUCCESS",
+                actor=request.user,
+                target=att.employee,
+                message="Attendance check-out was forced by an administrator.",
+                source="ADMIN",
+                request=request,
+                before_state=before_state,
+                after_state=_attendance_log_state(att),
+            )
             count += 1
             
         return Response({"message": f"Successfully forced check-out for {count} records", "count": count})
@@ -872,6 +1021,7 @@ class WebsiteFacialCheckInView(APIView):
 
         # Get or create attendance record
         attendance, created = Attendance.get_or_create_for_date(employee, today)
+        before_state = _attendance_log_state(attendance)
 
         if attendance.status in {"LEAVE", "ABSENT"}:
             return Response(
@@ -921,6 +1071,19 @@ class WebsiteFacialCheckInView(APIView):
             attendance.recompute_from_events()
 
         attendance.refresh_from_db()
+        record_event(
+            event_type="CHECK_IN",
+            category="ATTENDANCE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Facial attendance check-in recorded.",
+            source="FACE_WEB",
+            request=request,
+            before_state=before_state,
+            after_state=_attendance_log_state(attendance),
+        )
         return Response(
             {
                 "message": "Check-in successful",
@@ -970,6 +1133,7 @@ class WebsiteFacialCheckOutView(APIView):
                 {"error": "You have not checked in today"},
                 status=400,
             )
+            before_state = _attendance_log_state(attendance)
 
         # Check current state via events
         state, last_event = _get_last_event_state(employee, today)
@@ -1005,6 +1169,19 @@ class WebsiteFacialCheckOutView(APIView):
             attendance.recompute_from_events()
 
         attendance.refresh_from_db()
+        record_event(
+            event_type="CHECK_OUT",
+            category="ATTENDANCE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Facial attendance check-out recorded.",
+            source="FACE_WEB",
+            request=request,
+            before_state=before_state,
+            after_state=_attendance_log_state(attendance),
+        )
         return Response(
             {
                 "message": "Check-out successful",
@@ -1102,6 +1279,18 @@ class KioskFaceCheckInView(APIView):
         )
 
         attendance.refresh_from_db()
+        record_event(
+            event_type="CHECK_IN",
+            category="ATTENDANCE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Kiosk attendance check-in recorded.",
+            source="KIOSK",
+            request=request,
+            after_state=_attendance_log_state(attendance),
+        )
         return Response(
             {
                 "message": f"Welcome, {employee.user.first_name}!",
@@ -1192,6 +1381,18 @@ class KioskFaceCheckOutView(APIView):
         )
 
         attendance.refresh_from_db()
+        record_event(
+            event_type="CHECK_OUT",
+            category="ATTENDANCE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Kiosk attendance check-out recorded.",
+            source="KIOSK",
+            request=request,
+            after_state=_attendance_log_state(attendance),
+        )
         return Response(
             {
                 "message": f"Goodbye, {employee.user.first_name}! Check-out successful.",
@@ -1211,13 +1412,56 @@ class FaceVerifyView(APIView):
         try:
             employee, distance = find_closest_match(image_data)
         except FaceExtractionError as e:
+            record_event(
+                event_type="FACE_VERIFY",
+                category="ATTENDANCE",
+                severity="WARNING",
+                status="FAILED",
+                actor=request.user,
+                message="Face verification failed.",
+                source="FACE_SERVICE",
+                request=request,
+                metadata={"error_type": type(e).__name__},
+            )
             return Response({"error": str(e)}, status=400)
         except Exception as e:
+            record_event(
+                event_type="FACE_VERIFY",
+                category="ATTENDANCE",
+                severity="ERROR",
+                status="FAILED",
+                actor=request.user,
+                message="Face verification failed.",
+                source="FACE_SERVICE",
+                request=request,
+                metadata={"error_type": type(e).__name__},
+            )
             return Response({"error": "Internal server error"}, status=500)
 
         if not employee:
+            record_event(
+                event_type="FACE_VERIFY",
+                category="ATTENDANCE",
+                severity="WARNING",
+                status="FAILED",
+                actor=request.user,
+                message="Face verification did not identify an employee.",
+                source="FACE_SERVICE",
+                request=request,
+            )
             return Response({"error": "Face not recognized.", "status": "unknown"}, status=404)
 
+        record_event(
+            event_type="FACE_VERIFY",
+            category="ATTENDANCE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Face verification succeeded.",
+            source="FACE_SERVICE",
+            request=request,
+        )
         return Response(
             {
                 "message": "Face verified successfully.",
@@ -1295,6 +1539,7 @@ class EmployeeShiftSelfAssignView(APIView):
             )
         
         # Atomic check-and-set to prevent race conditions
+        before_state = {"shift": None}
         with transaction.atomic():
             # Lock the employee row to prevent concurrent assignment
             employee = Employee.objects.select_for_update().get(pk=employee.pk)
@@ -1305,6 +1550,20 @@ class EmployeeShiftSelfAssignView(APIView):
                 )
             employee.shift = shift
             employee.save(update_fields=["shift"])
+
+        record_event(
+            event_type="SHIFT_ASSIGNED",
+            category="ADMINISTRATION",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Employee self-assigned a shift.",
+            source="API",
+            request=request,
+            before_state=before_state,
+            after_state={"shift": _shift_log_state(shift)},
+        )
         
         return Response(
             {
@@ -1337,6 +1596,7 @@ class AdminEmployeeShiftAssignView(APIView):
         except Employee.DoesNotExist:
             return Response({"error": "Employee not found"}, status=404)
         
+        before_state = {"shift": _shift_log_state(employee.shift)}
         if shift_id is not None:
             try:
                 shift = Shift.objects.get(id=shift_id)
@@ -1350,6 +1610,19 @@ class AdminEmployeeShiftAssignView(APIView):
             message = f"Shift removed from {employee_email}"
         
         employee.save(update_fields=["shift"])
+        record_event(
+            event_type="SHIFT_ASSIGNED",
+            category="ADMINISTRATION",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Employee shift assignment changed by an administrator.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state={"shift": _shift_log_state(shift)},
+        )
         
         return Response({"message": message, "employee_email": employee_email, "shift_id": shift_id})
 
@@ -1383,8 +1656,34 @@ class AdminEmployeeShiftBulkAssignView(APIView):
             queryset = queryset.filter(section=section)
         if employment_type:
             queryset = queryset.filter(employment_type=employment_type)
-        
+        employees = list(queryset.select_related("shift", "user"))
+        before_state = {
+            "employees": [
+                {"employee_id": employee.id, "shift": _shift_log_state(employee.shift)}
+                for employee in employees
+            ]
+        }
         count = queryset.update(shift=shift)
+        after_state = {
+            "employees": [
+                {"employee_id": employee.id, "shift": _shift_log_state(shift)}
+                for employee in employees
+            ]
+        }
+        record_event(
+            event_type="SHIFT_BULK_ASSIGNED",
+            category="ADMINISTRATION",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target={"type": "employees.Employee", "label": f"{count} employees"},
+            message="Bulk employee shift assignment changed.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state=after_state,
+            metadata={"count": count},
+        )
         
         action = "assigned" if shift else "removed from"
         return Response({"message": f"Shift {action} {count} employees", "count": count})
@@ -1487,6 +1786,14 @@ class AdminShiftConfigurationView(APIView):
         
         if not isinstance(shifts_data, list):
             return Response({"error": "shifts must be an array"}, status=400)
+
+        before_state = {
+            "employment_type": employment_type,
+            "shifts": [_shift_log_state(shift) for shift in Shift.objects.filter(
+                employment_type=employment_type,
+                is_active=True,
+            )],
+        }
         
         with transaction.atomic():
             # Deactivate existing shifts for this employment type
@@ -1545,6 +1852,19 @@ class AdminShiftConfigurationView(APIView):
                     "end_time": shift.end_time.strftime("%H:%M"),
                 })
         
+        record_event(
+            event_type="SHIFT_CONFIGURATION_CHANGED",
+            category="ADMINISTRATION",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target={"type": "attendance.Shift", "label": employment_type},
+            message="Shift configuration changed.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state={"employment_type": employment_type, "shifts": created_shifts},
+        )
         return Response({
             "message": f"Configured {len(created_shifts)} shifts for {employment_type}",
             "employment_type": employment_type,
@@ -1750,6 +2070,19 @@ class RegularizationRequestCreateView(APIView):
                     email_subject="New regularization request",
                     email_body=message,
                 )
+
+            record_event(
+                event_type="REGULARIZATION_CREATED",
+                category="REGULARIZATION",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=regularization_request,
+                message="Regularization request created.",
+                source="API",
+                request=request,
+                after_state=_regularization_log_state(regularization_request),
+            )
             
             return Response({
                 "message": "Regularization request submitted successfully.",
@@ -1840,6 +2173,19 @@ class RegularizationRequestCreateView(APIView):
                 for row in parsed:
                     attendance = Attendance.objects.filter(employee=employee, date=row["date"]).first()
                     RegularizationRequestDay.objects.create(request=parent, attendance_date=row["date"], request_type=row["type"], existing_check_in=attendance.check_in if attendance else None, existing_check_out=attendance.check_out if attendance else None, requested_check_in=row["check_in"], requested_check_out=row["check_out"], reason=row["reason"], description=row["description"])
+            record_event(
+                event_type="REGULARIZATION_CREATED",
+                category="REGULARIZATION",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=parent,
+                message="Grouped regularization request created.",
+                source="API",
+                request=request,
+                after_state=_regularization_log_state(parent),
+                metadata={"day_count": len(parsed)},
+            )
             return Response({"message": "Regularization request submitted successfully.", "request_id": parent.id, "status": parent.status, "period_type": period_type, "day_count": len(parsed)}, status=201)
         except (ValueError, TypeError, KeyError) as exc:
             return Response({"error": str(exc)}, status=400)
@@ -1908,6 +2254,10 @@ class RegularizationQuotaPolicyView(APIView):
         from .serializers import RegularizationQuotaPolicySerializer
 
         policy = RegularizationQuotaPolicy.get_solo()
+        before_state = {
+            "weekly_limit": policy.weekly_limit,
+            "monthly_limit": policy.monthly_limit,
+        }
         serializer = RegularizationQuotaPolicySerializer(
             policy,
             data=request.data,
@@ -1915,6 +2265,22 @@ class RegularizationQuotaPolicyView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save(updated_by=request.user)
+        record_event(
+            event_type="REGULARIZATION_QUOTA_CHANGED",
+            category="REGULARIZATION",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=policy,
+            message="Regularization quota policy changed.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state={
+                "weekly_limit": policy.weekly_limit,
+                "monthly_limit": policy.monthly_limit,
+            },
+        )
         return Response(serializer.data)
 
 
@@ -1977,6 +2343,7 @@ class RegularizationRequestApproveView(APIView):
         try:
             with transaction.atomic():
                 req = RegularizationRequest.objects.select_for_update().select_related("employee__user").get(id=request_id)
+                before_state = _regularization_log_state(req)
                 if req.status != "PENDING": return Response({"error": f"Cannot approve request with status {req.status}."}, status=400)
                 if not req.is_within_48_hours: return Response({"error": "Cannot approve request outside 48-hour window."}, status=400)
                 rows = list(req.days.all())
@@ -2014,6 +2381,20 @@ class RegularizationRequestApproveView(APIView):
                         row.approved_check_in, row.approved_check_out = check_in, check_out
                         row.save(update_fields=["attendance_correction", "approved_check_in", "approved_check_out"])
                     _queue_regularization_outcome(req, "APPROVED")
+                    record_event(
+                        event_type="REGULARIZATION_APPROVED",
+                        category="REGULARIZATION",
+                        severity="INFO",
+                        status="SUCCESS",
+                        actor=request.user,
+                        target=req,
+                        message="Regularization request approved.",
+                        source="ADMIN",
+                        request=request,
+                        before_state=before_state,
+                        after_state=_regularization_log_state(req),
+                        metadata={"approved_days": len(rows)},
+                    )
                     return Response({"message": "Regularization request approved successfully.", "request_id": req.id, "status": req.status, "approved_days": len(rows)})
 
                 def parse_legacy(field, fallback):
@@ -2029,6 +2410,19 @@ class RegularizationRequestApproveView(APIView):
                 if check_in and check_out and check_out <= check_in: return Response({"error": "Final check-out time must be after final check-in time."}, status=400)
                 correction = req.approve(request.user, approved_check_in=check_in, approved_check_out=check_out)
                 _queue_regularization_outcome(req, "APPROVED")
+                record_event(
+                    event_type="REGULARIZATION_APPROVED",
+                    category="REGULARIZATION",
+                    severity="INFO",
+                    status="SUCCESS",
+                    actor=request.user,
+                    target=req,
+                    message="Regularization request approved.",
+                    source="ADMIN",
+                    request=request,
+                    before_state=before_state,
+                    after_state=_regularization_log_state(req),
+                )
                 return Response({"message": "Regularization request approved successfully.", "request_id": req.id, "status": req.status, "correction_id": correction.id if correction else None, "approved_check_in": req.approved_check_in, "approved_check_out": req.approved_check_out, "employee_name": f"{req.employee.user.first_name} {req.employee.user.last_name}".strip(), "attendance_date": req.attendance_date})
         except RegularizationRequest.DoesNotExist:
             return Response({"error": "Regularization request not found."}, status=404)
@@ -2061,6 +2455,7 @@ class RegularizationRequestRejectView(APIView):
                         {"error": f"Cannot reject request with status {regularization_request.status}."},
                         status=400,
                     )
+                before_state = _regularization_log_state(regularization_request)
                 regularization_request.reject(
                     reviewed_by_user=request.user,
                     rejection_reason=rejection_reason,
@@ -2070,6 +2465,7 @@ class RegularizationRequestRejectView(APIView):
                     "REJECTED",
                     rejection_reason,
                 )
+                after_state = _regularization_log_state(regularization_request)
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
         except RegularizationRequest.DoesNotExist:
@@ -2079,6 +2475,20 @@ class RegularizationRequestRejectView(APIView):
                 {"error": f"Failed to reject request: {str(e)}"},
                 status=500,
             )
+
+        record_event(
+            event_type="REGULARIZATION_REJECTED",
+            category="REGULARIZATION",
+            severity="WARNING",
+            status="SUCCESS",
+            actor=request.user,
+            target=regularization_request,
+            message="Regularization request rejected.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state=after_state,
+        )
 
         return Response({
             "message": "Regularization request rejected.",
@@ -2111,7 +2521,19 @@ class OfficeLocationListCreateView(APIView):
 
         serializer = OfficeLocationSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            location = serializer.save()
+            record_event(
+                event_type="OFFICE_LOCATION_CREATED",
+                category="ADMINISTRATION",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=location,
+                message="Office location created.",
+                source="ADMIN",
+                request=request,
+                after_state=_location_log_state(location),
+            )
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
 
@@ -2136,7 +2558,21 @@ class OfficeLocationDetailView(APIView):
 
         serializer = OfficeLocationSerializer(location, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            before_state = _location_log_state(location)
+            location = serializer.save()
+            record_event(
+                event_type="OFFICE_LOCATION_UPDATED",
+                category="ADMINISTRATION",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=location,
+                message="Office location updated.",
+                source="ADMIN",
+                request=request,
+                before_state=before_state,
+                after_state=_location_log_state(location),
+            )
             return Response(serializer.data, status=200)
         return Response(serializer.errors, status=400)
 
@@ -2153,5 +2589,23 @@ class OfficeLocationDetailView(APIView):
         except OfficeLocation.DoesNotExist:
             return Response({"error": "Office location not found."}, status=404)
 
+        before_state = _location_log_state(location)
         location.delete()
+        record_event(
+            event_type="OFFICE_LOCATION_DELETED",
+            category="ADMINISTRATION",
+            severity="WARNING",
+            status="SUCCESS",
+            actor=request.user,
+            target={
+                "type": "attendance.OfficeLocation",
+                "id": location.pk,
+                "label": before_state["name"],
+            },
+            message="Office location deleted.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state=None,
+        )
         return Response({"message": "Office location deleted successfully."}, status=200)

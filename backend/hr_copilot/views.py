@@ -28,8 +28,36 @@ from .services.llm import generate_natural_answer
 from .services.write_actions import write_action_planner
 from .services.write_executor import write_action_executor, pending_action_manager
 from .services.llm import extract_pending_action_fields
+from system_logs.services import record_event
 
 logger = logging.getLogger(__name__)
+
+
+def _copilot_action_target(action_id, action_type=""):
+    return {
+        "type": "hr_copilot.CopilotPendingAction",
+        "id": action_id,
+        "label": action_type,
+    }
+
+
+def _record_copilot_action_event(
+    *, event_type, user, action, request=None, status="SUCCESS", severity="INFO", metadata=None
+):
+    record_event(
+        event_type=event_type,
+        category="HR_COPILOT",
+        severity=severity,
+        status=status,
+        actor=user,
+        target=_copilot_action_target(
+            action.get("action_id", ""), action.get("action_type", action.get("intent", ""))
+        ),
+        message=f"HR Copilot action {event_type.removeprefix('COPILOT_ACTION_').lower()}.",
+        source="HR_COPILOT",
+        request=request,
+        metadata=metadata or {},
+    )
 
 
 class HRCopilotHealthView(APIView):
@@ -72,6 +100,18 @@ class HRCopilotQueryView(APIView):
             return Response({"detail": "conversation_id must be a non-empty string of up to 128 characters."}, status=400)
 
         audit = CopilotQueryAudit.objects.create(user=user, question=question.strip())
+        record_event(
+            event_type="COPILOT_CONVERSATION",
+            category="HR_COPILOT",
+            severity="INFO",
+            status="SUCCESS",
+            actor=user,
+            target=user,
+            message="HR Copilot conversation request received.",
+            source="HR_COPILOT",
+            request=request,
+            metadata={"conversation_id": conversation_id, "query_audit_id": audit.id},
+        )
         append_message(user, conversation_id, "user", question.strip())
         started_at = time.monotonic()
         intent = None
@@ -81,6 +121,12 @@ class HRCopilotQueryView(APIView):
             if draft:
                 if question.strip().casefold().rstrip('.!') in {'cancel', 'cancel change'}:
                     cancelled = pending_action_manager.cancel_action(session_id, draft['action_id'], user.id)
+                    _record_copilot_action_event(
+                        event_type="COPILOT_ACTION_CANCELLED",
+                        user=user,
+                        action=cancelled,
+                        request=request,
+                    )
                     answer = "Cancelled. No attendance change was made."
                     update_action_message(user, conversation_id, draft['action_id'], 'CANCELLED', answer)
                     append_message(user, conversation_id, 'assistant', answer, {'query_status': 'cancelled'})
@@ -168,11 +214,23 @@ class HRCopilotQueryView(APIView):
             if active_action and command in {'approve', 'approve change', 'confirm', 'yes approve', 'cancel', 'cancel change'}:
                 if command.startswith('cancel'):
                     cancelled = pending_action_manager.cancel_action(session_id, active_action['action_id'], user.id)
+                    _record_copilot_action_event(
+                        event_type="COPILOT_ACTION_CANCELLED",
+                        user=user,
+                        action=cancelled,
+                        request=request,
+                    )
                     answer = "Cancelled. No attendance change was made."
                     update_action_message(user, conversation_id, active_action['action_id'], 'CANCELLED', answer)
                     append_message(user, conversation_id, 'assistant', answer, {'query_status': 'cancelled'})
                     return Response({'answer': answer, 'intent': cancelled['intent'], 'query_status': 'cancelled', 'conversation_id': conversation_id, 'data': None, 'visualization': None})
                 approved = pending_action_manager.approve_action(session_id, active_action['action_id'], user.id)
+                _record_copilot_action_event(
+                    event_type="COPILOT_ACTION_CONFIRMED",
+                    user=user,
+                    action=approved,
+                    request=request,
+                )
                 try:
                     result = write_action_executor.execute_approved_action(approved, user)
                     pending_action_manager.mark_executed(active_action['action_id'], user.id, session_id, result)
@@ -207,6 +265,13 @@ class HRCopilotQueryView(APIView):
                     
                     # Store the pending action
                     action_id = pending_action_manager.store_pending_action(session_id, pending_action)
+                    _record_copilot_action_event(
+                        event_type="COPILOT_ACTION_REQUESTED",
+                        user=user,
+                        action={**pending_action, "action_id": action_id},
+                        request=request,
+                        metadata={"query_audit_id": audit.id},
+                    )
                     
                     # Save conversation context
                     save_context(user, conversation_id, {
@@ -273,6 +338,13 @@ class HRCopilotQueryView(APIView):
                         pending_action['description'] = write_action_planner._missing_question('', pending_action['validation_errors'])
                         pending_action['conversation_id'] = conversation_id
                         action_id = pending_action_manager.store_pending_action(session_id, pending_action)
+                        _record_copilot_action_event(
+                            event_type="COPILOT_ACTION_REQUESTED",
+                            user=user,
+                            action={**pending_action, "action_id": action_id},
+                            request=request,
+                            metadata={"query_audit_id": audit.id},
+                        )
                         append_message(user, conversation_id, 'assistant', pending_action['description'], {
                             'query_status': 'awaiting_information',
                             'pending_action': {**pending_action, 'action_id': action_id},
@@ -360,6 +432,18 @@ class HRCopilotQueryView(APIView):
             audit.save(update_fields=[
                 "intent", "scope_result", "validation_result", "execution_result", "error_code",
             ])
+            record_event(
+                event_type="COPILOT_QUERY_FAILED",
+                category="HR_COPILOT",
+                severity="WARNING" if error.status < 500 else "ERROR",
+                status="FAILED",
+                actor=user,
+                target=user,
+                message="HR Copilot query failed.",
+                source="HR_COPILOT",
+                request=request,
+                metadata={"query_audit_id": audit.id, "error_code": error.code},
+            )
             append_message(user, conversation_id, "assistant", error.message, {"query_status": "rejected"})
             return Response({
                 "detail": error.message,
@@ -379,6 +463,18 @@ class HRCopilotQueryView(APIView):
             audit.execution_result = "failed"
             audit.error_code = "query_failed"
             audit.save(update_fields=["intent", "scope_result", "execution_result", "error_code"])
+            record_event(
+                event_type="COPILOT_QUERY_FAILED",
+                category="HR_COPILOT",
+                severity="ERROR",
+                status="FAILED",
+                actor=user,
+                target=user,
+                message="HR Copilot query failed.",
+                source="HR_COPILOT",
+                request=request,
+                metadata={"query_audit_id": audit.id, "error_code": "query_failed"},
+            )
             append_message(user, conversation_id, "assistant", "I couldn't complete that HR query. Please try a more specific question.", {"query_status": "failed"})
             return Response({
                 "detail": "I couldn't complete that HR query. Please try a more specific question.",
@@ -416,6 +512,12 @@ class HRCopilotActionApprovalView(APIView):
             if action == "approve":
                 # Get and approve the pending action
                 pending_action = pending_action_manager.approve_action(session_id, action_id, user.id)
+                _record_copilot_action_event(
+                    event_type="COPILOT_ACTION_CONFIRMED",
+                    user=user,
+                    action=pending_action,
+                    request=request,
+                )
                 
                 # Execute the approved action
                 result = write_action_executor.execute_approved_action(pending_action, user)
@@ -445,6 +547,12 @@ class HRCopilotActionApprovalView(APIView):
                 
             else:  # cancel
                 cancelled_action = pending_action_manager.cancel_action(session_id, action_id, user.id)
+                _record_copilot_action_event(
+                    event_type="COPILOT_ACTION_CANCELLED",
+                    user=user,
+                    action=cancelled_action,
+                    request=request,
+                )
                 conversation_id = cancelled_action.get('conversation_id')
                 answer = "Cancelled. No attendance change was made."
                 update_action_message(user, conversation_id, action_id, 'CANCELLED', answer)
@@ -491,6 +599,18 @@ class HRCopilotActionApprovalView(APIView):
                 error_message=message[:2000], authorization_scope=pending.authorization_scope or {},
                 ip_address=HRCopilotActionApprovalView._client_ip(request),
                 user_agent=request.META.get('HTTP_USER_AGENT', '')[:1000],
+            )
+            _record_copilot_action_event(
+                event_type="COPILOT_ACTION_FAILED",
+                user=user,
+                action={
+                    "action_id": action_id,
+                    "action_type": pending.action_type,
+                },
+                request=request,
+                status="FAILED",
+                severity="ERROR",
+                metadata={"action_audit_id": pending.audit_records.order_by("-timestamp").first().id},
             )
         except Exception:
             logger.exception("Could not persist failed Copilot action audit for %s", action_id)

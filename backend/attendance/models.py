@@ -23,7 +23,10 @@ def calculate_working_duration(events, now=None):
             open_check_in = None
 
     if open_check_in is not None and now >= open_check_in:
-        working_duration += now - open_check_in
+        # Prevent open intervals from ticking endlessly for missed checkouts
+        # We cap the live calculation to a max of 24 hours.
+        if (now - open_check_in).total_seconds() < 24 * 3600:
+            working_duration += now - open_check_in
 
     return working_duration
 

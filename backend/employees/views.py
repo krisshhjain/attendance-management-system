@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from django.db import transaction
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser, BasePermission
@@ -7,6 +9,37 @@ from .models import Employee, FaceProfile
 from .serializers import EmployeeCreateSerializer, EmployeeListSerializer, EmployeeUpdateSerializer
 from attendance.face_service import process_enrollment, FaceExtractionError
 from leave_management.permissions import IsManagerOrSuperUser
+from system_logs.services import record_event
+
+
+def _employee_log_state(employee):
+    return {
+        "user_id": employee.user_id,
+        "email": employee.user.email,
+        "first_name": employee.user.first_name,
+        "last_name": employee.user.last_name,
+        "department": employee.department,
+        "employment_type": employee.employment_type,
+        "date_joined": employee.date_joined.isoformat(),
+        "is_active": employee.is_active,
+        "section": employee.section,
+        "subsection": employee.subsection,
+        "app_access": deepcopy(employee.app_access),
+    }
+
+
+def _manager_log_state(user):
+    return {
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "is_active": user.is_active,
+        "is_staff": user.is_staff,
+        "is_system_admin": user.is_system_admin,
+        "is_superuser": user.is_superuser,
+        "hr_copilot_sections": deepcopy(user.hr_copilot_sections),
+        "hr_copilot_subsections": deepcopy(user.hr_copilot_subsections),
+    }
 
 
 class IsAdminOrManager(BasePermission):
@@ -27,6 +60,18 @@ class EmployeeCreateView(APIView):
         serializer.is_valid(raise_exception=True)
 
         employee = serializer.save()
+        record_event(
+            event_type="EMPLOYEE_CREATED",
+            category="EMPLOYEE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Employee account created.",
+            source="API",
+            request=request,
+            after_state=_employee_log_state(employee),
+        )
 
         return Response(
             {
@@ -78,7 +123,79 @@ class EmployeeDetailView(APIView):
 
         serializer = EmployeeUpdateSerializer(employee, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        before_state = _employee_log_state(employee)
+        before_active = employee.is_active
+        before_access = deepcopy(employee.app_access)
         updated = serializer.save()
+        after_state = _employee_log_state(updated)
+
+        if before_active != updated.is_active:
+            record_event(
+                event_type=(
+                    "EMPLOYEE_ACTIVATED"
+                    if updated.is_active
+                    else "EMPLOYEE_DEACTIVATED"
+                ),
+                category="EMPLOYEE",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=updated,
+                message="Employee activation status changed.",
+                source="API",
+                request=request,
+                before_state=before_state,
+                after_state=after_state,
+            )
+
+        if before_active == updated.is_active or before_state != after_state:
+            if before_active == updated.is_active:
+                record_event(
+                    event_type="EMPLOYEE_UPDATED",
+                    category="EMPLOYEE",
+                    severity="INFO",
+                    status="SUCCESS",
+                    actor=request.user,
+                    target=updated,
+                    message="Employee account updated.",
+                    source="API",
+                    request=request,
+                    before_state=before_state,
+                    after_state=after_state,
+                )
+            elif any(
+                before_state[field] != after_state[field]
+                for field in before_state
+                if field != "is_active"
+            ):
+                record_event(
+                    event_type="EMPLOYEE_UPDATED",
+                    category="EMPLOYEE",
+                    severity="INFO",
+                    status="SUCCESS",
+                    actor=request.user,
+                    target=updated,
+                    message="Employee account updated.",
+                    source="API",
+                    request=request,
+                    before_state=before_state,
+                    after_state=after_state,
+                )
+
+        if before_access != updated.app_access:
+            record_event(
+                event_type="ACCESS_CHANGED",
+                category="EMPLOYEE",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=updated,
+                message="Employee application access changed.",
+                source="API",
+                request=request,
+                before_state={"app_access": before_access},
+                after_state={"app_access": deepcopy(updated.app_access)},
+            )
 
         return Response(EmployeeListSerializer(updated).data)
 
@@ -118,6 +235,18 @@ class AdminEmployeePasswordChangeView(APIView):
 
         employee.must_change_password = True
         employee.save(update_fields=["must_change_password"])
+        record_event(
+            event_type="EMPLOYEE_PASSWORD_CHANGED",
+            category="EMPLOYEE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=employee,
+            message="Employee password changed by an administrator.",
+            source="API",
+            request=request,
+            after_state={"must_change_password": employee.must_change_password},
+        )
 
         return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
 
@@ -135,6 +264,17 @@ class EmployeeFaceEnrollmentView(APIView):
         images = request.data.getlist("images") if hasattr(request.data, "getlist") else request.data.get("images", [])
         
         if len(images) != 3:
+            record_event(
+                event_type="FACE_ENROLLMENT",
+                category="EMPLOYEE",
+                severity="WARNING",
+                status="FAILED",
+                actor=request.user,
+                target=employee,
+                message="Face enrollment failed validation.",
+                source="API",
+                request=request,
+            )
             return Response({"error": "Exactly 3 images are required for enrollment."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -160,12 +300,48 @@ class EmployeeFaceEnrollmentView(APIView):
                     "version": "1.0"
                 }
             )
+            record_event(
+                event_type="FACE_ENROLLMENT",
+                category="EMPLOYEE",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=employee,
+                message="Employee face enrollment completed.",
+                source="API",
+                request=request,
+                after_state={"face_profile_status": "ACTIVE"},
+            )
             
             return Response({"message": "Face enrolled successfully."}, status=status.HTTP_200_OK)
             
         except FaceExtractionError as e:
+            record_event(
+                event_type="FACE_ENROLLMENT",
+                category="EMPLOYEE",
+                severity="WARNING",
+                status="FAILED",
+                actor=request.user,
+                target=employee,
+                message="Face enrollment failed.",
+                source="API",
+                request=request,
+                metadata={"error_type": type(e).__name__},
+            )
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
+            record_event(
+                event_type="FACE_ENROLLMENT",
+                category="EMPLOYEE",
+                severity="ERROR",
+                status="FAILED",
+                actor=request.user,
+                target=employee,
+                message="Face enrollment failed.",
+                source="API",
+                request=request,
+                metadata={"error_type": type(e).__name__},
+            )
             return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -213,6 +389,31 @@ class ManagerCreateView(APIView):
         user.hr_copilot_sections = hr_copilot_sections
         user.hr_copilot_subsections = hr_copilot_subsections
         user.save()
+        record_event(
+            event_type="MANAGER_CREATED",
+            category="EMPLOYEE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=user,
+            message="Manager account created.",
+            source="API",
+            request=request,
+            after_state=_manager_log_state(user),
+        )
+        record_event(
+            event_type="ROLE_CHANGED",
+            category="EMPLOYEE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=user,
+            message="Manager role established.",
+            source="API",
+            request=request,
+            before_state={"is_system_admin": False, "is_superuser": False},
+            after_state={"is_system_admin": True, "is_superuser": False},
+        )
         
         return Response({
             "id": user.id,
@@ -283,7 +484,9 @@ class ManagerDetailView(APIView):
         manager = self.get_object(pk)
         if not manager:
             return Response({"error": "Manager not found"}, status=404)
-        
+        before_state = _manager_log_state(manager)
+        before_active = manager.is_active
+
         # Update allowed fields
         if "first_name" in request.data:
             manager.first_name = request.data["first_name"].strip()
@@ -295,8 +498,44 @@ class ManagerDetailView(APIView):
             manager.hr_copilot_sections = request.data["hr_copilot_sections"]
         if "hr_copilot_subsections" in request.data:
             manager.hr_copilot_subsections = request.data["hr_copilot_subsections"]
-        
         manager.save()
+        after_state = _manager_log_state(manager)
+
+        if before_active != manager.is_active:
+            record_event(
+                event_type=("MANAGER_ACTIVATED" if manager.is_active else "MANAGER_DEACTIVATED"),
+                category="EMPLOYEE",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=manager,
+                message="Manager activation status changed.",
+                source="API",
+                request=request,
+                before_state=before_state,
+                after_state=after_state,
+            )
+        if before_state != after_state and (
+            before_active == manager.is_active
+            or any(
+                before_state[field] != after_state[field]
+                for field in before_state
+                if field != "is_active"
+            )
+        ):
+            record_event(
+                event_type="MANAGER_UPDATED",
+                category="EMPLOYEE",
+                severity="INFO",
+                status="SUCCESS",
+                actor=request.user,
+                target=manager,
+                message="Manager account updated.",
+                source="API",
+                request=request,
+                before_state=before_state,
+                after_state=after_state,
+            )
         
         return Response({
             "id": manager.id,
@@ -340,5 +579,16 @@ class ManagerPasswordChangeView(APIView):
         
         manager.set_password(new_password)
         manager.save()
+        record_event(
+            event_type="MANAGER_PASSWORD_CHANGED",
+            category="EMPLOYEE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=manager,
+            message="Manager password changed by an administrator.",
+            source="API",
+            request=request,
+        )
         
         return Response({"message": "Manager password changed successfully"})

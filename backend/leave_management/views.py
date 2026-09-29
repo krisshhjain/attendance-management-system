@@ -32,6 +32,53 @@ from .services import (
     validate_leave_request,
 )
 from notifications.services import queue_manager_notifications_after_commit
+from system_logs.services import record_event
+
+
+def _leave_log_state(leave_request):
+    return {
+        "leave_request_id": leave_request.id,
+        "employee_id": leave_request.employee_id,
+        "leave_type_id": leave_request.leave_type_id,
+        "start_date": leave_request.start_date.isoformat(),
+        "end_date": leave_request.end_date.isoformat(),
+        "day_type": leave_request.day_type,
+        "duration_days": str(leave_request.duration_days),
+        "status": leave_request.status,
+        "reviewed_by_id": leave_request.reviewed_by_id,
+        "reviewed_at": leave_request.reviewed_at.isoformat() if leave_request.reviewed_at else None,
+        "cancelled_by_id": leave_request.cancelled_by_id,
+        "cancelled_at": leave_request.cancelled_at.isoformat() if leave_request.cancelled_at else None,
+    }
+
+
+def _leave_type_log_state(leave_type):
+    return {
+        "leave_type_id": leave_type.id,
+        "name": leave_type.name,
+        "code": leave_type.code,
+        "is_active": leave_type.is_active,
+        "is_paid": leave_type.is_paid,
+        "requires_document": leave_type.requires_document,
+        "allow_half_day": leave_type.allow_half_day,
+        "min_notice_days": leave_type.min_notice_days,
+    }
+
+
+def _leave_policy_log_state(policy):
+    return {
+        "leave_policy_id": policy.id,
+        "employee_type": policy.employee_type,
+        "leave_type_id": policy.leave_type_id,
+        "annual_entitlement": str(policy.annual_entitlement),
+        "allow_carry_forward": policy.allow_carry_forward,
+        "max_carry_forward": str(policy.max_carry_forward),
+        "max_consecutive_days": policy.max_consecutive_days,
+        "min_notice_days": policy.min_notice_days,
+        "is_active": policy.is_active,
+        "effective_from": policy.effective_from.isoformat(),
+        "effective_to": policy.effective_to.isoformat() if policy.effective_to else None,
+    }
 
 
 # ==============================================================================
@@ -151,6 +198,19 @@ class EmployeeLeaveRequestsView(APIView):
                 email_body=message,
             )
 
+        record_event(
+            event_type="LEAVE_CREATED",
+            category="LEAVE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=leave_req,
+            message="Leave request created.",
+            source="API",
+            request=request,
+            after_state=_leave_log_state(leave_req),
+        )
+
         return Response(
             LeaveRequestSerializer(leave_req).data,
             status=status.HTTP_201_CREATED,
@@ -181,10 +241,24 @@ class EmployeeCancelLeaveRequestView(APIView):
             return Response({"error": "Leave request not found."}, status=404)
 
         try:
+            before_state = _leave_log_state(leave_req)
             updated_req = cancel_leave_request(leave_req, user=request.user)
         except ValidationError as e:
             return Response({"error": e.message if hasattr(e, "message") else str(e)}, status=400)
 
+        record_event(
+            event_type="LEAVE_CANCELLED",
+            category="LEAVE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=updated_req,
+            message="Leave request cancelled.",
+            source="API",
+            request=request,
+            before_state=before_state,
+            after_state=_leave_log_state(updated_req),
+        )
         return Response(LeaveRequestSerializer(updated_req).data)
 
 
@@ -241,6 +315,7 @@ class AdminApproveLeaveView(APIView):
 
         remarks = request.data.get("remarks", "")
         try:
+            before_state = _leave_log_state(leave_req)
             approved_req = approve_leave_request(
                 leave_request=leave_req,
                 reviewer_user=request.user,
@@ -249,6 +324,19 @@ class AdminApproveLeaveView(APIView):
         except ValidationError as e:
             return Response({"error": e.message if hasattr(e, "message") else str(e)}, status=400)
 
+        record_event(
+            event_type="LEAVE_APPROVED",
+            category="LEAVE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=approved_req,
+            message="Leave request approved.",
+            source="API",
+            request=request,
+            before_state=before_state,
+            after_state=_leave_log_state(approved_req),
+        )
         return Response(LeaveRequestSerializer(approved_req).data)
 
 
@@ -264,6 +352,7 @@ class AdminDenyLeaveView(APIView):
 
         remarks = request.data.get("remarks", "")
         try:
+            before_state = _leave_log_state(leave_req)
             denied_req = deny_leave_request(
                 leave_request=leave_req,
                 reviewer_user=request.user,
@@ -272,6 +361,19 @@ class AdminDenyLeaveView(APIView):
         except ValidationError as e:
             return Response({"error": e.message if hasattr(e, "message") else str(e)}, status=400)
 
+        record_event(
+            event_type="LEAVE_DENIED",
+            category="LEAVE",
+            severity="WARNING",
+            status="SUCCESS",
+            actor=request.user,
+            target=denied_req,
+            message="Leave request denied.",
+            source="API",
+            request=request,
+            before_state=before_state,
+            after_state=_leave_log_state(denied_req),
+        )
         return Response(LeaveRequestSerializer(denied_req).data)
 
 
@@ -286,6 +388,7 @@ class AdminCancelApprovedLeaveView(APIView):
             return Response({"error": "Leave request not found."}, status=404)
 
         try:
+            before_state = _leave_log_state(leave_req)
             cancelled_req = cancel_leave_request(
                 leave_request=leave_req,
                 user=request.user,
@@ -293,6 +396,19 @@ class AdminCancelApprovedLeaveView(APIView):
         except ValidationError as e:
             return Response({"error": e.message if hasattr(e, "message") else str(e)}, status=400)
 
+        record_event(
+            event_type="LEAVE_CANCELLED",
+            category="LEAVE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=cancelled_req,
+            message="Approved leave request cancelled.",
+            source="API",
+            request=request,
+            before_state=before_state,
+            after_state=_leave_log_state(cancelled_req),
+        )
         return Response(LeaveRequestSerializer(cancelled_req).data)
 
 
@@ -351,6 +467,18 @@ class SuperAdminLeaveTypesListCreateView(APIView):
         serializer = LeaveTypeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         lt = serializer.save()
+        record_event(
+            event_type="LEAVE_TYPE_CREATED",
+            category="LEAVE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=lt,
+            message="Leave type created.",
+            source="ADMIN",
+            request=request,
+            after_state=_leave_type_log_state(lt),
+        )
         return Response(LeaveTypeSerializer(lt).data, status=status.HTTP_201_CREATED)
 
 
@@ -375,15 +503,43 @@ class SuperAdminLeaveTypeDetailView(APIView):
             return Response({"error": "Leave type not found."}, status=404)
         serializer = LeaveTypeSerializer(lt, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        before_state = _leave_type_log_state(lt)
         updated = serializer.save()
+        record_event(
+            event_type="LEAVE_TYPE_UPDATED",
+            category="LEAVE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=updated,
+            message="Leave type updated.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state=_leave_type_log_state(updated),
+        )
         return Response(LeaveTypeSerializer(updated).data)
 
     def delete(self, request, pk):
         lt = self.get_object(pk)
         if not lt:
             return Response({"error": "Leave type not found."}, status=404)
+        before_state = _leave_type_log_state(lt)
         lt.is_active = False
         lt.save()
+        record_event(
+            event_type="LEAVE_TYPE_DELETED",
+            category="LEAVE",
+            severity="WARNING",
+            status="SUCCESS",
+            actor=request.user,
+            target=lt,
+            message="Leave type deactivated.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state=_leave_type_log_state(lt),
+        )
         return Response({"message": "Leave type deactivated successfully."})
 
 
@@ -399,6 +555,18 @@ class SuperAdminLeavePoliciesListCreateView(APIView):
         serializer = LeavePolicySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         policy = serializer.save()
+        record_event(
+            event_type="LEAVE_POLICY_CREATED",
+            category="LEAVE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=policy,
+            message="Leave policy created.",
+            source="ADMIN",
+            request=request,
+            after_state=_leave_policy_log_state(policy),
+        )
         return Response(LeavePolicySerializer(policy).data, status=status.HTTP_201_CREATED)
 
 
@@ -423,15 +591,43 @@ class SuperAdminLeavePolicyDetailView(APIView):
             return Response({"error": "Leave policy not found."}, status=404)
         serializer = LeavePolicySerializer(policy, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        before_state = _leave_policy_log_state(policy)
         updated = serializer.save()
+        record_event(
+            event_type="LEAVE_POLICY_UPDATED",
+            category="LEAVE",
+            severity="INFO",
+            status="SUCCESS",
+            actor=request.user,
+            target=updated,
+            message="Leave policy updated.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state=_leave_policy_log_state(updated),
+        )
         return Response(LeavePolicySerializer(updated).data)
 
     def delete(self, request, pk):
         policy = self.get_object(pk)
         if not policy:
             return Response({"error": "Leave policy not found."}, status=404)
+        before_state = _leave_policy_log_state(policy)
         policy.is_active = False
         policy.save()
+        record_event(
+            event_type="LEAVE_POLICY_DELETED",
+            category="LEAVE",
+            severity="WARNING",
+            status="SUCCESS",
+            actor=request.user,
+            target=policy,
+            message="Leave policy deactivated.",
+            source="ADMIN",
+            request=request,
+            before_state=before_state,
+            after_state=_leave_policy_log_state(policy),
+        )
         return Response({"message": "Leave policy deactivated successfully."})
 
 

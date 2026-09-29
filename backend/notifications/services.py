@@ -3,6 +3,7 @@ from django.db import transaction
 
 from .models import Notification
 from .tasks import send_notification_email
+from system_logs.services import record_event
 
 
 NOTIFICATION_TYPES = {
@@ -27,7 +28,7 @@ def create_notification(
     if notification_type not in NOTIFICATION_TYPES:
         raise ValueError(f"Unsupported notification type: {notification_type}")
 
-    return Notification.objects.create(
+    notification = Notification.objects.create(
         user=user,
         title=title,
         message=message,
@@ -35,6 +36,22 @@ def create_notification(
         attendance_event=attendance_event,
         deduplication_key=deduplication_key,
     )
+    record_event(
+        event_type="NOTIFICATION_CREATED",
+        category="NOTIFICATION",
+        severity="INFO",
+        status="SUCCESS",
+        actor="SYSTEM",
+        target=notification,
+        message="Notification created.",
+        source="SYSTEM",
+        after_state={
+            "notification_type": notification.notification_type,
+            "is_read": notification.is_read,
+            "attendance_event_id": notification.attendance_event_id,
+        },
+    )
+    return notification
 
 
 def get_or_create_notification(
@@ -53,7 +70,7 @@ def get_or_create_notification(
         "user": user,
         "attendance_event": attendance_event,
     }
-    return Notification.objects.get_or_create(
+    notification, created = Notification.objects.get_or_create(
         **lookup,
         defaults={
             "user": user,
@@ -65,6 +82,23 @@ def get_or_create_notification(
             "is_read": False,
         },
     )
+    if created:
+        record_event(
+            event_type="NOTIFICATION_CREATED",
+            category="NOTIFICATION",
+            severity="INFO",
+            status="SUCCESS",
+            actor="SYSTEM",
+            target=notification,
+            message="Notification created.",
+            source="SYSTEM",
+            after_state={
+                "notification_type": notification.notification_type,
+                "is_read": notification.is_read,
+                "attendance_event_id": notification.attendance_event_id,
+            },
+        )
+    return notification, created
 
 
 def queue_deduplicated_notification_after_commit(
@@ -87,6 +121,17 @@ def queue_deduplicated_notification_after_commit(
             deduplication_key=deduplication_key,
         )
         if created and email_subject and email_body and user.email:
+            record_event(
+                event_type="EMAIL_QUEUED",
+                category="NOTIFICATION",
+                severity="INFO",
+                status="PENDING",
+                actor="SYSTEM",
+                target=user,
+                message="Notification email queued.",
+                source="CELERY",
+                metadata={"recipient_count": 1},
+            )
             send_notification_email.delay([user.email], email_subject, email_body)
 
     transaction.on_commit(publish)
@@ -110,6 +155,17 @@ def queue_notification_after_commit(
             notification_type=notification_type,
         )
         if email_subject and email_body and user.email:
+            record_event(
+                event_type="EMAIL_QUEUED",
+                category="NOTIFICATION",
+                severity="INFO",
+                status="PENDING",
+                actor="SYSTEM",
+                target=user,
+                message="Notification email queued.",
+                source="CELERY",
+                metadata={"recipient_count": 1},
+            )
             send_notification_email.delay(
                 [user.email],
                 email_subject,

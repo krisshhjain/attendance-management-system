@@ -11,6 +11,7 @@ from ..models import CopilotPendingAction, CopilotActionAudit
 from employees.models import Employee
 from attendance.models import Attendance, AttendanceEvent, AttendanceCorrection
 from leave_management.models import LeaveRequest
+from system_logs.services import record_event
 
 
 class WriteActionExecutor:
@@ -46,7 +47,7 @@ class WriteActionExecutor:
                 new_state = {key: value for key, value in result.items() if key not in {'message'}}
                 if pending_action.get('target_data', {}).get('reason'):
                     new_state['reason'] = pending_action['target_data']['reason']
-                CopilotActionAudit.objects.create(
+                action_audit = CopilotActionAudit.objects.create(
                     pending_action=action_record, user=user, session_id=action_record.session_id,
                     action_type='write', intent=action_record.intent, operation=action_type,
                     target_description=action_record.description,
@@ -54,6 +55,21 @@ class WriteActionExecutor:
                     new_state=new_state,
                     success=True, explicit_confirmation=bool(action_record.approved_at),
                     authorization_scope=pending_action.get('authorization_scope') or {},
+                )
+                record_event(
+                    event_type="COPILOT_ACTION_EXECUTED",
+                    category="HR_COPILOT",
+                    severity="INFO",
+                    status="SUCCESS",
+                    actor=user,
+                    target={
+                        "type": "hr_copilot.CopilotPendingAction",
+                        "id": str(action_record.action_id),
+                        "label": action_record.action_type,
+                    },
+                    message="HR Copilot action executed.",
+                    source="HR_COPILOT",
+                    metadata={"action_audit_id": action_audit.id},
                 )
                 return result
                     
@@ -337,6 +353,17 @@ class PendingActionManager:
             if action.status == 'PENDING':
                 action.status = 'EXPIRED'
                 action.save(update_fields=['status'])
+                record_event(
+                    event_type="COPILOT_ACTION_EXPIRED",
+                    category="HR_COPILOT",
+                    severity="WARNING",
+                    status="FAILED",
+                    actor=action.user,
+                    target=action,
+                    message="HR Copilot action expired.",
+                    source="HR_COPILOT",
+                    metadata={"action_id": str(action.action_id)},
+                )
             raise CopilotError("action_expired", "Pending action has expired")
         return action
 
@@ -359,6 +386,17 @@ class PendingActionManager:
                 action.mark_approved()
                 result = self._as_dict(action)
         if expired:
+            record_event(
+                event_type="COPILOT_ACTION_EXPIRED",
+                category="HR_COPILOT",
+                severity="WARNING",
+                status="FAILED",
+                actor=action.user,
+                target=action,
+                message="HR Copilot action expired.",
+                source="HR_COPILOT",
+                metadata={"action_id": str(action.action_id)},
+            )
             raise CopilotError("action_expired", "Pending action has expired")
         return result
 

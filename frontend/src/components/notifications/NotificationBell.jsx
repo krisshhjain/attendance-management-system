@@ -120,7 +120,7 @@ export function NotificationBell() {
     },
   });
 
-  const deleteAttendanceMutation = useMutation({
+  const deleteNotificationMutation = useMutation({
     mutationFn: async (notification) => {
       await apiRequest(`/notifications/${notification.id}/read/`, {
         method: "PATCH",
@@ -166,17 +166,10 @@ export function NotificationBell() {
   const unreadCount = Array.isArray(unreadQuery.data) ? unreadQuery.data.length : 0;
   const isOpen = Boolean(anchorEl);
   const hasError = notificationsQuery.isError || unreadQuery.isError;
-  const isBusy = markReadMutation.isPending || deleteAttendanceMutation.isPending;
+  const isBusy = markReadMutation.isPending || deleteNotificationMutation.isPending;
 
   const handleNotificationClick = (notification) => {
-    if (isAttendanceNotification(notification)) {
-      deleteAttendanceMutation.mutate(notification);
-      return;
-    }
-
-    if (!notification.is_read) {
-      markReadMutation.mutate(notification.id);
-    }
+    deleteNotificationMutation.mutate(notification);
   };
 
   const retryNotifications = () => {

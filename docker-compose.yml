@@ -105,6 +105,17 @@ services:
     profiles:
       - full
 
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: attendance_mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    profiles:
+      - full
+
 volumes:
   postgres_data:
   rabbitmq_data:
