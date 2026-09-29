@@ -324,7 +324,7 @@ function DrawerContent({ onClose, isMobile }) {
               {displayName}
             </div>
             <div style={{ fontSize: 10, color: "#94a3b8" }}>
-              {loginType === "systemadmin" ? "System Admin" : loginType === "admin" ? "Super Admin" : "Employee"}
+              {loginType === "systemadmin" ? "System Manager" : loginType === "admin" ? "Super Admin" : "Employee"}
             </div>
           </div>
         </div>

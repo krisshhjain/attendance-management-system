@@ -16,12 +16,12 @@ import {
 export const Route = createFileRoute("/systemadmin-login")({
   head: () => ({
     meta: [
-      { title: "System Admin Sign in — AttendPro Attendance" },
+      { title: "System Manager Sign in — AttendPro Attendance" },
       {
         name: "description",
         content: "Employee sign in for AttendPro attendance and leave management.",
       },
-      { property: "og:title", content: "System Admin Sign in — AttendPro Attendance" },
+      { property: "og:title", content: "System Manager Sign in — AttendPro Attendance" },
       {
         property: "og:description",
         content: "Employee sign in for AttendPro attendance and leave management.",
@@ -84,10 +84,10 @@ function AdminLoginPage() {
         <Card variant="outlined" sx={{ borderRadius: 2, boxShadow: "none" }}>
           <CardContent sx={{ p: 4 }}>
             <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: "-0.5px" }}>
-              System Admin Sign in
+              System Manager Sign in
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Use your System Admin credentials to access the system dashboard.
+              Use your System Manager credentials to access the system dashboard.
             </Typography>
 
             <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 2.5 }}>
@@ -159,7 +159,7 @@ function AdminLoginPage() {
         </Card>
 
         <Typography variant="caption" display="block" textAlign="center" color="text.secondary" sx={{ mt: 4 }}>
-          Trouble signing in? Contact your system administrator.
+          Trouble signing in? Contact your system manager.
         </Typography>
       </Box>
     </Box>

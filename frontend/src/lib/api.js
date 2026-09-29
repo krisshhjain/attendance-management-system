@@ -405,3 +405,7 @@ export async function downloadSystemLogs(params = {}, format = "csv") {
     filename: format === "xlsx" ? "system-logs.xlsx" : "system-logs.csv",
   };
 }
+
+export async function deleteSystemLogs(untilDate) {
+  return apiRequest(`/system-logs/?until_date=${untilDate}`, { method: "DELETE" });
+}

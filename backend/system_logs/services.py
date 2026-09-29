@@ -26,6 +26,22 @@ _SECRET_VALUE_PATTERNS = (
 )
 
 
+IGNORED_EVENT_TYPES = {
+    "FACE_VERIFY",
+    "NOTIFICATION_CREATED",
+    "NOTIFICATION_READ",
+    "NOTIFICATION_DELETED",
+    "TASK_STARTED",
+    "TASK_SUCCESS",
+    "TASK_RETRY",
+    "TASK_FAILED",
+    "EMAIL_QUEUED",
+    "EMAIL_RETRY",
+    "COPILOT_CONVERSATION",
+    "COPILOT_QUERY_FAILED",
+}
+
+
 def record_event(
     *,
     event_type,
@@ -43,6 +59,9 @@ def record_event(
     metadata=None,
 ):
     """Create one sanitized, append-only system log record."""
+    if event_type in IGNORED_EVENT_TYPES:
+        return None
+
     actor_obj, actor_role = _resolve_actor(actor)
     target_fields = _serialize_target(target)
     request_values = _request_values(request)

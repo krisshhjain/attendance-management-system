@@ -145,6 +145,22 @@ class SystemLogListView(APIView):
         serializer = SystemLogSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
 
+    def delete(self, request):
+        until_date_str = request.query_params.get("until_date")
+        if not until_date_str:
+            return Response({"detail": "until_date is required."}, status=400)
+            
+        try:
+            until_date = self._parse_date(until_date_str, "until_date")
+        except ValueError as error:
+            return Response({"detail": str(error)}, status=400)
+            
+        end_of_date = self._start_of_day(until_date + timedelta(days=1))
+        
+        deleted_count, _ = SystemLog.objects.filter(timestamp__lt=end_of_date).delete()
+        
+        return Response({"deleted": deleted_count})
+
     def _filtered_queryset(self, request):
         params = request.query_params
         queryset = SystemLog.objects.select_related("actor").all()

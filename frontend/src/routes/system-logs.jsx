@@ -21,6 +21,12 @@ import {
   TextField,
   Tooltip,
   Typography,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Snackbar,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -28,7 +34,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import DownloadIcon from "@mui/icons-material/Download";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { useAuth } from "../lib/auth.jsx";
-import { downloadSystemLogs, fetchSystemLogActors, fetchSystemLogs } from "../lib/api.js";
+import { deleteSystemLogs, downloadSystemLogs, fetchSystemLogActors, fetchSystemLogs } from "../lib/api.js";
 
 export const Route = createFileRoute("/system-logs")({
   validateSearch: (search) => ({
@@ -61,13 +67,12 @@ const eventTypes = [
   "LOGIN_SUCCESS", "LOGIN_FAILED", "PASSWORD_CHANGED", "UNAUTHORIZED_ACCESS", "FORBIDDEN_ACCESS",
   "EMPLOYEE_CREATED", "EMPLOYEE_UPDATED", "EMPLOYEE_ACTIVATED", "EMPLOYEE_DEACTIVATED", "EMPLOYEE_PASSWORD_CHANGED", "FACE_ENROLLMENT",
   "MANAGER_CREATED", "MANAGER_UPDATED", "MANAGER_ACTIVATED", "MANAGER_DEACTIVATED", "MANAGER_PASSWORD_CHANGED", "ACCESS_CHANGED", "ROLE_CHANGED",
-  "CHECK_IN", "CHECK_OUT", "FACE_VERIFY", "ADMIN_FORCE_CHECKOUT", "ATTENDANCE_RESET", "ATTENDANCE_EDIT", "ABSENCE_DETECTED",
-  "REGULARIZATION_CREATED", "REGULARIZATION_APPROVED", "REGULARIZATION_REJECTED", "REGULARIZATION_QUOTA_CHANGED",
+  "CHECK_IN", "CHECK_OUT", "ADMIN_FORCE_CHECKOUT", "ATTENDANCE_RESET", "ATTENDANCE_EDIT", "ABSENCE_DETECTED",
+  "REGULARIZATION_CREATED", "REGULARIZATION_SUBMITTED", "REGULARIZATION_APPROVED", "REGULARIZATION_REJECTED", "REGULARIZATION_QUOTA_CHANGED",
   "SHIFT_ASSIGNED", "SHIFT_BULK_ASSIGNED", "SHIFT_CONFIGURATION_CHANGED", "OFFICE_LOCATION_CREATED", "OFFICE_LOCATION_UPDATED", "OFFICE_LOCATION_DELETED",
   "LEAVE_CREATED", "LEAVE_UPDATED", "LEAVE_APPROVED", "LEAVE_DENIED", "LEAVE_CANCELLED", "LEAVE_TYPE_CREATED", "LEAVE_TYPE_UPDATED", "LEAVE_TYPE_DELETED", "LEAVE_POLICY_CREATED", "LEAVE_POLICY_UPDATED", "LEAVE_POLICY_DELETED",
-  "NOTIFICATION_CREATED", "NOTIFICATION_READ", "NOTIFICATION_DELETED", "EMAIL_QUEUED", "EMAIL_SENT", "EMAIL_FAILED", "EMAIL_RETRY",
-  "COPILOT_CONVERSATION", "COPILOT_QUERY_FAILED", "COPILOT_ACTION_REQUESTED", "COPILOT_ACTION_CONFIRMED", "COPILOT_ACTION_EXECUTED", "COPILOT_ACTION_FAILED", "COPILOT_ACTION_CANCELLED", "COPILOT_ACTION_EXPIRED",
-  "TASK_STARTED", "TASK_SUCCESS", "TASK_FAILED", "TASK_RETRY",
+  "EMAIL_SENT", "EMAIL_FAILED",
+  "COPILOT_ACTION_REQUESTED", "COPILOT_ACTION_CONFIRMED", "COPILOT_ACTION_EXECUTED", "COPILOT_ACTION_FAILED", "COPILOT_ACTION_CANCELLED", "COPILOT_ACTION_EXPIRED",
 ];
 
 function chipColor(value) {
@@ -100,6 +105,10 @@ function SystemLogsPage() {
   const [actorInput, setActorInput] = useState(search.actor);
   const [actorOptions, setActorOptions] = useState([]);
   const [exporting, setExporting] = useState("");
+  const [deleteDate, setDeleteDate] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   const updateSearch = (updates) => {
     navigate({
@@ -199,6 +208,22 @@ function SystemLogsPage() {
     }
   };
 
+  const handleDeleteLogs = async () => {
+    setIsDeleting(true);
+    setError("");
+    try {
+      const response = await deleteSystemLogs(deleteDate);
+      setSuccessMessage(`Successfully deleted ${response.deleted} logs.`);
+      setShowDeleteDialog(false);
+      setDeleteDate("");
+      setReloadToken((value) => value + 1);
+    } catch (err) {
+      setError(err.message || "Failed to delete logs.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const activeFilters = [
     ["search", search.search ? `Search: ${search.search}` : ""],
     ["category", search.category],
@@ -247,6 +272,9 @@ function SystemLogsPage() {
           </Button>
           <Button size="small" variant="contained" startIcon={<DownloadIcon />} disabled={Boolean(exporting)} onClick={() => exportLogs("xlsx")}>
             {exporting === "xlsx" ? "Preparing..." : "Excel"}
+          </Button>
+          <Button size="small" variant="outlined" color="error" onClick={() => setShowDeleteDialog(true)}>
+            Delete Logs
           </Button>
         </Box>
       </Box>
@@ -424,6 +452,33 @@ function SystemLogsPage() {
           </Box>
         )}
       </Drawer>
+
+      <Dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete System Logs</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Choose a date to permanently delete all system logs on or before that date. This action cannot be undone.
+          </DialogContentText>
+          <TextField
+            fullWidth
+            type="date"
+            label="Delete logs until"
+            InputLabelProps={{ shrink: true }}
+            value={deleteDate}
+            onChange={(e) => setDeleteDate(e.target.value)}
+            disabled={isDeleting}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowDeleteDialog(false)} disabled={isDeleting}>Cancel</Button>
+          <Button onClick={handleDeleteLogs} color="error" variant="contained" disabled={!deleteDate || isDeleting}>
+            {isDeleting ? "Deleting..." : "Delete Logs"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar open={Boolean(successMessage)} autoHideDuration={4000} onClose={() => setSuccessMessage("")}>
+        <Alert severity="success" onClose={() => setSuccessMessage("")}>{successMessage}</Alert>
+      </Snackbar>
     </Box>
   );
 }

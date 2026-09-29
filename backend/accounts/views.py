@@ -9,7 +9,37 @@ from system_logs.services import record_event
 
 
 class LoginView(TokenObtainPairView):
-    pass
+    def post(self, request, *args, **kwargs):
+        try:
+            response = super().post(request, *args, **kwargs)
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=False)
+            user = serializer.user
+            if user:
+                record_event(
+                    event_type="LOGIN_SUCCESS",
+                    category="AUTHENTICATION",
+                    severity="INFO",
+                    status="SUCCESS",
+                    actor=user,
+                    target=user,
+                    message="User logged in successfully.",
+                    source="API",
+                    request=request,
+                )
+            return response
+        except Exception as e:
+            email = request.data.get("email", "unknown")
+            record_event(
+                event_type="LOGIN_FAILED",
+                category="AUTHENTICATION",
+                severity="WARNING",
+                status="FAILED",
+                message=f"Failed login attempt for {email}.",
+                source="API",
+                request=request,
+            )
+            raise e
 
 
 class SystemAdminLoginView(TokenObtainPairView):
@@ -19,24 +49,46 @@ class SystemAdminLoginView(TokenObtainPairView):
     SuperUsers must use the regular admin login.
     """
     def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        # Only allow is_system_admin users (Managers), NOT superusers
-        if not serializer.user.is_system_admin:
-            return Response(
-                {"detail": "You do not have Manager privileges."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        
-        # Explicitly reject superusers from this endpoint
-        if serializer.user.is_superuser:
-            return Response(
-                {"detail": "SuperUser accounts must use the admin login."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            # Only allow is_system_admin users (Managers), NOT superusers
+            if not serializer.user.is_system_admin:
+                raise Exception("You do not have Manager privileges.")
+            
+            # Explicitly reject superusers from this endpoint
+            if serializer.user.is_superuser:
+                raise Exception("SuperUser accounts must use the admin login.")
 
-        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+            record_event(
+                event_type="LOGIN_SUCCESS",
+                category="AUTHENTICATION",
+                severity="INFO",
+                status="SUCCESS",
+                actor=serializer.user,
+                target=serializer.user,
+                message="Manager logged in successfully.",
+                source="API",
+                request=request,
+            )
+            return Response(serializer.validated_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            email = request.data.get("email", "unknown")
+            record_event(
+                event_type="LOGIN_FAILED",
+                category="AUTHENTICATION",
+                severity="WARNING",
+                status="FAILED",
+                message=f"Failed manager login attempt for {email}.",
+                source="API",
+                request=request,
+            )
+            # Re-raise the correct error depending on what happened
+            from rest_framework.exceptions import ValidationError, AuthenticationFailed
+            if str(e) in ["You do not have Manager privileges.", "SuperUser accounts must use the admin login."]:
+                return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
+            raise e
 
 
 class ChangePasswordView(APIView):

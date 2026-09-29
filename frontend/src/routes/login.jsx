@@ -259,7 +259,7 @@ function LoginPage() {
             <Box sx={{ display: "flex", gap: 3, borderBottom: "1px solid rgba(18,20,31,0.1)" }}>
               {[
                 { value: "employee", label: "Employee" },
-                { value: "systemadmin", label: "System admin" },
+                { value: "systemadmin", label: "System manager" },
               ].map((opt) => {
                 const active = userType === opt.value;
                 return (

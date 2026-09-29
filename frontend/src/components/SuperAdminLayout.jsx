@@ -189,7 +189,7 @@ export function SuperAdminLayout({ children, title }) {
                       {displayName}
                     </div>
                     <div style={{ fontSize: 10, color: "#94a3b8" }}>
-                      {loginType === "systemadmin" ? "System Admin" : "Super Admin"}
+                      {loginType === "systemadmin" ? "System Manager" : "Super Admin"}
                     </div>
                   </div>
                 )}
@@ -314,7 +314,7 @@ export function SuperAdminLayout({ children, title }) {
         </main>
       </div>
 
-      {/* System Admin Chat Widget (preserved) */}
+      {/* System Manager Chat Widget (preserved) */}
       {loginType === "systemadmin" && <SystemAdminChatWidget />}
     </div>
   );

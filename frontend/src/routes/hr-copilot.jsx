@@ -165,15 +165,15 @@ function HRCopilotPage() {
       <Box sx={{ p: 2, display: "flex", alignItems: "center", gap: 1.25 }}>
         <Avatar sx={{ width: 34, height: 34, bgcolor: "primary.main" }}>{user?.email?.slice(0, 1).toUpperCase() || "S"}</Avatar>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="body2" fontWeight={600} noWrap>{user?.email?.split("@")[0] || "System Admin"}</Typography>
-          <Typography variant="caption" color="text.secondary">System Admin</Typography>
+          <Typography variant="body2" fontWeight={600} noWrap>{user?.email?.split("@")[0] || "System Manager"}</Typography>
+          <Typography variant="caption" color="text.secondary">System Manager</Typography>
         </Box>
       </Box>
     </Box>
   );
 
   if (loginType !== "systemadmin") {
-    return <Paper sx={{ p: 3 }}><Typography>System Admin access is required.</Typography></Paper>;
+    return <Paper sx={{ p: 3 }}><Typography>System Manager access is required.</Typography></Paper>;
   }
 
   return (
@@ -207,7 +207,7 @@ function HRCopilotPage() {
           <Box sx={{ px: { xs: 1.5, sm: 3 }, pt: 1.5, pb: 1.5, borderTop: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}>
             <Box sx={{ maxWidth: 820, mx: "auto" }}>
               <ChatInput value={draft} onChange={setDraft} onSend={handleSendMessage} disabled={isLoading} />
-              <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 1 }}>HR records are accessed using your System Admin permissions. Changes require your approval.</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 1 }}>HR records are accessed using your System Manager permissions. Changes require your approval.</Typography>
             </Box>
           </Box>
           <div ref={messagesEndRef} />

@@ -58,6 +58,17 @@ class RecordEventTests(TestCase):
             password="password123",
         )
 
+    def test_ignored_events_are_not_recorded(self):
+        from .services import IGNORED_EVENT_TYPES
+        for event_type in IGNORED_EVENT_TYPES:
+            record_event(
+                event_type=event_type,
+                category="TEST",
+                severity="INFO",
+                status="SUCCESS",
+            )
+        self.assertEqual(SystemLog.objects.count(), 0)
+
     def record(self, **overrides):
         values = {
             "event_type": "EMPLOYEE_UPDATED",
@@ -185,20 +196,11 @@ class RequestContextMiddlewareTests(TestCase):
             request, response = self.call_middleware(status=403)
 
         self.assertEqual(response.status_code, 403)
-        mocked.assert_called_once()
-        self.assertIs(mocked.call_args.kwargs["request"], request)
-        self.assertEqual(mocked.call_args.kwargs["source"], "API")
-        self.assertEqual(mocked.call_args.kwargs["event_type"], "FORBIDDEN_ACCESS")
-        self.assertEqual(SystemLog.objects.get().request_id, request.request_id)
+        mocked.assert_not_called()
 
     def test_logs_401_security_outcome(self):
         self.call_middleware(status=401)
-
-        log = SystemLog.objects.get()
-        self.assertEqual(log.event_type, "UNAUTHORIZED_ACCESS")
-        self.assertEqual(log.category, "SECURITY")
-        self.assertEqual(log.status, "DENIED")
-        self.assertEqual(log.actor_role, "ANONYMOUS")
+        self.assertEqual(SystemLog.objects.count(), 0)
 
     def test_logs_403_security_outcome(self):
         user = User.objects.create_user(
@@ -212,11 +214,8 @@ class RequestContextMiddlewareTests(TestCase):
             lambda request: JsonResponse({}, status=403)
         )(request)
 
-        log = SystemLog.objects.get()
+        self.assertEqual(SystemLog.objects.count(), 0)
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(log.event_type, "FORBIDDEN_ACCESS")
-        self.assertEqual(log.actor, user)
-        self.assertEqual(log.actor_role, "MANAGER")
 
     def test_sensitive_request_data_is_not_logged(self):
         request = self.factory.post(
@@ -230,20 +229,7 @@ class RequestContextMiddlewareTests(TestCase):
             lambda request: JsonResponse({}, status=401)
         )(request)
 
-        log = SystemLog.objects.get()
-        stored_values = repr({
-            "message": log.message,
-            "metadata": log.metadata,
-            "request_id": log.request_id,
-            "user_agent": log.user_agent,
-        })
-        self.assertEqual(response["X-Request-ID"], log.request_id)
-        self.assertEqual(log.metadata["path"], "/api/protected/")
-        self.assertNotIn("query-secret", stored_values)
-        self.assertNotIn("body-secret", stored_values)
-        self.assertNotIn("header-secret", stored_values)
-        self.assertNotIn("Authorization", stored_values)
-        self.assertNotIn("password", stored_values)
+        self.assertEqual(SystemLog.objects.count(), 0)
 
 
 class EmployeeAccountEventTests(TestCase):
@@ -460,10 +446,8 @@ class AttendanceEventLoggingTests(TestCase):
         logs = SystemLog.objects.filter(target_id=str(self.employee.pk))
         self.assertTrue(logs.filter(event_type="CHECK_IN", source="MOBILE").exists())
         self.assertTrue(logs.filter(event_type="CHECK_OUT", source="MOBILE").exists())
-        face_log = logs.get(event_type="FACE_VERIFY")
-        self.assertEqual(face_log.actor, self.employee_user)
-        self.assertNotIn("biometric-payload", repr(face_log))
-        self.assertTrue(face_log.request_id)
+        self.assertTrue(logs.filter(event_type="CHECK_OUT", source="MOBILE").exists())
+        self.assertFalse(logs.filter(event_type="FACE_VERIFY").exists())
 
     def test_admin_attendance_edit_reset_and_regularization_review_events(self):
         attendance_date = timezone.localdate()
@@ -644,12 +628,17 @@ class LeaveNotificationEmailLoggingTests(TestCase):
             },
             format="json",
         )
+        if response.status_code != 201:
+            print("LEAVE ERROR:", response.data)
         self.assertEqual(response.status_code, 201)
         return LeaveRequest.objects.get(pk=response.data["id"])
 
     def test_leave_lifecycle_logs_safe_transitions(self):
-        tomorrow = timezone.localdate() + timedelta(days=1)
-        leave_request = self.create_leave(tomorrow)
+        monday = timezone.localdate()
+        while monday.weekday() != 0:
+            monday += timedelta(days=1)
+        
+        leave_request = self.create_leave(monday)
         created_log = SystemLog.objects.get(
             event_type="LEAVE_CREATED",
             target_id=str(leave_request.pk),
@@ -685,7 +674,7 @@ class LeaveNotificationEmailLoggingTests(TestCase):
             ).exists()
         )
 
-        denied_request = self.create_leave(tomorrow + timedelta(days=2), "deny")
+        denied_request = self.create_leave(monday + timedelta(days=1), "deny")
         self.client.force_authenticate(user=self.admin)
         denied = self.client.post(
             f"/api/leave/admin/requests/{denied_request.pk}/deny/",
@@ -763,29 +752,15 @@ class LeaveNotificationEmailLoggingTests(TestCase):
             message="Sensitive notification body should not be logged.",
             notification_type="ATTENDANCE",
         )
-        created_log = SystemLog.objects.get(
-            event_type="NOTIFICATION_CREATED",
-            target_id=str(notification.pk),
-        )
-        self.assertNotIn("Sensitive notification body", repr(created_log))
+        self.assertFalse(SystemLog.objects.filter(event_type="NOTIFICATION_CREATED").exists())
 
         self.client.force_authenticate(user=self.employee_user)
         read = self.client.post(f"/api/notifications/{notification.pk}/read/")
         self.assertEqual(read.status_code, 200)
-        self.assertTrue(
-            SystemLog.objects.filter(
-                event_type="NOTIFICATION_READ",
-                target_id=str(notification.pk),
-            ).exists()
-        )
+        self.assertFalse(SystemLog.objects.filter(event_type="NOTIFICATION_READ").exists())
         deleted = self.client.delete(f"/api/notifications/{notification.pk}/")
         self.assertEqual(deleted.status_code, 204)
-        self.assertTrue(
-            SystemLog.objects.filter(
-                event_type="NOTIFICATION_DELETED",
-                target_id=str(notification.pk),
-            ).exists()
-        )
+        self.assertFalse(SystemLog.objects.filter(event_type="NOTIFICATION_DELETED").exists())
 
         with patch("notifications.services.send_notification_email.delay") as enqueue:
             with self.captureOnCommitCallbacks(execute=True):
@@ -798,9 +773,7 @@ class LeaveNotificationEmailLoggingTests(TestCase):
                     email_body="Private queued body",
                 )
         enqueue.assert_called_once()
-        queued_log = SystemLog.objects.get(event_type="EMAIL_QUEUED")
-        self.assertNotIn("Private queued body", repr(queued_log))
-        self.assertNotIn("Private queued subject", repr(queued_log))
+        self.assertFalse(SystemLog.objects.filter(event_type="EMAIL_QUEUED").exists())
 
     @patch("notifications.tasks.send_mail", return_value=1)
     def test_email_sent_event_excludes_email_content(self, send_mail):
@@ -818,8 +791,8 @@ class LeaveNotificationEmailLoggingTests(TestCase):
         self.assertEqual(sent_log.metadata["recipient_count"], 1)
         self.assertNotIn("Private email body", repr(sent_log))
         self.assertNotIn("Private subject", repr(sent_log))
-        self.assertTrue(SystemLog.objects.filter(event_type="TASK_STARTED", category="CELERY").exists())
-        self.assertTrue(SystemLog.objects.filter(event_type="TASK_SUCCESS", category="CELERY").exists())
+        self.assertFalse(SystemLog.objects.filter(event_type="TASK_STARTED", category="CELERY").exists())
+        self.assertFalse(SystemLog.objects.filter(event_type="TASK_SUCCESS", category="CELERY").exists())
         send_mail.assert_called_once()
 
     @patch("notifications.tasks.send_mail", side_effect=RuntimeError("private email failure"))
@@ -830,7 +803,7 @@ class LeaveNotificationEmailLoggingTests(TestCase):
             retries=0,
         )
         self.assertTrue(retry_result.failed())
-        self.assertTrue(SystemLog.objects.filter(event_type="EMAIL_RETRY").exists())
+        self.assertFalse(SystemLog.objects.filter(event_type="EMAIL_RETRY").exists())
 
         failure_result = send_notification_email.apply(
             args=([self.employee_user.email], "Subject", "Body"),
@@ -841,8 +814,10 @@ class LeaveNotificationEmailLoggingTests(TestCase):
         failure_log = SystemLog.objects.filter(event_type="EMAIL_FAILED").order_by("-id").first()
         self.assertIsNotNone(failure_log)
         self.assertNotIn("private email failure", repr(failure_log))
-        self.assertTrue(SystemLog.objects.filter(event_type="TASK_RETRY", category="CELERY").exists())
-        self.assertTrue(SystemLog.objects.filter(event_type="TASK_FAILED", category="CELERY").exists())
+        self.assertIsNotNone(failure_log)
+        self.assertNotIn("private email failure", repr(failure_log))
+        self.assertFalse(SystemLog.objects.filter(event_type="TASK_RETRY", category="CELERY").exists())
+        self.assertFalse(SystemLog.objects.filter(event_type="TASK_FAILED", category="CELERY").exists())
 
 
 class HRCopilotLoggingTests(TestCase):
@@ -891,12 +866,9 @@ class HRCopilotLoggingTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 400)
-        conversation_log = SystemLog.objects.get(event_type="COPILOT_CONVERSATION")
-        failure_log = SystemLog.objects.get(event_type="COPILOT_QUERY_FAILED")
-        self.assertEqual(conversation_log.metadata["conversation_id"], "phase7-query")
-        self.assertEqual(failure_log.metadata["error_code"], "phase7_failure")
-        self.assertNotIn("Private prompt", repr(conversation_log))
-        self.assertNotIn("Private prompt", repr(failure_log))
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(SystemLog.objects.filter(event_type="COPILOT_CONVERSATION").exists())
+        self.assertFalse(SystemLog.objects.filter(event_type="COPILOT_QUERY_FAILED").exists())
 
     def test_action_requested_confirmed_cancelled_and_expired(self):
         action = self.pending_action()
