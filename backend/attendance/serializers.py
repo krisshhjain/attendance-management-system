@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import OfficeLocation
+from .models import OfficeLocation, RegularizationQuotaPolicy
 
 
 class OfficeLocationSerializer(serializers.ModelSerializer):
@@ -32,3 +32,10 @@ class OfficeLocationSerializer(serializers.ModelSerializer):
         if not cleaned_name:
             raise serializers.ValidationError("Location name cannot be empty.")
         return cleaned_name
+
+
+class RegularizationQuotaPolicySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RegularizationQuotaPolicy
+        fields = ["weekly_limit", "monthly_limit", "updated_at"]
+        read_only_fields = ["updated_at"]

@@ -161,7 +161,7 @@ function RegularizationReviewPage() {
   if (!request) {
     return (
       <Box sx={{ maxWidth: 900, mx: "auto", p: 3 }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate({ to: "/administration" })} sx={{ mb: 2 }}>Back to Administration</Button>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate({ to: "/admin-regularization" })} sx={{ mb: 2 }}>Back to Regularization</Button>
         <Alert severity="error">{error || "Regularization request not found."}</Alert>
       </Box>
     );
@@ -170,7 +170,7 @@ function RegularizationReviewPage() {
   const isPending = request.status === "PENDING";
   return (
     <Box sx={{ maxWidth: 1000, mx: "auto", p: { xs: 2, md: 4 } }}>
-      <Button startIcon={<ArrowBackIcon />} onClick={() => navigate({ to: "/administration" })} sx={{ mb: 2 }}>Back to Administration</Button>
+      <Button startIcon={<ArrowBackIcon />} onClick={() => navigate({ to: "/admin-regularization" })} sx={{ mb: 2 }}>Back to Regularization</Button>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 2, mb: 3 }}>
         <Box>
           <Typography variant="h4" fontWeight={750}>{isPending ? "Review Regularization Request" : "Regularization Request"}</Typography>

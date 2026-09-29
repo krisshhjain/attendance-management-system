@@ -11,6 +11,7 @@ from leave_management.permissions import (
     IsEmployeeWithShift,
     IsManagerOrAdmin,
     IsManagerOrSuperUser,
+    IsSuperAdmin,
 )
 
 from employees.models import Employee
@@ -21,6 +22,7 @@ from .models import (
     Shift,
     RegularizationRequest,
     RegularizationRequestDay,
+    RegularizationQuotaPolicy,
     calculate_completed_working_duration,
     calculate_working_duration,
     OfficeLocation,
@@ -84,9 +86,9 @@ class CheckInView(APIView):
         # Get or create attendance record
         attendance, created = Attendance.get_or_create_for_date(employee, today)
 
-        if attendance.status == "LEAVE":
+        if attendance.status in {"LEAVE", "ABSENT"}:
             return Response(
-                {"error": "You cannot check in because you are on approved leave today."},
+                {"error": "You cannot check in because your attendance is marked as " + attendance.status.lower() + " today."},
                 status=400,
             )
 
@@ -261,8 +263,8 @@ class TodayAttendanceView(APIView):
         active_check_in = events[-1].timestamp if events and events[-1].event_type == "CHECK_IN" else None
         state, last_event = _get_last_event_state(employee, today)
 
-        if attendance.status == "LEAVE":
-            status = "LEAVE"
+        if attendance.status in {"LEAVE", "ABSENT"}:
+            status = attendance.status
         elif state == "NOT_CHECKED_IN":
             # Always allow check-in, even on weekends
             status = "NOT_CHECKED_IN"
@@ -521,8 +523,8 @@ class AdminAttendanceView(APIView):
             
             # Determine actual display status
             if att:
-                if att.status == "LEAVE":
-                    status_display = "LEAVE"
+                if att.status in {"LEAVE", "ABSENT"}:
+                    status_display = att.status
                 elif att.check_in is None:
                     status_display = "ABSENT"
                 else:
@@ -832,9 +834,9 @@ class WebsiteFacialCheckInView(APIView):
         # Get or create attendance record
         attendance, created = Attendance.get_or_create_for_date(employee, today)
 
-        if attendance.status == "LEAVE":
+        if attendance.status in {"LEAVE", "ABSENT"}:
             return Response(
-                {"error": "You cannot check in because you are on approved leave today."},
+                {"error": "You cannot check in because your attendance is marked as " + attendance.status.lower() + " today."},
                 status=400,
             )
 
@@ -1677,9 +1679,9 @@ class RegularizationRequestCreateView(APIView):
                 locked_employee = Employee.objects.select_for_update().get(pk=employee.pk)
                 usage = regularization_quota_usage(locked_employee)
                 if usage["weekly_used"] >= usage["weekly_limit"] or usage["monthly_used"] >= usage["monthly_limit"]:
-                    detail = ("You have reached the limit of 1 regularization request for this calendar week."
+                    detail = (f"You have reached the limit of {usage['weekly_limit']} regularization request(s) for this calendar week."
                               if usage["weekly_used"] >= usage["weekly_limit"] else
-                              "You have reached the limit of 4 regularization requests for this calendar month.")
+                              f"You have reached the limit of {usage['monthly_limit']} regularization request(s) for this calendar month.")
                     return Response({
                         "detail": detail,
                         **usage,
@@ -1768,9 +1770,9 @@ class RegularizationRequestCreateView(APIView):
                 locked_employee = Employee.objects.select_for_update().get(pk=employee.pk)
                 usage = regularization_quota_usage(locked_employee)
                 if usage["weekly_used"] >= usage["weekly_limit"] or usage["monthly_used"] >= usage["monthly_limit"]:
-                    detail = ("You have reached the limit of 1 regularization request for this calendar week."
+                    detail = (f"You have reached the limit of {usage['weekly_limit']} regularization request(s) for this calendar week."
                               if usage["weekly_used"] >= usage["weekly_limit"] else
-                              "You have reached the limit of 4 regularization requests for this calendar month.")
+                              f"You have reached the limit of {usage['monthly_limit']} regularization request(s) for this calendar month.")
                     return Response({
                         "detail": detail,
                         **usage,
@@ -1813,7 +1815,8 @@ def regularization_quota_usage(employee, current_date=None):
     )
     weekly_used = requests.filter(created_at__gte=week_start_at, created_at__lt=week_end_at).count()
     monthly_used = requests.filter(created_at__gte=start_at, created_at__lt=end_at).count()
-    weekly_limit, monthly_limit = 1, 4
+    policy = RegularizationQuotaPolicy.get_solo()
+    weekly_limit, monthly_limit = policy.weekly_limit, policy.monthly_limit
     return {
         "week_start": week_start.isoformat(),
         "week_end": (week_end - timedelta(days=1)).isoformat(),
@@ -1835,6 +1838,29 @@ class RegularizationRequestQuotaView(APIView):
         if not hasattr(request.user, "employee"):
             return Response({"error": "No employee profile associated with this account."}, status=403)
         return Response(regularization_quota_usage(request.user.employee))
+
+
+class RegularizationQuotaPolicyView(APIView):
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        from .serializers import RegularizationQuotaPolicySerializer
+
+        policy = RegularizationQuotaPolicy.get_solo()
+        return Response(RegularizationQuotaPolicySerializer(policy).data)
+
+    def patch(self, request):
+        from .serializers import RegularizationQuotaPolicySerializer
+
+        policy = RegularizationQuotaPolicy.get_solo()
+        serializer = RegularizationQuotaPolicySerializer(
+            policy,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(updated_by=request.user)
+        return Response(serializer.data)
 
 
 class RegularizationRequestListView(APIView):

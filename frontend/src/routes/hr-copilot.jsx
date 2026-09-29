@@ -10,13 +10,13 @@ import { ChatInput } from "../components/hr-copilot/ChatInput.jsx";
 import { ChatMessages } from "../components/hr-copilot/ChatMessages.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import { useOrganizationScope } from "../lib/organizationScope.jsx";
-import { sendMessage } from "../services/hrCopilotService.js";
+import { fetchConversation, respondToAction, sendMessage } from "../services/hrCopilotService.js";
 
 const suggestions = [
   "Show me today's attendance summary",
   "Which employees have pending leave requests?",
   "Give me an overview of recent leave trends",
-  "Show attendance concerns that may need HR attention",
+  "Who all were absent yesterday?",
 ];
 
 function HRCopilotPage() {
@@ -27,14 +27,40 @@ function HRCopilotPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [busyActionId, setBusyActionId] = useState(null);
   const messagesEndRef = useRef(null);
+  const sendingRef = useRef(false);
+  const conversationRef = useRef(conversation);
+  const restoredPendingActions = useRef(false);
+
+  useEffect(() => { conversationRef.current = conversation; }, [conversation]);
+
+  useEffect(() => {
+    if (loginType !== "systemadmin" || restoredPendingActions.current || !user?.id) return;
+    restoredPendingActions.current = true;
+    const storageKey = `hr-copilot-current-${user.id}`;
+    const conversationId = globalThis.sessionStorage?.getItem(storageKey);
+    if (!conversationId) return;
+    fetchConversation(conversationId).then(({ messages = [] }) => {
+      const restoredMessages = messages.map((message) => ({
+        ...message,
+        pendingAction: message.pending_action || message.pendingAction || null,
+      }));
+      const restored = { id: conversationId, title: messages.find((message) => message.role === "user")?.content?.slice(0, 64) || "", messages: restoredMessages };
+      conversationRef.current = restored;
+      setConversation(restored);
+    }).catch((historyError) => setError(historyError.message || "Conversation history could not be loaded."));
+  }, [loginType, user?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation.messages.length]);
 
   function handleNewChat() {
-    setConversation({ id: null, title: "", messages: [] });
+    const nextConversation = { id: globalThis.crypto?.randomUUID?.() || `conversation-${Date.now()}`, title: "", messages: [] };
+    if (user?.id) globalThis.sessionStorage?.setItem(`hr-copilot-current-${user.id}`, nextConversation.id);
+    conversationRef.current = nextConversation;
+    setConversation(nextConversation);
     setDraft("");
     setIsLoading(false);
     setError(null);
@@ -43,9 +69,14 @@ function HRCopilotPage() {
 
   async function handleSendMessage(message, attachments = []) {
     const content = message.trim();
-    if ((!content && !attachments.length) || isLoading) return;
+    if ((!content && !attachments.length) || isLoading || sendingRef.current) return;
+    if (!content) {
+      setError("Please include a text question. File contents are not sent to the HR database assistant.");
+      return;
+    }
     setError(null);
-    const conversationId = conversation.id || `local-${Date.now()}`;
+    const activeConversationId = conversationRef.current.id || globalThis.crypto?.randomUUID?.() || `conversation-${Date.now()}`;
+    if (user?.id) globalThis.sessionStorage?.setItem(`hr-copilot-current-${user.id}`, activeConversationId);
     const userMessage = {
       id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
       role: "user",
@@ -54,56 +85,65 @@ function HRCopilotPage() {
       scope: selectedScope,
       timestamp: new Date().toISOString(),
     };
-    setConversation((current) => ({
-      id: conversationId,
-      title: current.title || content.slice(0, 64) || attachments[0]?.name || "File question",
-      messages: [...current.messages, userMessage],
-    }));
+    const nextConversation = {
+      ...conversationRef.current,
+      id: activeConversationId,
+      title: conversationRef.current.title || content.slice(0, 64),
+      messages: [...conversationRef.current.messages, userMessage],
+    };
+    conversationRef.current = nextConversation;
+    setConversation(nextConversation);
     setDraft("");
-
-    if (attachments.length) {
-      setConversation((current) => ({
-        ...current,
-        messages: [...current.messages, {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          content: "File analysis is not enabled yet. I kept the attachment in this chat, but it was not uploaded or processed.",
-          timestamp: new Date().toISOString(),
-        }],
-      }));
-      return;
-    }
-
+    sendingRef.current = true;
     setIsLoading(true);
     try {
-      const result = await sendMessage({
-        message: content,
-        conversationId,
-        scope: selectedScope,
-      });
-      setConversation((current) => ({
-        ...current,
-        messages: [...current.messages, {
-          id: globalThis.crypto?.randomUUID?.() || `assistant-${Date.now()}`,
-          role: "assistant",
-          content: result.answer,
-          data: result.data,
-          intent: result.intent,
-          queryStatus: result.query_status,
-          timestamp: new Date().toISOString(),
-        }],
-      }));
+      const response = await sendMessage({ message: content, conversationId: activeConversationId, scope: selectedScope });
+      if (response.conversation_id && user?.id) globalThis.sessionStorage?.setItem(`hr-copilot-current-${user.id}`, response.conversation_id);
+      if (conversationRef.current.id !== activeConversationId) return;
+      const assistantMessage = {
+        id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-assistant`,
+        role: "assistant",
+        content: response.answer || "I couldn't complete that request.",
+        data: response.data,
+        pendingAction: response.pending_action ? { ...response.pending_action, status: response.pending_action.status || (response.query_status === "pending_approval" ? "PENDING" : "AWAITING_INFORMATION") } : null,
+        timestamp: new Date().toISOString(),
+      };
+      const updated = { ...conversationRef.current, messages: [...conversationRef.current.messages, assistantMessage] };
+      conversationRef.current = updated;
+      setConversation(updated);
     } catch (requestError) {
-      setError(requestError.message || "Unable to complete this HR query.");
+      if (conversationRef.current.id === activeConversationId) setError(requestError.message || "The HR Copilot request failed.");
     } finally {
+      sendingRef.current = false;
       setIsLoading(false);
+    }
+  }
+
+  async function handlePendingAction(actionId, action) {
+    if (busyActionId) return;
+    setBusyActionId(actionId);
+    setError(null);
+    try {
+      const response = await respondToAction({ actionId, action });
+      const updated = {
+        ...conversationRef.current,
+        messages: conversationRef.current.messages.map((message) => message.pendingAction?.action_id === actionId
+          ? { ...message, content: response.answer || message.content, pendingAction: { ...message.pendingAction, status: action === "approve" ? "EXECUTED" : "CANCELLED" }, timestamp: new Date().toISOString() }
+          : message),
+      };
+      conversationRef.current = updated;
+      setConversation(updated);
+    } catch (actionError) {
+      setError(actionError.message || "The requested action could not be completed.");
+    } finally {
+      setBusyActionId(null);
     }
   }
 
   const sidebar = (
     <Box sx={{ width: 280, height: "100%", display: "flex", flexDirection: "column", bgcolor: "#f7f7f8" }}>
       <Box sx={{ p: 2 }}>
-        <Button fullWidth variant="outlined" startIcon={<AddRoundedIcon />} onClick={handleNewChat} sx={{ justifyContent: "flex-start", borderColor: "divider", color: "text.primary", py: 1.1, textTransform: "none", fontWeight: 600 }}>
+        <Button fullWidth variant="outlined" startIcon={<AddRoundedIcon />} onClick={handleNewChat} disabled={isLoading || Boolean(busyActionId)} sx={{ justifyContent: "flex-start", borderColor: "divider", color: "text.primary", py: 1.1, textTransform: "none", fontWeight: 600 }}>
           New Chat
         </Button>
         <TextField
@@ -146,7 +186,7 @@ function HRCopilotPage() {
           <IconButton aria-label="Open conversations" onClick={() => setMobileSidebarOpen(true)} sx={{ display: { xs: "inline-flex", md: "none" } }}><MenuRoundedIcon /></IconButton>
           <AutoAwesomeIcon color="primary" fontSize="small" />
           <Typography variant="subtitle1" fontWeight={700}>HR Copilot</Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>Read-only HR data</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>Connected</Typography>
         </Box>
 
         <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -162,12 +202,12 @@ function HRCopilotPage() {
               </Box>
             </Box>
           ) : (
-            <ChatMessages messages={conversation.messages} loading={isLoading} error={error} />
+            <ChatMessages messages={conversation.messages} loading={isLoading} error={error} onAction={handlePendingAction} busyActionId={busyActionId} />
           )}
           <Box sx={{ px: { xs: 1.5, sm: 3 }, pt: 1.5, pb: 1.5, borderTop: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}>
             <Box sx={{ maxWidth: 820, mx: "auto" }}>
               <ChatInput value={draft} onChange={setDraft} onSend={handleSendMessage} disabled={isLoading} />
-              <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 1 }}>Answers use HR records within your assigned organizational scope.</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 1 }}>HR records are accessed using your System Admin permissions. Changes require your approval.</Typography>
             </Box>
           </Box>
           <div ref={messagesEndRef} />

@@ -18,6 +18,7 @@ from .services.pipeline import (
     serialize_result,
     validate_sql,
 )
+from .services.intent_normalizer import IntentNormalizer
 
 
 @pytest.mark.parametrize(
@@ -187,6 +188,77 @@ def test_today_and_yesterday_are_local_dates():
         "start": date.fromordinal(today.toordinal() - 1).isoformat(),
         "end": date.fromordinal(today.toordinal() - 1).isoformat(),
     }
+
+
+def test_attendance_write_extracts_employee_date_and_status_when_llm_omits_them():
+    query = "Mark Akshat Awasthi attendance for 2026-09-28 as Present."
+
+    intent = IntentNormalizer().normalize_intent(
+        {"intent": "attendance_update", "entities": {}},
+        original_query=query,
+    )
+
+    assert intent["entities"]["employee_name"] == "Akshat Awasthi"
+    assert intent["entities"]["date_range"] == {
+        "start": "2026-09-28",
+        "end": "2026-09-28",
+    }
+    assert intent["entities"]["target_status"] == "PRESENT"
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_name", "expected_date"),
+    [
+        ("Mark Ashish Rai as present for 29th September", "Ashish Rai", "year-current-09-29"),
+        ("Mark Ashish Rai present on 29 September.", "Ashish Rai", "year-current-09-29"),
+        ("Make Ashish Rai present for 29th September.", "Ashish Rai", "year-current-09-29"),
+        ("Set Ashish Rai's attendance to present for September 29.", "Ashish Rai", "year-current-09-29"),
+        ("Please mark Ashish Rai as present on 29/09/2026.", "Ashish Rai", "2026-09-29"),
+        ("Add attendance for Ashish Rai on September 29.", "Ashish Rai", "year-current-09-29"),
+        ("Mark Ashish Rai as present on 29-09-2026.", "Ashish Rai", "2026-09-29"),
+    ],
+)
+def test_attendance_write_extracts_natural_employee_and_date(question, expected_name, expected_date):
+    intent = IntentNormalizer().normalize_intent(
+        {"intent": "attendance_update", "entities": {}}, original_query=question,
+    )
+    assert intent["intent"] == "attendance_update"
+    assert intent["action_type"] == "write"
+    assert intent["entities"]["target_status"] == "PRESENT"
+    assert intent["entities"]["employee_name"] == expected_name
+    year = timezone.localdate().year
+    resolved_date = f"{year}-09-29" if expected_date == "year-current-09-29" else expected_date
+    assert intent["entities"]["date_range"] == {"start": resolved_date, "end": resolved_date}
+
+
+def test_clear_attendance_command_corrects_misclassified_read_intent():
+    intent = IntentNormalizer().normalize_intent(
+        {"intent": "employee_lookup", "entities": {}},
+        original_query="Mark Ashish Rai as present for 29th September",
+    )
+    assert intent["intent"] == "attendance_update"
+    assert intent["action_type"] == "write"
+    assert intent["entities"]["employee_name"] == "Ashish Rai"
+    assert intent["entities"]["target_status"] == "PRESENT"
+    assert intent["entities"]["date_range"]["start"] == f"{timezone.localdate().year}-09-29"
+
+
+@pytest.mark.parametrize("phrase", ["absent", "as absent", "mark absent"])
+def test_attendance_absent_status_is_distinct_from_leave_even_if_llm_disagrees(phrase):
+    query = f"Mark Ashish Rai {phrase} on 29th September"
+    intent = IntentNormalizer().normalize_intent(
+        {"intent": "attendance_update", "entities": {"target_status": "LEAVE"}},
+        original_query=query,
+    )
+    assert intent["entities"]["target_status"] == "ABSENT"
+
+
+def test_explicit_leave_attendance_status_remains_leave():
+    intent = IntentNormalizer().normalize_intent(
+        {"intent": "attendance_update", "entities": {}},
+        original_query="Mark Ashish Rai as on leave for 29th September because of illness",
+    )
+    assert intent["entities"]["target_status"] == "LEAVE"
 
 
 def test_two_days_ago_is_calculated_by_backend():

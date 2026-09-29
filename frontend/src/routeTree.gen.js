@@ -13,6 +13,7 @@ import { Route as AdministrationRegularizationIdRouteImport } from './routes/adm
 import { Route as EmployeesRouteImport } from './routes/employees.jsx'
 import { Route as MyTeamRouteImport } from './routes/my-team.jsx'
 import { Route as RegularizationRouteImport } from './routes/regularization.jsx'
+import { Route as AdminRegularizationRouteImport } from './routes/admin-regularization.jsx'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -98,6 +99,12 @@ const RegularizationRoute = RegularizationRouteImport.update({
   getParentRoute: () => rootRouteImport,
 })
 
+const AdminRegularizationRoute = AdminRegularizationRouteImport.update({
+  id: '/admin-regularization',
+  path: '/admin-regularization',
+  getParentRoute: () => rootRouteImport,
+})
+
 const rootRouteChildren = {
   IndexRoute: IndexRoute,
   AttendanceRoute: AttendanceRoute,
@@ -113,6 +120,7 @@ const rootRouteChildren = {
   EmployeesRoute: EmployeesRoute,
   MyTeamRoute: MyTeamRoute,
   RegularizationRoute: RegularizationRoute,
+  AdminRegularizationRoute: AdminRegularizationRoute,
 }
 
 export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)

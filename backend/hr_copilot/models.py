@@ -24,6 +24,7 @@ class CopilotConversationContext(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     conversation_id = models.CharField(max_length=128)
     context = models.JSONField(default=dict)
+    messages = models.JSONField(default=list)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -49,6 +50,7 @@ class CopilotPendingAction(models.Model):
     ]
     
     STATUS_CHOICES = [
+        ('AWAITING_INFORMATION', 'Awaiting Information'),
         ('PENDING', 'Pending Approval'),
         ('APPROVED', 'Approved - Executing'),
         ('EXECUTED', 'Successfully Executed'),
@@ -156,7 +158,7 @@ class CopilotPendingAction(models.Model):
     
     def cancel(self):
         """Cancel the pending action."""
-        if self.status not in ['PENDING', 'APPROVED']:
+        if self.status not in ['AWAITING_INFORMATION', 'PENDING']:
             raise ValueError(f"Cannot cancel action in status {self.status}")
         
         self.status = 'CANCELLED'
@@ -192,6 +194,7 @@ class CopilotActionAudit(models.Model):
     # Execution metadata
     execution_time_ms = models.IntegerField(null=True, blank=True)
     success = models.BooleanField()
+    explicit_confirmation = models.BooleanField(default=False)
     error_message = models.TextField(null=True, blank=True)
     
     # Security and authorization
