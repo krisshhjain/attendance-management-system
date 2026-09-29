@@ -201,6 +201,23 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
     req.reviewer_remarks = remarks
     req.save()
 
+    from notifications.services import queue_notification_after_commit
+
+    queue_notification_after_commit(
+        user=req.employee.user,
+        title="Leave request approved",
+        message=(
+            f"Your {req.leave_type.name} leave request from {req.start_date} "
+            f"to {req.end_date} was approved."
+        ),
+        notification_type="LEAVE",
+        email_subject="Leave request approved",
+        email_body=(
+            f"Your {req.leave_type.name} leave request from {req.start_date} "
+            f"to {req.end_date} was approved."
+        ),
+    )
+
     # Integrate with Attendance records
     curr = req.start_date
     while curr <= req.end_date:
@@ -232,6 +249,23 @@ def deny_leave_request(leave_request, reviewer_user, remarks):
     req.reviewed_by = reviewer_user
     req.reviewer_remarks = remarks
     req.save()
+
+    from notifications.services import queue_notification_after_commit
+
+    message = (
+        f"Your {req.leave_type.name} leave request from {req.start_date} "
+        f"to {req.end_date} was denied."
+    )
+    if req.reviewer_remarks:
+        message += f" Remarks: {req.reviewer_remarks}"
+    queue_notification_after_commit(
+        user=req.employee.user,
+        title="Leave request denied",
+        message=message,
+        notification_type="LEAVE",
+        email_subject="Leave request denied",
+        email_body=message,
+    )
 
     return req
 

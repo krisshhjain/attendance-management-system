@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
+import FactCheckRoundedIcon from "@mui/icons-material/FactCheckRounded";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import {
   alpha,
   Badge,
@@ -37,6 +40,24 @@ function isAttendanceNotification(notification) {
     String(notification.notification_type ?? "").toUpperCase() === "ATTENDANCE" ||
     notification.attendance_event != null
   );
+}
+
+function notificationType(notification) {
+  return String(notification.notification_type ?? "SYSTEM").toUpperCase();
+}
+
+function notificationIcon(notification) {
+  switch (notificationType(notification)) {
+    case "ATTENDANCE":
+      return <EventAvailableRoundedIcon fontSize="small" />;
+    case "LEAVE":
+    case "REGULARIZATION":
+      return <FactCheckRoundedIcon fontSize="small" />;
+    case "ABSENCE_ALERT":
+      return <WarningAmberRoundedIcon fontSize="small" />;
+    default:
+      return <InfoOutlinedIcon fontSize="small" />;
+  }
 }
 
 export function NotificationBell() {
@@ -284,11 +305,7 @@ export function NotificationBell() {
                         : alpha(theme.palette.primary.main, 0.14),
                     }}
                   >
-                    {isAttendanceNotification(notification) ? (
-                      <EventAvailableRoundedIcon fontSize="small" />
-                    ) : (
-                      <NotificationsActiveRoundedIcon fontSize="small" />
-                    )}
+                    {notificationIcon(notification)}
                   </Box>
                 </ListItemAvatar>
                 <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -298,6 +315,13 @@ export function NotificationBell() {
                     noWrap
                   >
                     {notification.title}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    color="primary.main"
+                    sx={{ display: "block", mt: 0.2, fontWeight: 700, letterSpacing: 0.35 }}
+                  >
+                    {notificationType(notification).replaceAll("_", " ")}
                   </Typography>
                   <Typography
                     variant="body2"

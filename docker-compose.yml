@@ -75,6 +75,25 @@ services:
     profiles:
       - full
 
+  celery_beat:
+    build: ./backend
+    container_name: attendance_celery_beat
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: python -m celery -A config beat -l info
+    profiles:
+      - full
+
   frontend:
     build: ./frontend
     container_name: attendance_frontend

@@ -2,8 +2,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
 import { AuthProvider } from "../lib/auth.jsx";
 import { OrganizationScopeProvider } from "../lib/organizationScope.jsx";
-import { Box, Typography, Button, CssBaseline, ThemeProvider, createTheme, useMediaQuery } from "@mui/material";
-import { useState, useEffect } from "react";
+import { Box, Typography, Button, CssBaseline, ThemeProvider, createTheme } from "@mui/material";
+import { useEffect } from "react";
 
 function NotFoundComponent() {
   return (
@@ -62,20 +62,9 @@ function ErrorComponent({ error, reset }) {
 }
 
 function ThemeProviderWrapper({ children }) {
-  const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
-  const [themeMode, setThemeMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("themeMode") || (prefersDarkMode ? "dark" : "light");
-    }
-    return "light";
-  });
-
-  useEffect(() => {
-    const stored = localStorage.getItem("themeMode");
-    if (stored) {
-      setThemeMode(stored);
-    }
-  }, []);
+  // The application surfaces use a light design system. Keep the root theme
+  // aligned with those surfaces instead of inheriting a dark OS preference.
+  const themeMode = "light";
 
   useEffect(() => {
     localStorage.setItem("themeMode", themeMode);
@@ -293,17 +282,6 @@ function ThemeProviderWrapper({ children }) {
       },
     },
   });
-
-  const handleThemeModeChange = (event) => {
-    if (event.detail) {
-      setThemeMode(event.detail);
-    }
-  };
-
-  useEffect(() => {
-    window.addEventListener("themeModeChanged", handleThemeModeChange);
-    return () => window.removeEventListener("themeModeChanged", handleThemeModeChange);
-  }, []);
 
   return (
     <ThemeProvider theme={theme}>

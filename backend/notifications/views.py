@@ -53,5 +53,10 @@ class NotificationDeleteView(APIView):
             pk=pk,
             user=request.user,
         )
+        if notification.notification_type != "ATTENDANCE":
+            return Response(
+                {"detail": "Only transient attendance notifications can be deleted."},
+                status=400,
+            )
         notification.delete()
         return Response(status=204)

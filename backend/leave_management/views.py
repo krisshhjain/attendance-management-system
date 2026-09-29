@@ -2,6 +2,7 @@ import os
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
+from django.db import transaction
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
@@ -30,6 +31,7 @@ from .services import (
     deny_leave_request,
     validate_leave_request,
 )
+from notifications.services import queue_manager_notifications_after_commit
 
 
 # ==============================================================================
@@ -124,17 +126,30 @@ class EmployeeLeaveRequestsView(APIView):
         except ValidationError as e:
             return Response({"error": e.message if hasattr(e, "message") else str(e.messages[0] if hasattr(e, "messages") else e)}, status=400)
 
-        leave_req = LeaveRequest.objects.create(
-            employee=employee,
-            leave_type=leave_type,
-            start_date=start_date,
-            end_date=end_date,
-            day_type=day_type,
-            duration_days=duration,
-            reason=reason,
-            attachment=attachment,
-            status="PENDING",
-        )
+        with transaction.atomic():
+            leave_req = LeaveRequest.objects.create(
+                employee=employee,
+                leave_type=leave_type,
+                start_date=start_date,
+                end_date=end_date,
+                day_type=day_type,
+                duration_days=duration,
+                reason=reason,
+                attachment=attachment,
+                status="PENDING",
+            )
+            message = (
+                f"{employee.user.get_full_name().strip() or employee.user.email} "
+                f"submitted a {leave_type.name} leave request from {start_date} "
+                f"to {end_date}."
+            )
+            queue_manager_notifications_after_commit(
+                title="New leave request",
+                message=message,
+                notification_type="LEAVE",
+                email_subject="New leave request",
+                email_body=message,
+            )
 
         return Response(
             LeaveRequestSerializer(leave_req).data,

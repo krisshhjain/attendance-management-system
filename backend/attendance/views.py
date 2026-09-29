@@ -28,6 +28,45 @@ from .models import (
 from .geofence import validate_attendance_geofence
 from .face_service import find_closest_match, verify_employee_face, FaceExtractionError
 from leave_management.models import LeaveRequest
+from notifications.services import (
+    queue_manager_notifications_after_commit,
+    queue_notification_after_commit,
+)
+
+
+def _regularization_created_message(request_obj):
+    name = request_obj.employee.user.get_full_name().strip() or request_obj.employee.user.email
+    return (
+        f"{name} submitted a regularization request for "
+        f"{request_obj.period_start or request_obj.attendance_date} to "
+        f"{request_obj.period_end or request_obj.attendance_date}."
+    )
+
+
+def _queue_regularization_outcome(request_obj, status_value, reason=""):
+    if status_value == "APPROVED":
+        title = "Regularization request approved"
+        message = (
+            f"Your regularization request for {request_obj.attendance_date} "
+            "was approved."
+        )
+    else:
+        title = "Regularization request rejected"
+        message = (
+            f"Your regularization request for {request_obj.attendance_date} "
+            "was rejected."
+        )
+        if reason:
+            message += f" Reason: {reason}"
+
+    queue_notification_after_commit(
+        user=request_obj.employee.user,
+        title=title,
+        message=message,
+        notification_type="REGULARIZATION",
+        email_subject=title,
+        email_body=message,
+    )
 
 
 def _get_last_event_state(employee, date):
@@ -1701,6 +1740,14 @@ class RegularizationRequestCreateView(APIView):
                     description=description,
                     status="PENDING",
                 )
+                message = _regularization_created_message(regularization_request)
+                queue_manager_notifications_after_commit(
+                    title="New regularization request",
+                    message=message,
+                    notification_type="REGULARIZATION",
+                    email_subject="New regularization request",
+                    email_body=message,
+                )
             
             return Response({
                 "message": "Regularization request submitted successfully.",
@@ -1780,6 +1827,14 @@ class RegularizationRequestCreateView(APIView):
                 first = parsed[0]
                 first_attendance = Attendance.objects.filter(employee=employee, date=first["date"]).first()
                 parent = RegularizationRequest.objects.create(employee=employee, attendance_date=first["date"], request_type=first["type"], existing_check_in=first_attendance.check_in if first_attendance else None, existing_check_out=first_attendance.check_out if first_attendance else None, requested_check_in=first["check_in"], requested_check_out=first["check_out"], reason=first["reason"], description=first["description"], status="PENDING", period_type=period_type, period_start=start, period_end=end, attachment=str(request.data.get("attachment", "")))
+                message = _regularization_created_message(parent)
+                queue_manager_notifications_after_commit(
+                    title="New regularization request",
+                    message=message,
+                    notification_type="REGULARIZATION",
+                    email_subject="New regularization request",
+                    email_body=message,
+                )
                 for row in parsed:
                     attendance = Attendance.objects.filter(employee=employee, date=row["date"]).first()
                     RegularizationRequestDay.objects.create(request=parent, attendance_date=row["date"], request_type=row["type"], existing_check_in=attendance.check_in if attendance else None, existing_check_out=attendance.check_out if attendance else None, requested_check_in=row["check_in"], requested_check_out=row["check_out"], reason=row["reason"], description=row["description"])
@@ -1932,6 +1987,7 @@ class RegularizationRequestApproveView(APIView):
                         row.attendance_correction = AttendanceCorrection.objects.create(attendance=attendance, admin_user=request.user, correction_type="REGULARIZATION", reason=f"Regularization approved: {row.reason}", previous_data=previous)
                         row.approved_check_in, row.approved_check_out = check_in, check_out
                         row.save(update_fields=["attendance_correction", "approved_check_in", "approved_check_out"])
+                    _queue_regularization_outcome(req, "APPROVED")
                     return Response({"message": "Regularization request approved successfully.", "request_id": req.id, "status": req.status, "approved_days": len(rows)})
 
                 def parse_legacy(field, fallback):
@@ -1946,6 +2002,7 @@ class RegularizationRequestApproveView(APIView):
                 if not check_in and not check_out: return Response({"error": "At least one final check-in or check-out time is required."}, status=400)
                 if check_in and check_out and check_out <= check_in: return Response({"error": "Final check-out time must be after final check-in time."}, status=400)
                 correction = req.approve(request.user, approved_check_in=check_in, approved_check_out=check_out)
+                _queue_regularization_outcome(req, "APPROVED")
                 return Response({"message": "Regularization request approved successfully.", "request_id": req.id, "status": req.status, "correction_id": correction.id if correction else None, "approved_check_in": req.approved_check_in, "approved_check_out": req.approved_check_out, "employee_name": f"{req.employee.user.first_name} {req.employee.user.last_name}".strip(), "attendance_date": req.attendance_date})
         except RegularizationRequest.DoesNotExist:
             return Response({"error": "Regularization request not found."}, status=404)
@@ -1981,6 +2038,11 @@ class RegularizationRequestRejectView(APIView):
                 regularization_request.reject(
                     reviewed_by_user=request.user,
                     rejection_reason=rejection_reason,
+                )
+                _queue_regularization_outcome(
+                    regularization_request,
+                    "REJECTED",
+                    rejection_reason,
                 )
         except ValueError as e:
             return Response({"error": str(e)}, status=400)

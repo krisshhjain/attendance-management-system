@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from unittest.mock import patch
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -33,6 +34,7 @@ class NotificationAPITests(TestCase):
             user=self.user,
             title="Unread",
             message="Unread message",
+            notification_type="ATTENDANCE",
         )
         self.other_notification = Notification.objects.create(
             user=self.other_user,
@@ -93,6 +95,84 @@ class NotificationAPITests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Notification.objects.filter(pk=self.unread.pk).exists())
+
+    def test_persistent_notification_cannot_be_deleted(self):
+        notification = Notification.objects.create(
+            user=self.user,
+            title="Leave",
+            message="Leave update",
+            notification_type="LEAVE",
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.delete(
+            reverse("notification-delete", args=[notification.pk])
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
+
+    def test_persistent_notification_remains_after_read(self):
+        notification = Notification.objects.create(
+            user=self.user,
+            title="Regularization",
+            message="Regularization update",
+            notification_type="REGULARIZATION",
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.patch(
+            reverse("notification-read", args=[notification.pk]),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
+
+    def test_manager_recipient_strategy_queues_notification_after_commit(self):
+        manager = User.objects.create_user(
+            email="manager@example.com",
+            password="password123",
+            is_system_admin=True,
+        )
+        from .services import queue_manager_notifications_after_commit
+
+        with self.captureOnCommitCallbacks(execute=True):
+            queue_manager_notifications_after_commit(
+                title="New leave request",
+                message="A leave request needs review.",
+                notification_type="LEAVE",
+            )
+
+        self.assertTrue(
+            Notification.objects.filter(user=manager, notification_type="LEAVE").exists()
+        )
+
+    @patch("notifications.tasks.send_mail", return_value=1)
+    def test_email_task_execution(self, send_mail_mock):
+        from .tasks import send_notification_email
+
+        result = send_notification_email.run(
+            ["recipient@example.com"], "Subject", "Body"
+        )
+
+        self.assertEqual(result["sent"], 1)
+        send_mail_mock.assert_called_once()
+
+    @patch("notifications.tasks.send_mail", side_effect=OSError("temporary failure"))
+    def test_email_task_retries_temporary_failure(self, send_mail_mock):
+        from .tasks import send_notification_email
+
+        with self.assertRaises(Exception):
+            send_notification_email.apply(
+                args=(["recipient@example.com"], "Subject", "Body"),
+                throw=True,
+            ).get()
+
+        # Celery schedules the retry for the worker; eager execution observes
+        # the first failed attempt rather than running the future countdown.
+        self.assertEqual(send_mail_mock.call_count, 1)
 
     def test_user_cannot_delete_another_users_notification(self):
         self.client.force_authenticate(user=self.user)

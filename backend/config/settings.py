@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+from celery.schedules import crontab
 
 load_dotenv()
 
@@ -138,15 +139,33 @@ USE_TZ = True
 
 AUTH_USER_MODEL = "accounts.User"
 
+# Email configuration. Defaults to the local console backend until SMTP
+# credentials are supplied through backend/.env.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "false").lower() == "true"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "webmaster@localhost")
+
 # Celery Configuration
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672//")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND") or None
-CELERY_TIMEZONE = os.environ.get("CELERY_TIMEZONE", "UTC")
+CELERY_TIMEZONE = os.environ.get("CELERY_TIMEZONE", "Asia/Kolkata")
 CELERY_WORKER_ENABLE_REMOTE_CONTROL = os.environ.get("CELERY_WORKER_ENABLE_REMOTE_CONTROL", "false").lower() == "true"
 CELERY_WORKER_MINGLE = os.environ.get("CELERY_WORKER_MINGLE", "false").lower() == "true"
 CELERY_WORKER_GOSSIP = os.environ.get("CELERY_WORKER_GOSSIP", "false").lower() == "true"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BEAT_SCHEDULE = {
+    "check-consecutive-absences-daily": {
+        "task": "attendance.check_consecutive_absences",
+        "schedule": crontab(hour=18, minute=30),
+    },
+}
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/

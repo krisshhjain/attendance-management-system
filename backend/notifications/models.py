@@ -12,6 +12,12 @@ class Notification(models.Model):
     title = models.CharField(max_length=255)
     message = models.TextField()
     notification_type = models.CharField(max_length=50, default="GENERAL")
+    deduplication_key = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+    )
     attendance_event = models.ForeignKey(
         "attendance.AttendanceEvent",
         on_delete=models.SET_NULL,
