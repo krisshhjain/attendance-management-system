@@ -16,6 +16,7 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import { fetchActiveShifts, selfAssignShift } from "../lib/api.js";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 
 /**
  * Full-page gate shown to employees who have no shift assigned.
@@ -25,7 +26,7 @@ import { fetchActiveShifts, selfAssignShift } from "../lib/api.js";
  */
 export function ShiftSelectionScreen({ onAssigned }) {
   const [selectedId, setSelectedId] = useState(null);
-  const [assignError, setAssignError] = useState(null);
+  const { success, notifyError } = useFeedback();
 
   const queryClient = useQueryClient();
 
@@ -53,15 +54,15 @@ export function ShiftSelectionScreen({ onAssigned }) {
       // Invalidate my-shift cache so RequireAuth re-checks correctly on future
       // page reloads
       queryClient.invalidateQueries({ queryKey: ["myShift"] });
+      success("Shift assigned successfully.");
       onAssigned(result.shift);
     },
     onError: (err) => {
-      setAssignError(err.message || "Failed to assign shift. Please try again.");
+      notifyError(err, { title: "Shift assignment failed", fallback: "Failed to assign shift. Please try again." });
     },
   });
 
   const handleConfirm = () => {
-    setAssignError(null);
     assignShift();
   };
 
@@ -285,7 +286,6 @@ export function ShiftSelectionScreen({ onAssigned }) {
           value={selectedId ? String(selectedId) : ""}
           onChange={(e) => {
             setSelectedId(Number(e.target.value));
-            setAssignError(null);
           }}
           sx={{ display: "flex", flexDirection: "column", gap: 1.5, mb: 2 }}
         >
@@ -297,7 +297,6 @@ export function ShiftSelectionScreen({ onAssigned }) {
                 elevation={0}
                 onClick={() => {
                   setSelectedId(shift.id);
-                  setAssignError(null);
                 }}
                 sx={{
                   border: "1.5px solid",
@@ -414,12 +413,6 @@ export function ShiftSelectionScreen({ onAssigned }) {
         </RadioGroup>
 
         {/* Inline error from assignment attempt */}
-        {assignError && (
-          <Alert severity="error" sx={{ mb: 2, borderRadius: "10px" }}>
-            {assignError}
-          </Alert>
-        )}
-
         {/* Confirm button */}
         <Button
           variant="contained"

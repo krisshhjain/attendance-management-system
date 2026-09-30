@@ -58,6 +58,8 @@ import {
 } from "../lib/api.js";
 import { useAuth } from "../lib/auth.jsx";
 import { filterScopedRecords, useOrganizationScope } from "../lib/organizationScope.jsx";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { getErrorMessage } from "../feedback/errorMessage.js";
 
 export const Route = createFileRoute("/leave")({
   component: Leave,
@@ -207,7 +209,7 @@ function Leave() {
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
+  const { success, notifyError } = useFeedback();
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -385,7 +387,7 @@ function Leave() {
           const uploadResponse = await uploadFile(attachmentFile);
           attachmentUrl = uploadResponse.file_url;
         } catch (uploadError) {
-          setFormError(uploadError.message || "Failed to upload file.");
+          notifyError(uploadError, { title: "Attachment upload failed", fallback: "Failed to upload the attachment." });
           return;
         } finally {
           setUploading(false);
@@ -400,11 +402,11 @@ function Leave() {
         reason: reason.trim(),
         attachment: attachmentUrl,
       });
-      setSuccessMsg("Leave request submitted successfully!");
+      success("Leave request submitted successfully.");
       setOpenModal(false);
       await loadData();
     } catch (err) {
-      setFormError(err.message || "Failed to submit leave request.");
+      setFormError(getErrorMessage(err, "Failed to submit leave request."));
     } finally {
       setSubmitting(false);
     }
@@ -418,10 +420,10 @@ function Leave() {
     if (!cancelModal.id) return;
     try {
       await cancelLeaveRequest(cancelModal.id);
-      setSuccessMsg("Leave request cancelled.");
+      success("Leave request cancelled successfully.");
       await loadData();
     } catch (err) {
-      setError(err.message || "Failed to cancel request.");
+      notifyError(err, { title: "Leave cancellation failed", fallback: "Failed to cancel the leave request." });
     } finally {
       setCancelModal({ open: false, id: null, status: "" });
     }
@@ -470,12 +472,6 @@ function Leave() {
             {error}
           </Alert>
         )}
-        {successMsg && (
-          <Alert severity="success" onClose={() => setSuccessMsg(null)} sx={{ borderRadius: 2 }}>
-            {successMsg}
-          </Alert>
-        )}
-
         {/* Balances Section */}
         <Box>
           <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5, letterSpacing: "-0.3px" }}>

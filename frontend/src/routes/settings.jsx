@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { apiRequest } from "../lib/api.js";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 import { 
   Box, 
   Typography, 
@@ -30,7 +31,7 @@ function ChangePasswordDialog({ open, onClose }) {
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
+  const { success: notifySuccess, notifyError } = useFeedback();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -48,7 +49,6 @@ function ChangePasswordDialog({ open, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    setSuccess(false);
 
     if (formData.new_password !== formData.confirm_password) {
       setError("New passwords do not match.");
@@ -70,18 +70,15 @@ function ChangePasswordDialog({ open, onClose }) {
           new_password: formData.new_password,
         },
       });
-      setSuccess(true);
+      notifySuccess("Password changed successfully.");
       setFormData({
         current_password: "",
         new_password: "",
         confirm_password: "",
       });
-      setTimeout(() => {
-        onClose();
-        setSuccess(false);
-      }, 1500);
+      onClose();
     } catch (err) {
-      setError(err.message || "Failed to change password.");
+      notifyError(err, { title: "Password change failed", fallback: "Failed to change password." });
     } finally {
       setLoading(false);
     }
@@ -101,7 +98,6 @@ function ChangePasswordDialog({ open, onClose }) {
       <form onSubmit={handleSubmit}>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2.5, py: 2 }}>
           {error && <Alert severity="error" sx={{ borderRadius: "8px" }}>{error}</Alert>}
-          {success && <Alert severity="success" sx={{ borderRadius: "8px" }}>Password successfully changed.</Alert>}
           
           <TextField
             required

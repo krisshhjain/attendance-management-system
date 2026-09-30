@@ -45,6 +45,8 @@ import AttachmentIcon from "@mui/icons-material/Attachment";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import DownloadIcon from "@mui/icons-material/Download";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { getErrorMessage } from "../feedback/errorMessage.js";
 import {
   fetchAdminLeaveRequests,
   approveLeaveRequest,
@@ -119,7 +121,7 @@ function Administration() {
 
   // General Notification state
   const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
+  const { success, notifyError } = useFeedback();
 
   const [officeLocations, setOfficeLocations] = useState([]);
   const [loadingLocations, setLoadingLocations] = useState(false);
@@ -174,15 +176,15 @@ function Administration() {
       const payload = { name, latitude, longitude, radius_meters: radius, is_active: locActive };
       if (locationModal.location) {
         await updateOfficeLocation(locationModal.location.id, payload);
-        setSuccessMsg(`Office location '${name}' updated successfully.`);
+        success("Office location updated successfully.");
       } else {
         await createOfficeLocation(payload);
-        setSuccessMsg(`Office location '${name}' added successfully.`);
+        success("Office location created successfully.");
       }
       setLocationModal({ open: false, location: null });
       await loadOfficeLocations();
     } catch (err) {
-      setLocError(err.message || "Failed to save office location.");
+      setLocError(getErrorMessage(err, "Failed to save office location."));
     } finally {
       setLocSubmitting(false);
     }
@@ -192,10 +194,10 @@ function Administration() {
     if (!window.confirm(`Delete office location '${name}'?`)) return;
     try {
       await deleteOfficeLocation(id);
-      setSuccessMsg(`Office location '${name}' deleted successfully.`);
+      success("Office location deleted successfully.");
       await loadOfficeLocations();
     } catch (err) {
-      setError(err.message || "Failed to delete office location.");
+      notifyError(err, { title: "Office location deletion failed", fallback: "Failed to delete office location." });
     }
   };
 
@@ -277,18 +279,18 @@ function Administration() {
     try {
       if (type === "APPROVE") {
         await approveLeaveRequest(req.id, remarks.trim());
-        setSuccessMsg(`Approved leave request for ${req.employee_email}`);
+        success("Leave approved successfully.");
       } else if (type === "DENY") {
         await denyLeaveRequest(req.id, remarks.trim());
-        setSuccessMsg(`Denied leave request for ${req.employee_email}`);
+        success("Leave rejected successfully.");
       } else if (type === "CANCEL") {
         await cancelApprovedLeaveRequest(req.id);
-        setSuccessMsg(`Cancelled approved leave request for ${req.employee_email}`);
+        success("Leave cancelled successfully.");
       }
       handleCloseAction();
       await loadLeaveRequests();
     } catch (err) {
-      setActionError(err.message || "Action failed.");
+      notifyError(err, { title: "Leave action failed", fallback: "The leave action could not be completed." });
     } finally {
       setActionSubmitting(false);
     }
@@ -395,15 +397,15 @@ function Administration() {
     try {
       if (policyModal.policy) {
         await updateLeavePolicy(policyModal.policy.id, payload);
-        setSuccessMsg("Leave policy updated successfully.");
+        success("Leave policy updated successfully.");
       } else {
         await createLeavePolicy(payload);
-        setSuccessMsg("New leave policy created successfully.");
+        success("Leave policy created successfully.");
       }
       setPolicyModal({ open: false, policy: null });
       await loadPoliciesAndTypes();
     } catch (err) {
-      setPolicyError(err.message || "Failed to save leave policy.");
+      setPolicyError(getErrorMessage(err, "Failed to save leave policy."));
     } finally {
       setPolicySubmitting(false);
     }
@@ -483,15 +485,15 @@ function Administration() {
     try {
       if (typeModal.typeObj) {
         await updateLeaveType(typeModal.typeObj.id, payload);
-        setSuccessMsg("Leave type updated successfully.");
+        success("Leave type updated successfully.");
       } else {
         await createLeaveType(payload);
-        setSuccessMsg("New leave type created successfully.");
+        success("Leave type created successfully.");
       }
       setTypeModal({ open: false, typeObj: null });
       await loadPoliciesAndTypes();
     } catch (err) {
-      setTypeError(err.message || "Failed to save leave type.");
+      setTypeError(getErrorMessage(err, "Failed to save leave type."));
     } finally {
       setTypeSubmitting(false);
     }
@@ -514,15 +516,15 @@ function Administration() {
     try {
       if (deleteConfirm.kind === "policy") {
         await deleteLeavePolicy(deleteConfirm.id);
-        setSuccessMsg("Leave policy deactivated successfully.");
+        success("Leave policy deactivated successfully.");
       } else {
         await deleteLeaveType(deleteConfirm.id);
-        setSuccessMsg("Leave type deactivated successfully.");
+        success("Leave type deactivated successfully.");
       }
       setDeleteConfirm({ open: false, kind: "", id: null, name: "" });
       await loadPoliciesAndTypes();
     } catch (err) {
-      setError(err.message || "Delete failed.");
+      notifyError(err, { title: "Deactivation failed", fallback: "The item could not be deactivated." });
       setDeleteConfirm({ open: false, kind: "", id: null, name: "" });
     } finally {
       setDeleteSubmitting(false);
@@ -610,21 +612,6 @@ function Administration() {
             {error}
           </Alert>
         )}
-        {successMsg && (
-          <Alert 
-            severity="success" 
-            onClose={() => setSuccessMsg(null)} 
-            sx={{ 
-              borderRadius: 3,
-              border: "1px solid",
-              borderColor: "success.light",
-              "& .MuiAlert-icon": { fontSize: 24 }
-            }}
-          >
-            {successMsg}
-          </Alert>
-        )}
-
         {/* Modern Navigation Tabs */}
         <Paper 
           elevation={0}

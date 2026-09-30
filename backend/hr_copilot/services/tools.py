@@ -3,9 +3,26 @@
 from .employee_resolver import employee_resolver
 from .pipeline import CopilotError, build_sql, execute_query, serialize_result, validate_sql
 from employees.models import Employee
+from .attendance_intelligence import attendance_intelligence
+from .leave_regularization_intelligence import leave_regularization_intelligence
+from .workforce_intelligence import workforce_intelligence
 
 
 class HRTools:
+    def execute_attendance_intelligence(self, *, metric, scope, user, filters, employee_id=None):
+        return attendance_intelligence.execute(
+            metric=metric, scope=scope, user=user, filters=filters, employee_id=employee_id,
+        )
+
+    def execute_leave_regularization_intelligence(self, *, metric, scope, user, filters, employee_id=None):
+        return leave_regularization_intelligence.execute(
+            metric=metric, scope=scope, user=user, filters=filters, employee_id=employee_id,
+        )
+
+    def execute_workforce_intelligence(self, *, metric, scope, user, filters, employee_id=None):
+        return workforce_intelligence.execute(
+            metric=metric, scope=scope, user=user, filters=filters, employee_id=employee_id,
+        )
     def get_employee_profile(self, *, employee_id, scope):
         resolution = employee_resolver.resolve_employee(employee_id=employee_id)
         if resolution.status != "resolved":

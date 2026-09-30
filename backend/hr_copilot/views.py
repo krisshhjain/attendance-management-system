@@ -29,8 +29,21 @@ from .services.write_actions import write_action_planner
 from .services.write_executor import write_action_executor, pending_action_manager
 from .services.llm import extract_pending_action_fields
 from system_logs.services import record_event
+from .services.response_schema import safe_error_message
 
 logger = logging.getLogger(__name__)
+
+
+def copilot_action_session_id(user_id, conversation_id):
+    """Return the single persisted identity for a Copilot conversation action."""
+    if not isinstance(conversation_id, str) or not conversation_id.strip():
+        raise ValueError("conversation_id is required for Copilot actions")
+    return f"hr-copilot-user-{user_id}-conversation-{conversation_id}"
+
+
+def _audit_id(audit):
+    """Return the persisted id while keeping lightweight test doubles usable."""
+    return getattr(audit, "id", getattr(audit, "pk", None))
 
 
 def _copilot_action_target(action_id, action_type=""):
@@ -92,7 +105,9 @@ class HRCopilotQueryView(APIView):
             return Response({"detail": "System Admin access is required."}, status=403)
         question = request.data.get("message", "")
         conversation_id = request.data.get("conversation_id") or str(uuid.uuid4())
-        session_id = f"hr-copilot-user-{user.id}"
+        # Keep memory and pending actions isolated per conversation. A
+        # user-wide key caused facts from one chat to leak into another chat.
+        session_id = copilot_action_session_id(user.id, conversation_id)
         
         if not isinstance(question, str) or not question.strip() or len(question) > 2000:
             return Response({"detail": "Enter a question of up to 2,000 characters."}, status=400)
@@ -110,7 +125,7 @@ class HRCopilotQueryView(APIView):
             message="HR Copilot conversation request received.",
             source="HR_COPILOT",
             request=request,
-            metadata={"conversation_id": conversation_id, "query_audit_id": audit.id},
+            metadata={"conversation_id": conversation_id, "query_audit_id": _audit_id(audit)},
         )
         append_message(user, conversation_id, "user", question.strip())
         started_at = time.monotonic()
@@ -130,7 +145,7 @@ class HRCopilotQueryView(APIView):
                     answer = "Cancelled. No attendance change was made."
                     update_action_message(user, conversation_id, draft['action_id'], 'CANCELLED', answer)
                     append_message(user, conversation_id, 'assistant', answer, {'query_status': 'cancelled'})
-                    return Response({'answer': answer, 'intent': cancelled['intent'], 'query_status': 'cancelled', 'conversation_id': conversation_id, 'data': None, 'visualization': None})
+                    return Response({'response_type': 'action_cancelled', 'answer': answer, 'intent': cancelled['intent'], 'query_status': 'cancelled', 'conversation_id': conversation_id, 'action_id': active_action['action_id'], 'data': None, 'visualization': None})
                 missing = list(draft.get('validation_errors') or [])
                 extracted = extract_pending_action_fields(question, missing)
                 target_data = dict(draft['target_data'])
@@ -245,7 +260,7 @@ class HRCopilotQueryView(APIView):
                 answer = result.get('message', 'The approved change was applied.')
                 update_action_message(user, conversation_id, active_action['action_id'], 'EXECUTED', answer)
                 append_message(user, conversation_id, 'assistant', answer, {'query_status': 'executed'})
-                return Response({'answer': answer, 'intent': approved['intent'], 'query_status': 'executed', 'conversation_id': conversation_id, 'action_result': result, 'data': None, 'visualization': None})
+                return Response({'response_type': 'action_success', 'answer': answer, 'intent': approved['intent'], 'query_status': 'executed', 'conversation_id': conversation_id, 'action_id': active_action['action_id'], 'action_result': result, 'data': None, 'visualization': None})
 
             context = load_context(user, conversation_id)
             intent = analyze_question(question, context, session_id=session_id)
@@ -270,14 +285,21 @@ class HRCopilotQueryView(APIView):
                         user=user,
                         action={**pending_action, "action_id": action_id},
                         request=request,
-                        metadata={"query_audit_id": audit.id},
+                        metadata={"query_audit_id": _audit_id(audit)},
                     )
                     
                     # Save conversation context
                     save_context(user, conversation_id, {
                         'pending_action_id': action_id,
                         'last_intent': intent['intent'],
-                        'action_type': 'write'
+                        'action_type': 'write',
+                        'current_request_id': pending_action.get('target_data', {}).get('leave_request_id'),
+                        'employee': {'employee_id': pending_action.get('target_data', {}).get('employee_id')},
+                        'filters': {'date_range': {
+                            'start': pending_action.get('target_data', {}).get('start_date'),
+                            'end': pending_action.get('target_data', {}).get('end_date'),
+                        }},
+                        'intelligence_metric': None,
                     })
                     
                     audit.execution_result = "pending_approval"
@@ -304,6 +326,7 @@ class HRCopilotQueryView(APIView):
                     })
                     
                     return Response({
+                        "response_type": "action_preview",
                         "answer": pending_action['description'],
                         "intent": intent["intent"],
                         "scope": {"sections": scope["sections"], "subsections": scope["subsections"]},
@@ -343,7 +366,7 @@ class HRCopilotQueryView(APIView):
                             user=user,
                             action={**pending_action, "action_id": action_id},
                             request=request,
-                            metadata={"query_audit_id": audit.id},
+                            metadata={"query_audit_id": _audit_id(audit)},
                         )
                         append_message(user, conversation_id, 'assistant', pending_action['description'], {
                             'query_status': 'awaiting_information',
@@ -353,6 +376,7 @@ class HRCopilotQueryView(APIView):
                         audit.execution_result = 'awaiting_information'
                         audit.save(update_fields=['intent', 'execution_result'])
                         return Response({
+                            'response_type': 'clarification',
                             'answer': pending_action['description'], 'intent': intent['intent'],
                             'query_status': 'awaiting_information', 'conversation_id': conversation_id,
                             'action_id': action_id,
@@ -378,7 +402,47 @@ class HRCopilotQueryView(APIView):
             plan = plan_query(intent, scope)
             audit.query_plan = plan
             sql, data, columns = "", [], []
-            if plan["source"] == "employee" and plan["intent"] == "employee_lookup" and plan["employee"]["status"] == "resolved":
+            metadata = None
+            if plan["intent"] == "attendance_intelligence":
+                result = hr_tools.execute_attendance_intelligence(
+                    metric=plan["attendance_metric"],
+                    scope=scope,
+                    user=user,
+                    filters=plan["filters"],
+                    employee_id=plan["employee"].get("employee_id"),
+                )
+                data = result["rows"]
+                metadata = {
+                    "metric": result["metric"],
+                    "date_range": result["date_range"],
+                    "assumptions": result["assumptions"],
+                }
+                columns = list(data[0]) if data else []
+            elif plan["intent"] == "leave_regularization_intelligence":
+                result = hr_tools.execute_leave_regularization_intelligence(
+                    metric=plan["intelligence_metric"], scope=scope, user=user,
+                    filters=plan["filters"], employee_id=plan["employee"].get("employee_id"),
+                )
+                data = result["rows"]
+                metadata = {
+                    "metric": result["metric"],
+                    "date_range": result["date_range"],
+                    "assumptions": result["assumptions"],
+                }
+                columns = list(data[0]) if data else []
+            elif plan["intent"] == "workforce_intelligence":
+                result = hr_tools.execute_workforce_intelligence(
+                    metric=plan["workforce_metric"], scope=scope, user=user,
+                    filters=plan["filters"], employee_id=plan["employee"].get("employee_id"),
+                )
+                data = result["rows"]
+                metadata = {
+                    "metric": result["metric"],
+                    "date_range": result["date_range"],
+                    "assumptions": result["assumptions"],
+                }
+                columns = list(data[0]) if data else []
+            elif plan["source"] == "employee" and plan["intent"] == "employee_lookup" and plan["employee"]["status"] == "resolved":
                 data = hr_tools.get_employee_profile(employee_id=plan["employee"]["employee_id"], scope=scope)
                 columns = list(data[0]) if data else []
                 audit.sql = ""
@@ -390,7 +454,7 @@ class HRCopilotQueryView(APIView):
             audit.validation_result = "passed"
             audit.scope_result = "passed"
             answer = generate_natural_answer(question, intent, data, session_id=session_id) or generate_answer(intent, data) or "Here are your requested HR records."
-            save_context(user, conversation_id, plan)
+            save_context(user, conversation_id, plan, data=data)
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
                     "HR Copilot trace question=%r intent=%s entities=%s employee=%s temporal=%s plan=%s scope=%s sql=%s params=%s result_count=%d elapsed_ms=%.2f response_type=%s",
@@ -403,17 +467,21 @@ class HRCopilotQueryView(APIView):
                 "intent", "query_plan", "sql", "validation_result", "scope_result",
                 "execution_result",
             ])
+            response_data = {"columns": columns, "rows": data, "row_count": len(data)}
+            if metadata:
+                response_data["metadata"] = metadata
             append_message(user, conversation_id, "assistant", answer, {
                 "query_status": "executed",
-                "data": {"columns": columns, "rows": data, "row_count": len(data)},
+                "data": response_data,
             })
             return Response({
+                "response_type": "result",
                 "answer": answer,
                 "intent": intent["intent"],
                 "scope": {"sections": scope["sections"], "subsections": scope["subsections"]},
                 "query_status": "executed",
                 "conversation_id": conversation_id,
-                "data": {"columns": columns, "rows": data, "row_count": len(data)},
+                "data": response_data,
                 "visualization": None,
             })
         except CopilotError as error:
@@ -442,12 +510,14 @@ class HRCopilotQueryView(APIView):
                 message="HR Copilot query failed.",
                 source="HR_COPILOT",
                 request=request,
-                metadata={"query_audit_id": audit.id, "error_code": error.code},
+                metadata={"query_audit_id": _audit_id(audit), "error_code": error.code},
             )
-            append_message(user, conversation_id, "assistant", error.message, {"query_status": "rejected"})
+            public_message = safe_error_message(error.code, error.message)
+            append_message(user, conversation_id, "assistant", public_message, {"query_status": "rejected"})
             return Response({
-                "detail": error.message,
-                "answer": error.message,
+                "response_type": "clarification" if error.code.endswith("ambiguous") or error.code in {"clarification_required", "employee_required", "request_required"} else "error",
+                "detail": public_message,
+                "answer": public_message,
                 "intent": intent["intent"] if intent else "unknown",
                 "scope": {"sections": scope["sections"], "subsections": scope["subsections"]} if scope else None,
                 "query_status": "rejected",
@@ -473,7 +543,7 @@ class HRCopilotQueryView(APIView):
                 message="HR Copilot query failed.",
                 source="HR_COPILOT",
                 request=request,
-                metadata={"query_audit_id": audit.id, "error_code": "query_failed"},
+                metadata={"query_audit_id": _audit_id(audit), "error_code": "query_failed"},
             )
             append_message(user, conversation_id, "assistant", "I couldn't complete that HR query. Please try a more specific question.", {"query_status": "failed"})
             return Response({
@@ -500,7 +570,10 @@ class HRCopilotActionApprovalView(APIView):
         
         action_id = request.data.get("action_id")
         action = request.data.get("action")  # "approve" or "cancel"
-        session_id = f"hr-copilot-user-{user.id}"
+        conversation_id = request.data.get("conversation_id")
+        if not isinstance(conversation_id, str) or not conversation_id.strip() or len(conversation_id) > 128:
+            return Response({"detail": "conversation_id is required for Copilot actions."}, status=400)
+        session_id = copilot_action_session_id(user.id, conversation_id)
         
         if not action_id or not action:
             return Response({"detail": "action_id and action are required."}, status=400)
@@ -537,9 +610,11 @@ class HRCopilotActionApprovalView(APIView):
                 )
                 
                 return Response({
+                    "response_type": "action_success",
                     "answer": answer,
                     "intent": pending_action['intent'],
                     "query_status": "executed",
+                    "action_id": pending_action['action_id'],
                     "action_result": result,
                     "data": None,
                     "visualization": None,
@@ -558,6 +633,7 @@ class HRCopilotActionApprovalView(APIView):
                 update_action_message(user, conversation_id, action_id, 'CANCELLED', answer)
                 append_message(user, conversation_id, "assistant", answer, {"query_status": "cancelled"})
                 return Response({
+                    "response_type": "action_cancelled",
                     "answer": answer,
                     "intent": cancelled_action['intent'],
                     "query_status": "cancelled",
@@ -569,9 +645,12 @@ class HRCopilotActionApprovalView(APIView):
             if action == "approve" and action_id:
                 pending_action_manager.mark_failed(action_id, user.id, session_id, error.message)
                 self._record_failure(user, action_id, session_id, error.message, request)
+            public_message = safe_error_message(error.code, error.message)
             return Response({
-                "detail": error.message,
-                "answer": error.message,
+                "response_type": "action_failure",
+                "detail": public_message,
+                "answer": public_message,
+                "action_id": action_id,
                 "query_status": "failed",
                 "code": error.code,
             }, status=error.status)
@@ -581,8 +660,10 @@ class HRCopilotActionApprovalView(APIView):
                 pending_action_manager.mark_failed(action_id, user.id, session_id, "Action execution failed")
                 self._record_failure(user, action_id, session_id, "Action execution failed", request)
             return Response({
+                "response_type": "action_failure",
                 "detail": "The requested action could not be completed. No success was recorded.",
                 "answer": "The requested action could not be completed. No success was recorded.",
+                "action_id": action_id,
                 "query_status": "failed",
                 "code": "action_failed",
             }, status=500)
@@ -630,10 +711,13 @@ class HRCopilotPendingActionsView(APIView):
         if not (user.is_system_admin or user.is_superuser):
             return Response({"detail": "System Admin access is required."}, status=403)
         
-        session_id = f"hr-copilot-user-{user.id}"
-        
         try:
-            pending_actions = pending_action_manager.get_session_actions(session_id, user.id)
+            conversation_id = request.query_params.get("conversation_id")
+            if conversation_id:
+                session_id = copilot_action_session_id(user.id, conversation_id)
+                pending_actions = pending_action_manager.get_session_actions(session_id, user.id)
+            else:
+                pending_actions = pending_action_manager.get_user_actions(user.id)
             
             # Filter to only pending actions and format for frontend
             active_actions = []

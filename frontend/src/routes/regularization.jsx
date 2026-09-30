@@ -8,6 +8,8 @@ import {
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { createRegularizationRequest, fetchMyRegularizationQuota, fetchMyRegularizationRequests, uploadFile } from "../lib/api.js";
 import { getHistory } from "../lib/attendance.js";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { getErrorMessage } from "../feedback/errorMessage.js";
 
 const REQUEST_TYPES = [
   { value: "FORGOT_CHECK_IN", label: "Forgot Check-In" },
@@ -90,6 +92,7 @@ export const Route = createFileRoute("/regularization")({
 });
 
 function RegularizationPage() {
+  const { success, notifyError } = useFeedback();
   const [requests, setRequests] = useState([]);
   const [quota, setQuota] = useState(null);
   const [history, setHistory] = useState([]);
@@ -180,8 +183,13 @@ function RegularizationPage() {
     try {
       let attachmentUrl = "";
       if (attachment) {
-        const upload = await uploadFile(attachment);
-        attachmentUrl = upload.file_url;
+        try {
+          const upload = await uploadFile(attachment);
+          attachmentUrl = upload.file_url;
+        } catch (uploadError) {
+          notifyError(uploadError, { title: "Attachment upload failed", fallback: "Failed to upload the attachment." });
+          return;
+        }
       }
       const payloadDays = selectedDays.map((date) => {
         const day = days[date];
@@ -195,6 +203,7 @@ function RegularizationPage() {
         };
       });
       await createRegularizationRequest({ period_type: periodType, days: payloadDays, attachment: attachmentUrl });
+      success("Regularization request submitted.");
       setQuota((current) => current ? {
         ...current,
         weekly_used: Math.min(current.weekly_limit, current.weekly_used + 1),
@@ -204,7 +213,7 @@ function RegularizationPage() {
       } : current);
       setDialogOpen(false);
       await loadData();
-    } catch (error) { setFormError(error.message || "Failed to submit the request."); }
+    } catch (error) { setFormError(getErrorMessage(error, "Failed to submit the request.")); }
     finally { setSubmitting(false); }
   };
 

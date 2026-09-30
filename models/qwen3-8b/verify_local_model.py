@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 MODEL_DIR = Path(__file__).resolve().parent
 MODEL_FILE = MODEL_DIR / "Qwen3-8B-Q4_K_M.gguf"
 MODEL_NAME = "qwen3-8b-q4km-local"
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
+OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 
 
 def main() -> int:
@@ -39,8 +39,14 @@ def main() -> int:
     payload = json.dumps(
         {
             "model": MODEL_NAME,
-            "prompt": "Reply with a short greeting and identify yourself as Qwen3-8B.",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Reply with a short greeting and identify yourself as Qwen3-8B.",
+                }
+            ],
             "stream": False,
+            "think": False,
             "options": {"num_predict": 64, "temperature": 0},
         }
     ).encode("utf-8")
@@ -59,7 +65,7 @@ def main() -> int:
         return 1
     wall_seconds = time.perf_counter() - started
 
-    answer = result.get("response", "").strip()
+    answer = result.get("message", {}).get("content", "").strip()
     if not answer:
         print("Ollama returned no generated text; inference verification failed.", file=sys.stderr)
         return 1

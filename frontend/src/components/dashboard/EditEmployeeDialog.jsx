@@ -18,12 +18,15 @@ import {
   Divider,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api.js";
+import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { getErrorMessage } from "../../feedback/errorMessage.js";
 
 const EMPLOYMENT_TYPES = ["PERMANENT", "CONTRACT", "INTERN"];
 
 export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { success } = useFeedback();
 
   const [formData, setFormData] = useState({
     first_name: "",
@@ -70,9 +73,10 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
         method: "PATCH",
         body: formData,
       });
+      success("Employee updated successfully.");
       onSuccess();
     } catch (err) {
-      setError(err.message || "Failed to update employee.");
+      setError(getErrorMessage(err, "Failed to update employee."));
     } finally {
       setLoading(false);
     }

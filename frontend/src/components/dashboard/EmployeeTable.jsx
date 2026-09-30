@@ -38,6 +38,7 @@ import { TextField, MenuItem, Select, FormControl, InputAdornment } from "@mui/m
 import SearchIcon from "@mui/icons-material/Search";
 import PeopleIcon from "@mui/icons-material/People";
 import { filterScopedRecords, useOrganizationScope } from "../../lib/organizationScope.jsx";
+import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
 
 export function EmployeeTable({ scope }) {
   const { selectedScope } = useOrganizationScope();
@@ -48,9 +49,8 @@ export function EmployeeTable({ scope }) {
   const [enrollEmployee, setEnrollEmployee] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [enrollLoading, setEnrollLoading] = useState(false);
-  const [enrollError, setEnrollError] = useState(null);
-  const [enrollSuccess, setEnrollSuccess] = useState(false);
   const [shiftEmployee, setShiftEmployee] = useState(null);
+  const { success, notifyError } = useFeedback();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
@@ -66,11 +66,11 @@ export function EmployeeTable({ scope }) {
     setDeleteLoading(true);
     try {
       await apiRequest(`/admin/employees/${deleteEmployee.id}/`, { method: "DELETE" });
+      success("Employee deleted successfully.");
       setDeleteEmployee(null);
       refetch();
     } catch (err) {
-      // silently close and let refetch show current state
-      setDeleteEmployee(null);
+      notifyError(err, { title: "Employee deletion failed", fallback: "Failed to delete employee." });
     } finally {
       setDeleteLoading(false);
     }
@@ -79,9 +79,6 @@ export function EmployeeTable({ scope }) {
   const handleEnrollFace = async (images) => {
     if (!enrollEmployee) return;
     setEnrollLoading(true);
-    setEnrollError(null);
-    setEnrollSuccess(false);
-    
     try {
       const formData = new FormData();
       images.forEach((img, index) => {
@@ -110,19 +107,13 @@ export function EmployeeTable({ scope }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to enroll face");
       
-      setEnrollSuccess(true);
+      success("Face enrollment completed successfully.");
       refetch();
-      
-      // Close dialog after showing success for 2 seconds
-      setTimeout(() => {
-        setEnrollEmployee(null);
-        setEnrollSuccess(false);
-        setEnrollLoading(false);
-      }, 2000);
+      setEnrollEmployee(null);
     } catch (err) {
-      setEnrollError(err.message);
-      setEnrollLoading(false);
+      notifyError(err, { title: "Face enrollment failed", fallback: "Face enrollment could not be completed." });
     }
+    setEnrollLoading(false);
   };
 
   const getTypeColor = (type) => {
@@ -376,8 +367,6 @@ export function EmployeeTable({ scope }) {
                             size="small"
                             onClick={() => {
                               setEnrollEmployee(emp);
-                              setEnrollSuccess(false);
-                              setEnrollError(null);
                             }}
                             sx={{ color: emp.has_face_enrolled ? "success.main" : "text.secondary", "&:hover": { color: "success.dark", bgcolor: "rgba(46,125,50,0.06)" } }}
                           >
@@ -496,16 +485,6 @@ export function EmployeeTable({ scope }) {
           <Typography variant="h6" fontWeight={600}>Enroll Face for {enrollEmployee ? getDisplayName(enrollEmployee) : ""}</Typography>
         </DialogTitle>
         <DialogContent>
-          {enrollError && (
-            <Box sx={{ mb: 2, p: 2, bgcolor: "error.light", color: "error.contrastText", borderRadius: 1 }}>
-              <Typography variant="body2">{enrollError}</Typography>
-            </Box>
-          )}
-          {enrollSuccess && (
-            <Box sx={{ mb: 2, p: 2, bgcolor: "success.light", color: "success.contrastText", borderRadius: 1 }}>
-              <Typography variant="body2">Successfully enrolled! Closing...</Typography>
-            </Box>
-          )}
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             Please ensure the employee is facing the camera directly in good lighting. The system will automatically take 3 photos.
           </Typography>

@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { checkIn, checkOut, getToday } from "../../lib/attendance.js";
 import { getCurrentCoordinates } from "../../lib/location.js";
 import { ATTENDANCE_GEOFENCE, calculateHaversineDistance, isLocationInsideGeofence } from "../../lib/geofence.js";
-import { ApiError, fetchOfficeLocations } from "../../lib/api.js";
+import { fetchOfficeLocations } from "../../lib/api.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { ErrorState, LoadingState } from "../States.jsx";
-import { Box, Button, Typography, Paper, CircularProgress, Chip } from "@mui/material";
+import { Alert, Box, Button, Typography, Paper, CircularProgress, Chip } from "@mui/material";
 import { FaceVerificationModal } from "./FaceVerificationModal.jsx";
 import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined';
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMyShift } from "../../lib/api.js";
+import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
 
 export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) {
-  const [actionError, setActionError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
+  const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [pendingText, setPendingText] = useState("");
   const [secondsRemaining, setSecondsRemaining] = useState(0);
@@ -23,6 +24,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
   const [faceModalType, setFaceModalType] = useState("in");
   const [locationData, setLocationData] = useState(null);
   const inFlight = useRef(false);
+  const { success, notifyError } = useFeedback();
 
   const { data: shiftData } = useQuery({
     queryKey: ["myShift"],
@@ -31,6 +33,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
 
   const status = data?.status;
   const shift = shiftData?.shift;
+  const previousIncomplete = data?.previous_incomplete_attendance;
 
   const formatAttendanceTime = (value) => {
     if (!value) return "--:--";
@@ -90,8 +93,6 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
     if (inFlight.current) return;
     inFlight.current = true;
     setPending(true);
-    setActionError(null);
-    setSuccessMessage(null);
     setPendingText("Verifying location...");
 
     try {
@@ -116,50 +117,36 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
       setFaceModalType(type);
       setFaceModalOpen(true);
     } catch (error) {
-      setActionError(
-        error instanceof ApiError
-          ? error.message
-          : error?.message || "Could not get your location. Please enable location access and try again."
-      );
+      notifyError(error, { title: "Location unavailable", fallback: "Could not get your location. Please enable location access and try again." });
     } finally {
       inFlight.current = false;
       setPending(false);
       setPendingText("");
     }
-  }, []);
+  }, [notifyError]);
 
   const runAction = useCallback(
     async (action) => {
       if (inFlight.current) return;
       inFlight.current = true;
       setPending(true);
-      setActionError(null);
-      setSuccessMessage(null);
       setPendingText("Getting your location...");
 
       try {
         const coords = await getCurrentCoordinates();
         setPendingText(action === "in" ? "Checking in..." : "Checking out...");
-        const res = action === "in" ? await checkIn(coords) : await checkOut(coords);
-        setSuccessMessage(
-          action === "in"
-            ? "Attendance marked successfully."
-            : res?.message || "Check-out successful"
-        );
+        await (action === "in" ? checkIn(coords) : checkOut(coords));
+        success(action === "in" ? "Attendance marked successfully." : "Checked out successfully.");
         await reloadData();
       } catch (error) {
-        setActionError(
-          error instanceof ApiError
-            ? error.message
-            : error?.message || "Something went wrong. Please try again."
-        );
+        notifyError(error, { title: "Attendance unavailable", fallback: "Attendance could not be updated." });
       } finally {
         inFlight.current = false;
         setPending(false);
         setPendingText("");
       }
     },
-    [reloadData],
+    [notifyError, reloadData, success],
   );
 
   if (loading) return <Paper sx={{ p: 4, display: "flex", justifyContent: "center", borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none" }}><CircularProgress /></Paper>;
@@ -185,15 +172,31 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         <StatusBadge status={status} />
       </Box>
 
-      {successMessage && <Box sx={{ mx: 2.5, mt: 2, p: 1.25, borderRadius: 1.5, bgcolor: "rgba(46, 125, 50, 0.08)", color: "success.main", typography: "body2", fontWeight: 600 }}>{successMessage}</Box>}
-      {actionError && <Box sx={{ mx: 2.5, mt: 2, p: 1.25, borderRadius: 1.5, bgcolor: "rgba(211, 47, 47, 0.06)", color: "error.main", typography: "body2" }}>{actionError}</Box>}
-
       {shift && (
         <Box sx={{ mx: 2.5, mt: 2, display: "flex", alignItems: "center", gap: 1, color: "text.secondary" }}>
           <ScheduleOutlinedIcon sx={{ fontSize: 18 }} />
           <Typography variant="caption" fontWeight={600}>{shift.name}</Typography>
           <Chip label={`${shift.start_time} - ${shift.end_time}`} size="small" sx={{ height: 20, fontSize: 10, fontWeight: 700 }} />
         </Box>
+      )}
+
+      {previousIncomplete && (
+        <Alert
+          severity="warning"
+          sx={{ mx: 2.5, mt: 2, alignItems: "center" }}
+          action={(
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => navigate({ to: "/regularization" })}
+              sx={{ fontWeight: 700, textTransform: "none", whiteSpace: "nowrap" }}
+            >
+              Regularize
+            </Button>
+          )}
+        >
+          Your attendance for {previousIncomplete.date} is incomplete. Please submit a regularization request.
+        </Alert>
       )}
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>

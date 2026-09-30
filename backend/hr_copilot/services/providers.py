@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 
 
 logger = logging.getLogger(__name__)
-LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "host.docker.internal"}
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "qwen3-8b-q4km-local"
 

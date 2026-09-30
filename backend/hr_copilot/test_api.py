@@ -10,6 +10,7 @@ from hr_copilot.services.pipeline import CopilotError
 class FakeAudit:
     def __init__(self, **values):
         self.pk = 101
+        self.id = self.pk
         self.validation_result = "not_run"
         self.scope_result = "not_run"
         self.execution_result = "not_run"
@@ -40,6 +41,7 @@ def api(monkeypatch):
     # User instance. Conversation persistence is covered by the database tests.
     monkeypatch.setattr(views, "append_message", lambda *args, **kwargs: None)
     monkeypatch.setattr(views, "load_context", lambda *args, **kwargs: {})
+    monkeypatch.setattr(views, "save_context", lambda *args, **kwargs: None)
     return factory, audit_records
 
 
@@ -181,3 +183,27 @@ def test_database_errors_are_sanitized_and_audited(api, monkeypatch):
     assert "secret" not in response.data["detail"]
     assert response.data["code"] == "query_failed"
     assert audit_records[0].execution_result == "failed"
+
+
+def test_attendance_intelligence_read_uses_typed_tool_and_metadata(api, monkeypatch):
+    factory, audit_records = api
+    monkeypatch.setattr(views, "analyze_question", lambda *args, **kwargs: {
+        "intent": "attendance_intelligence",
+        "source": "attendance",
+        "action_type": "read",
+        "entities": {
+            "attendance_metric": "missing_checkins",
+            "date_range": {"start": "2026-09-30", "end": "2026-09-30"},
+        },
+    })
+    monkeypatch.setattr(views.hr_tools, "execute_attendance_intelligence", lambda **kwargs: {
+        "metric": "missing_checkins",
+        "date_range": {"start": "2026-09-30", "end": "2026-09-30"},
+        "assumptions": ["Effective check-in events are used."],
+        "rows": [{"employee_id": 7, "employee_name": "Asha Rao"}],
+    })
+    response = call_endpoint(factory, system_admin(), {"message": "Who has not checked in today?"})
+    assert response.status_code == 200
+    assert response.data["data"]["rows"] == [{"employee_id": 7, "employee_name": "Asha Rao"}]
+    assert response.data["data"]["metadata"]["metric"] == "missing_checkins"
+    assert audit_records[0].sql == ""

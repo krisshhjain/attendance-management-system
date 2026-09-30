@@ -2,7 +2,14 @@ import React, { useRef, useCallback, useState, useEffect } from "react";
 import Webcam from "react-webcam";
 import { Box, Button, Typography, CircularProgress } from "@mui/material";
 
-export default function WebcamCapture({ mode = "single", onCapture, onCancel, isLoading }) {
+export default function WebcamCapture({
+  mode = "single",
+  onCapture,
+  onCancel,
+  isLoading,
+  purpose = "enrollment",
+}) {
+  const isAttendanceVerification = purpose === "attendance" && mode !== "burst";
   const webcamRef = useRef(null);
   const [capturedImages, setCapturedImages] = useState([]);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -53,7 +60,9 @@ export default function WebcamCapture({ mode = "single", onCapture, onCancel, is
   return (
     <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
       <Typography variant="body1" color="text.secondary" align="center" sx={{ maxWidth: 400 }}>
-        {mode === "burst" 
+        {isAttendanceVerification
+          ? "Position your face in the frame"
+          : mode === "burst" 
           ? "Position face within the frame. The system will capture 3 samples automatically." 
           : "Position face clearly within the frame."}
       </Typography>
@@ -107,15 +116,21 @@ export default function WebcamCapture({ mode = "single", onCapture, onCancel, is
           }}>
             <CircularProgress color="inherit" size={48} sx={{ mb: 2 }} />
             <Typography variant="h5" sx={{ fontWeight: 600 }}>
-              {isCapturing 
-                ? `Capturing... ${captureCount}/3` 
-                : "Processing Enrollment..."}
+              {isCapturing
+                ? `Capturing... ${captureCount}/3`
+                : isAttendanceVerification
+                  ? "Verifying your face…"
+                  : "Processing Enrollment..."}
             </Typography>
-            {isCapturing && (
+            {isAttendanceVerification && !isCapturing ? (
+              <Typography variant="body1" sx={{ mt: 1, opacity: 0.8 }}>
+                Please wait while we verify your identity.
+              </Typography>
+            ) : isCapturing ? (
               <Typography variant="body1" sx={{ mt: 1, opacity: 0.8 }}>
                 Please hold still
               </Typography>
-            )}
+            ) : null}
           </Box>
         )}
       </Box>

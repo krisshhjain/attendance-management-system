@@ -10,7 +10,7 @@ from django.db import transaction
 from .pipeline import CopilotError, derive_scope
 from .employee_resolver import employee_resolver
 from employees.models import Employee
-from attendance.models import Attendance, AttendanceEvent
+from attendance.models import Attendance, AttendanceEvent, RegularizationRequest, Shift
 from leave_management.models import LeaveRequest, LeaveType
 
 
@@ -20,7 +20,9 @@ class WriteActionPlanner:
     def __init__(self):
         self.write_intents = {
             'attendance_update', 'attendance_create', 'leave_create', 
-            'leave_cancel', 'leave_approve', 'leave_deny', 'bulk_attendance_update'
+            'leave_cancel', 'leave_approve', 'leave_deny'
+            , 'attendance_force_checkout', 'regularization_create', 'regularization_approve',
+            'regularization_reject', 'employee_shift_assign', 'employee_status_update'
         }
     
     def is_write_action(self, intent: Dict[str, Any]) -> bool:
@@ -54,6 +56,16 @@ class WriteActionPlanner:
             return self._plan_leave_cancel(intent, user, scope, session_id)
         elif intent['intent'] in {'leave_approve', 'leave_deny'}:
             return self._plan_leave_review(intent, user, scope, session_id)
+        elif intent['intent'] == 'attendance_force_checkout':
+            return self._plan_force_checkout(intent, user, scope, session_id)
+        elif intent['intent'] == 'regularization_create':
+            return self._plan_regularization_create(intent, user, scope, session_id)
+        elif intent['intent'] in {'regularization_approve', 'regularization_reject'}:
+            return self._plan_regularization_review(intent, user, scope, session_id)
+        elif intent['intent'] == 'employee_shift_assign':
+            return self._plan_shift_assignment(intent, user, scope, session_id)
+        elif intent['intent'] == 'employee_status_update':
+            return self._plan_employee_status(intent, user, scope, session_id)
         else:
             raise CopilotError("unsupported_write", f"Write action '{intent['intent']}' not yet implemented")
     
@@ -250,10 +262,16 @@ class WriteActionPlanner:
         duration_days = entities.get('duration_days', 1)
         end_date = start_date + timedelta(days=duration_days - 1)
         
-        # Get default leave type
-        leave_type = LeaveType.objects.first()  # Use first available leave type as default
-        if not leave_type:
+        leave_type_value = entities.get('leave_type')
+        leave_types = LeaveType.objects.filter(is_active=True)
+        if leave_type_value:
+            leave_types = leave_types.filter(code__iexact=str(leave_type_value)) | LeaveType.objects.filter(is_active=True, name__iexact=str(leave_type_value))
+        leave_type_matches = list(leave_types.distinct()[:2])
+        if not leave_type_matches:
             raise CopilotError("no_leave_types", "No leave types are configured in the system")
+        if len(leave_type_matches) > 1:
+            raise CopilotError("leave_type_ambiguous", "Specify the leave type code or name.")
+        leave_type = leave_type_matches[0]
         
         reason = (entities.get('reason') or '').strip()
         missing = ['reason'] if not reason else []
@@ -311,11 +329,18 @@ class WriteActionPlanner:
             status__in=['PENDING', 'APPROVED'],
             start_date__gte=timezone.now().date()
         ).order_by('-submitted_at')[:5]
+
+        if entities.get('request_id'):
+            recent_leaves = LeaveRequest.objects.filter(
+                pk=entities['request_id'], employee_id=employee_id,
+                status__in=['PENDING', 'APPROVED'],
+            )
         
         if not recent_leaves.exists():
             raise CopilotError("no_leave_requests", f"No pending or approved leave requests found for {employee_name}")
         
-        # Use the most recent leave request
+        if not entities.get('request_id') and recent_leaves.count() > 1:
+            raise CopilotError('leave_request_ambiguous', 'More than one leave request matched. Specify the request ID or dates.')
         leave_request = recent_leaves.first()
         
         pending_action = {
@@ -354,11 +379,17 @@ class WriteActionPlanner:
     def _plan_leave_review(self, intent: Dict[str, Any], user, scope: Dict, session_id: str) -> Dict[str, Any]:
         """Prepare one explicitly targeted pending leave for approval or denial."""
         entities = intent.get('entities', {})
+        if not any(entities.get(key) for key in ('employee_name', 'employee_email', 'employee_id')) and entities.get('request_id'):
+            request = LeaveRequest.objects.select_related('employee').filter(pk=entities['request_id']).first()
+            if request:
+                entities = {**entities, 'employee_id': request.employee_id}
         if not any(entities.get(key) for key in ('employee_name', 'employee_email', 'employee_id')):
             raise CopilotError("employee_required", "Specify the employee whose leave request should be reviewed.")
 
         employee = self._resolve_target_employee(entities, user, scope)
         requests = LeaveRequest.objects.filter(employee_id=employee['employee_id'], status='PENDING').select_related('leave_type')
+        if entities.get('request_id'):
+            requests = requests.filter(pk=entities['request_id'])
         date_range = entities.get('date_range')
         if date_range:
             requests = requests.filter(start_date__lte=date_range['end'], end_date__gte=date_range['start'])
@@ -401,6 +432,118 @@ class WriteActionPlanner:
             'warning_message': "This review also updates attendance records for the requested leave dates." if target_status == 'APPROVED' else None,
             'expires_at': timezone.now() + timedelta(minutes=10),
         }
+
+    def _base_pending(self, intent, user, session_id, action_type, target_data, proposed, current, description, scope, warning=None, missing=None):
+        return {
+            'action_id': str(uuid.uuid4()), 'session_id': session_id, 'user_id': user.id,
+            'action_type': action_type, 'intent': intent['intent'], 'source': intent.get('source', 'hr_copilot'),
+            'target_data': target_data, 'proposed_changes': proposed, 'current_state': current,
+            'validated': not missing, 'status': 'AWAITING_INFORMATION' if missing else 'PENDING',
+            'validation_errors': missing or None, 'authorization_scope': scope, 'requires_confirmation': True,
+            'description': description, 'warning_message': warning,
+            'expires_at': timezone.now() + timedelta(minutes=10),
+        }
+
+    def _plan_force_checkout(self, intent, user, scope, session_id):
+        entities = intent.get('entities', {})
+        employee = self._resolve_target_employee(entities, user, scope)
+        target_date = self._resolve_target_date(entities)
+        attendance = Attendance.objects.filter(employee_id=employee['employee_id'], date=target_date).first()
+        events = list(AttendanceEvent.objects.filter(employee_id=employee['employee_id'], timestamp__date=target_date).order_by('timestamp', 'id'))
+        if not events or events[-1].event_type != 'CHECK_IN':
+            raise CopilotError('no_active_checkin', 'No active check-in was found for that employee on that date.')
+        return self._base_pending(intent, user, session_id, 'attendance_force_checkout',
+            {'employee_id': employee['employee_id'], 'employee_name': employee['employee_name'], 'date': target_date.isoformat()},
+            {'operation': 'force_checkout'},
+            {'status': attendance.status if attendance else None, 'last_event': events[-1].timestamp.isoformat()},
+            f"Force check-out for {employee['employee_name']} on {target_date:%B %d, %Y} at the current time.", scope,
+            warning='This creates an ADMIN checkout event and recomputes attendance.')
+
+    def _plan_regularization_create(self, intent, user, scope, session_id):
+        entities = intent.get('entities', {})
+        employee = self._resolve_target_employee(entities, user, scope)
+        target_date = self._resolve_target_date(entities)
+        reason = (entities.get('reason') or '').strip()
+        missing = ['reason'] if not reason else []
+        request_type = str(entities.get('request_type') or 'INCORRECT_ATTENDANCE').upper()
+        valid_types = {key for key, _ in RegularizationRequest.REQUEST_TYPES}
+        if request_type not in valid_types:
+            raise CopilotError('invalid_request_type', 'Specify a supported regularization request type.')
+        existing = Attendance.objects.filter(employee_id=employee['employee_id'], date=target_date).first()
+        check_in = self._normalize_time(entities.get('check_in_time'))
+        check_out = self._normalize_time(entities.get('check_out_time'), checkout=True)
+        if entities.get('check_in_time') and not check_in or entities.get('check_out_time') and not check_out:
+            raise CopilotError('invalid_regularization_time', 'Use valid check-in and check-out times.')
+        if check_in and check_out and check_out <= check_in:
+            raise CopilotError('invalid_regularization_time', 'Check-out must be later than check-in.')
+        target = {'employee_id': employee['employee_id'], 'employee_name': employee['employee_name'], 'attendance_date': target_date.isoformat(),
+                  'request_type': request_type, 'reason': reason,
+                  'requested_check_in': check_in, 'requested_check_out': check_out}
+        return self._base_pending(intent, user, session_id, 'regularization_create', target,
+            {'operation': 'create', 'request_type': request_type},
+            {'attendance_exists': bool(existing), 'status': 'PENDING'},
+            f"Submit a {request_type.replace('_', ' ').title()} regularization request for {employee['employee_name']} on {target_date:%B %d, %Y}.", scope, missing=missing)
+
+    def _plan_regularization_review(self, intent, user, scope, session_id):
+        entities = intent.get('entities', {})
+        employee_id = entities.get('employee_id')
+        qs = RegularizationRequest.objects.select_related('employee__user').filter(status='PENDING')
+        if entities.get('request_id'):
+            qs = qs.filter(pk=entities['request_id'])
+        elif employee_id:
+            qs = qs.filter(employee_id=employee_id)
+        else:
+            raise CopilotError('request_required', 'Specify the regularization request ID or employee.')
+        if entities.get('date_range'):
+            qs = qs.filter(attendance_date__range=(entities['date_range']['start'], entities['date_range']['end']))
+        matches = list(qs.order_by('-created_at')[:2])
+        if not matches:
+            raise CopilotError('regularization_not_found', 'No pending regularization request matched that target.')
+        if len(matches) > 1:
+            raise CopilotError('regularization_ambiguous', 'More than one pending regularization matched. Specify the request ID or date.')
+        req = matches[0]
+        if req.days.exists():
+            raise CopilotError('unsupported_grouped_regularization', 'Grouped regularization requests must be reviewed in the regularization screen.')
+        self._resolve_target_employee({'employee_id': req.employee_id}, user, scope)
+        reason = (entities.get('reason') or '').strip()
+        missing = ['reason'] if intent['intent'] == 'regularization_reject' and not reason else []
+        return self._base_pending(intent, user, session_id, intent['intent'],
+            {'request_id': req.id, 'employee_id': req.employee_id, 'employee_name': req.employee.user.get_full_name().strip() or req.employee.user.email},
+            {'status': 'REJECTED' if intent['intent'] == 'regularization_reject' else 'APPROVED', 'reason': reason},
+            {'status': req.status, 'attendance_date': req.attendance_date.isoformat()},
+            f"{'Reject' if intent['intent'] == 'regularization_reject' else 'Approve'} regularization request #{req.id} for {req.employee.user.get_full_name().strip() or req.employee.user.email}.", scope, missing=missing)
+
+    def _plan_shift_assignment(self, intent, user, scope, session_id):
+        entities = intent.get('entities', {})
+        employee = self._resolve_target_employee(entities, user, scope)
+        shift = None
+        if entities.get('shift_id'):
+            shift = Shift.objects.filter(pk=entities['shift_id']).first()
+        elif entities.get('shift_name'):
+            shift = Shift.objects.filter(name__iexact=entities['shift_name']).first()
+        if not shift:
+            raise CopilotError('shift_not_found', 'Specify a valid shift ID or shift name.')
+        target = Employee.objects.select_related('shift').get(pk=employee['employee_id'])
+        if shift.employment_type and shift.employment_type != target.employment_type:
+            raise CopilotError('shift_incompatible', 'That shift is configured for a different employment type.')
+        return self._base_pending(intent, user, session_id, 'employee_shift_assign',
+            {'employee_id': target.id, 'employee_name': employee['employee_name'], 'shift_id': shift.id, 'shift_name': shift.name},
+            {'shift_id': shift.id, 'shift_name': shift.name},
+            {'shift_id': target.shift_id, 'shift_name': target.shift.name if target.shift else None},
+            f"Assign {shift.name} ({shift.code}) to {employee['employee_name']}.", scope)
+
+    def _plan_employee_status(self, intent, user, scope, session_id):
+        entities = intent.get('entities', {})
+        employee = self._resolve_target_employee(entities, user, scope)
+        if 'is_active' not in entities:
+            raise CopilotError('status_required', 'Specify whether the employee should be activated or deactivated.')
+        target = Employee.objects.get(pk=employee['employee_id'])
+        desired = bool(entities['is_active'])
+        return self._base_pending(intent, user, session_id, 'employee_status_update',
+            {'employee_id': target.id, 'employee_name': employee['employee_name'], 'is_active': desired},
+            {'is_active': desired}, {'is_active': target.is_active},
+            f"{'Activate' if desired else 'Deactivate'} employee {employee['employee_name']}.", scope,
+            warning='Deactivating an employee removes their active employee access.')
     
     def _resolve_target_employee(self, entities: Dict, user, scope: Dict) -> Dict[str, Any]:
         """Resolve the target employee for the action."""

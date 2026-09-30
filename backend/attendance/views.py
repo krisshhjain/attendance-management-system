@@ -24,8 +24,10 @@ from .models import (
     RegularizationRequest,
     RegularizationRequestDay,
     RegularizationQuotaPolicy,
+    attendance_day_end,
     calculate_completed_working_duration,
     calculate_working_duration,
+    get_effective_attendance_events,
     OfficeLocation,
 )
 from .geofence import validate_attendance_geofence
@@ -134,9 +136,8 @@ def _get_last_event_state(employee, date):
       - 'CHECKED_OUT'  : already checked out (has CHECK_OUT)
       - 'NOT_CHECKED_IN' : no check-in today
     """
-    last_event = employee.attendance_events.filter(
-        timestamp__date=date
-    ).order_by("-timestamp").first()
+    event_rows = get_effective_attendance_events(employee, date)
+    last_event = event_rows[-1] if event_rows else None
 
     if last_event:
         if last_event.event_type == "CHECK_IN":
@@ -156,6 +157,24 @@ def _get_last_event_state(employee, date):
         return 'NOT_CHECKED_IN', None
 
 
+def _get_previous_incomplete_attendance(employee, target_date):
+    """Return the most recent prior attendance with an unmatched check-in."""
+    candidates = Attendance.objects.filter(
+        employee=employee,
+        date__lt=target_date,
+        check_in__isnull=False,
+    ).order_by("-date")
+
+    for attendance in candidates:
+        state, _ = _get_last_event_state(employee, attendance.date)
+        if attendance.status == "INCOMPLETE" and state == "CHECKED_IN":
+            return {
+                "date": attendance.date,
+                "check_in": attendance.check_in,
+                "status": attendance.status,
+                "needs_regularization": True,
+            }
+    return None
 class CheckInView(APIView):
     permission_classes = [IsEmployee]
     app_access_key = "attendance"
@@ -364,6 +383,7 @@ class TodayAttendanceView(APIView):
         employee = request.user.employee
         today = timezone.localdate()
         working_day = is_working_day(today)
+        previous_incomplete = _get_previous_incomplete_attendance(employee, today)
 
         try:
             attendance = Attendance.objects.get(
@@ -378,10 +398,14 @@ class TodayAttendanceView(APIView):
                 "check_out": None,
                 "working_duration": None,
                 "is_working_day": working_day,
+                "previous_incomplete_attendance": previous_incomplete,
             })
 
-        events = list(employee.attendance_events.filter(timestamp__date=today).order_by("timestamp"))
-        working_duration = calculate_working_duration(events)
+        events = get_effective_attendance_events(employee, today)
+        working_duration = calculate_working_duration(
+            events,
+            end_at=attendance_day_end(today),
+        )
         completed_working_duration = calculate_completed_working_duration(events)
         active_check_in = events[-1].timestamp if events and events[-1].event_type == "CHECK_IN" else None
         state, last_event = _get_last_event_state(employee, today)
@@ -404,6 +428,7 @@ class TodayAttendanceView(APIView):
             "completed_working_duration": completed_working_duration,
             "active_check_in": active_check_in,
             "is_working_day": working_day,
+            "previous_incomplete_attendance": previous_incomplete,
         })
 
 class MyTeamView(APIView):
@@ -595,15 +620,16 @@ class AttendanceHistoryView(APIView):
 
         data = []
         for attendance in attendance_records:
-            events = list(attendance.employee.attendance_events.filter(
-                timestamp__date=attendance.date
-            ).order_by("timestamp"))
+            events = get_effective_attendance_events(attendance.employee, attendance.date)
             record = {
                 "date": attendance.date,
                 "status": attendance.status,
                 "check_in": attendance.check_in,
                 "check_out": attendance.check_out,
-                "working_duration": calculate_working_duration(events),
+                "working_duration": calculate_working_duration(
+                    events,
+                    end_at=attendance_day_end(attendance.date),
+                ),
             }
             # Add employee info for managers/admins
             if is_manager_or_admin:
@@ -640,9 +666,7 @@ class AdminAttendanceView(APIView):
         data = []
         for emp in employees:
             att = attendance_map.get(emp.id)
-            events = list(emp.attendance_events.filter(
-                timestamp__date=filter_date
-            ).order_by("timestamp"))
+            events = get_effective_attendance_events(emp, filter_date)
             
             # Determine actual display status
             if att:
@@ -664,7 +688,10 @@ class AdminAttendanceView(APIView):
                 "status": status_display,
                 "check_in": att.check_in if att else None,
                 "check_out": att.check_out if att else None,
-                "working_duration": str(calculate_working_duration(events)) if att else None,
+                "working_duration": str(calculate_working_duration(
+                    events,
+                    end_at=attendance_day_end(filter_date),
+                )) if att else None,
             })
 
         # Sort: Present first, then Incomplete, then Absent/Leave
@@ -708,10 +735,11 @@ class AdminDashboardView(APIView):
         attendance_records = today_attendance.select_related("employee", "employee__user").order_by("-check_in")
         attendance_data = []
         for attendance in attendance_records:
-            events = list(attendance.employee.attendance_events.filter(
-                timestamp__date=today
-            ).order_by("timestamp"))
-            working_duration = calculate_working_duration(events)
+            events = get_effective_attendance_events(attendance.employee, today)
+            working_duration = calculate_working_duration(
+                events,
+                end_at=attendance_day_end(today),
+            )
             attendance_data.append({
                 "employee": attendance.employee.user.email,
                 "section": attendance.employee.section,
@@ -941,17 +969,29 @@ class AdminForceCheckoutView(APIView):
         is_all = request.data.get("all", False)
         employee_email = request.data.get("employee")
 
-        base_query = Attendance.objects.filter(
-            date=target_date, 
-            check_in__isnull=False, 
-            check_out__isnull=True
-        )
+        # The summary row's ``check_out`` is the latest checkout for the day,
+        # not necessarily the checkout for the currently open interval.  An
+        # employee can check in again after an earlier checkout, so determine
+        # active attendance from the latest event instead of summary fields.
+        candidate_attendances = Attendance.objects.filter(
+            date=target_date,
+            check_in__isnull=False,
+        ).select_related("employee", "employee__user")
+        active_attendances = [
+            attendance
+            for attendance in candidate_attendances
+            if _get_last_event_state(attendance.employee, target_date)[0] == "CHECKED_IN"
+        ]
 
         if is_all:
-            attendances = base_query
+            attendances = active_attendances
         elif employee_email:
-            attendances = base_query.filter(employee__user__email=employee_email)
-            if not attendances.exists():
+            attendances = [
+                attendance
+                for attendance in active_attendances
+                if attendance.employee.user.email == employee_email
+            ]
+            if not attendances:
                 return Response({"error": "No active check-in found for this employee on this date"}, status=404)
         else:
             return Response({"error": "Must provide 'all': true or 'employee': email"}, status=400)
@@ -1133,7 +1173,7 @@ class WebsiteFacialCheckOutView(APIView):
                 {"error": "You have not checked in today"},
                 status=400,
             )
-            before_state = _attendance_log_state(attendance)
+        before_state = _attendance_log_state(attendance)
 
         # Check current state via events
         state, last_event = _get_last_event_state(employee, today)
@@ -1597,6 +1637,7 @@ class AdminEmployeeShiftAssignView(APIView):
             return Response({"error": "Employee not found"}, status=404)
         
         before_state = {"shift": _shift_log_state(employee.shift)}
+        shift = None
         if shift_id is not None:
             try:
                 shift = Shift.objects.get(id=shift_id)
@@ -2363,21 +2404,25 @@ class RegularizationRequestApproveView(APIView):
                             if timezone.is_naive(parsed): parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
                             if timezone.localtime(parsed).date() != row.attendance_date: raise ValueError(f"Final {field} must be on {row.attendance_date}.")
                             return parsed
-                        check_in, check_out = parse("check_in", row.requested_check_in or row.existing_check_in), parse("check_out", row.requested_check_out or row.existing_check_out)
+                        requested_check_in = parse("check_in", row.requested_check_in)
+                        requested_check_out = parse("check_out", row.requested_check_out)
+                        check_in = requested_check_in or row.existing_check_in
+                        check_out = requested_check_out or row.existing_check_out
                         if not check_in and not check_out: raise ValueError(f"At least one final time is required for {row.attendance_date}.")
                         if check_in and check_out and check_out <= check_in: raise ValueError(f"Check-out must be after check-in for {row.attendance_date}.")
-                        final.append((row, check_in, check_out))
+                        final.append((row, check_in, check_out, requested_check_in, requested_check_out))
                     req.status, req.reviewed_by, req.reviewed_at = "APPROVED", request.user, timezone.now()
                     req.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
-                    for row, check_in, check_out in final:
+                    for row, check_in, check_out, correction_check_in, correction_check_out in final:
                         attendance, _ = Attendance.get_or_create_for_date(req.employee, row.attendance_date)
                         previous = {"check_in": attendance.check_in.isoformat() if attendance.check_in else None, "check_out": attendance.check_out.isoformat() if attendance.check_out else None, "status": attendance.status, "working_duration": str(attendance.working_duration) if attendance.working_duration else None}
                         shift = req.employee.get_effective_shift()
-                        for timestamp, kind in ((check_in, "CHECK_IN"), (check_out, "CHECK_OUT")):
-                            if timestamp: AttendanceEvent.objects.create(employee=req.employee, shift=shift, timestamp=timestamp, event_type=kind, source="ADMIN")
-                        attendance.recompute_from_events()
                         from .models import AttendanceCorrection
-                        row.attendance_correction = AttendanceCorrection.objects.create(attendance=attendance, admin_user=request.user, correction_type="REGULARIZATION", reason=f"Regularization approved: {row.reason}", previous_data=previous)
+                        correction = AttendanceCorrection.objects.create(attendance=attendance, admin_user=request.user, correction_type="REGULARIZATION", reason=f"Regularization approved: {row.reason}", previous_data=previous)
+                        for timestamp, kind in ((correction_check_in, "CHECK_IN"), (correction_check_out, "CHECK_OUT")):
+                            if timestamp: AttendanceEvent.objects.create(employee=req.employee, shift=shift, timestamp=timestamp, event_type=kind, source="ADMIN", correction=correction)
+                        attendance.recompute_from_events()
+                        row.attendance_correction = correction
                         row.approved_check_in, row.approved_check_out = check_in, check_out
                         row.save(update_fields=["attendance_correction", "approved_check_in", "approved_check_out"])
                     _queue_regularization_outcome(req, "APPROVED")

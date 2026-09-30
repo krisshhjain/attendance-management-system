@@ -11,11 +11,14 @@ import {
   Alert,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api";
+import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { getErrorMessage } from "../../feedback/errorMessage.js";
 
 export function ChangePasswordDialog({ open, employee, onClose, onSuccess }) {
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { success } = useFeedback();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -31,9 +34,10 @@ export function ChangePasswordDialog({ open, employee, onClose, onSuccess }) {
         method: "POST",
         body: { new_password: newPassword },
       });
+      success("Employee password reset successfully.");
       onSuccess();
     } catch (err) {
-      setError(err.message || "Failed to reset password");
+      setError(getErrorMessage(err, "Failed to reset password."));
     } finally {
       setLoading(false);
     }

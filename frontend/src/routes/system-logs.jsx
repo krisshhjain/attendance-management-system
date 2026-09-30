@@ -26,13 +26,13 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Snackbar,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import DownloadIcon from "@mui/icons-material/Download";
 import { RequireAuth } from "../components/RequireAuth.jsx";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import { deleteSystemLogs, downloadSystemLogs, fetchSystemLogActors, fetchSystemLogs } from "../lib/api.js";
 
@@ -108,7 +108,7 @@ function SystemLogsPage() {
   const [deleteDate, setDeleteDate] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
+  const { success, notifyError } = useFeedback();
 
   const updateSearch = (updates) => {
     navigate({
@@ -201,8 +201,9 @@ function SystemLogsPage() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
+      success("System logs exported successfully.");
     } catch (exportError) {
-      setError(exportError.message || "The export could not be generated.");
+      notifyError(exportError, { title: "Export failed", fallback: "The system logs could not be exported." });
     } finally {
       setExporting("");
     }
@@ -212,13 +213,13 @@ function SystemLogsPage() {
     setIsDeleting(true);
     setError("");
     try {
-      const response = await deleteSystemLogs(deleteDate);
-      setSuccessMessage(`Successfully deleted ${response.deleted} logs.`);
+      await deleteSystemLogs(deleteDate);
+      success("Logs deleted successfully.");
       setShowDeleteDialog(false);
       setDeleteDate("");
       setReloadToken((value) => value + 1);
     } catch (err) {
-      setError(err.message || "Failed to delete logs.");
+      notifyError(err, { title: "Log deletion failed", fallback: "The system logs could not be deleted." });
     } finally {
       setIsDeleting(false);
     }
@@ -476,9 +477,6 @@ function SystemLogsPage() {
           </Button>
         </DialogActions>
       </Dialog>
-      <Snackbar open={Boolean(successMessage)} autoHideDuration={4000} onClose={() => setSuccessMessage("")}>
-        <Alert severity="success" onClose={() => setSuccessMessage("")}>{successMessage}</Alert>
-      </Snackbar>
     </Box>
   );
 }

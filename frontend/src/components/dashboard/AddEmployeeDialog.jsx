@@ -13,12 +13,15 @@ import {
   Alert
 } from "@mui/material";
 import { apiRequest } from "../../lib/api.js";
+import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { getErrorMessage } from "../../feedback/errorMessage.js";
 
 const EMPLOYMENT_TYPES = ["PERMANENT", "CONTRACT", "INTERN"];
 
 export function AddEmployeeDialog({ open, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { success } = useFeedback();
 
   const [formData, setFormData] = useState({
     first_name: "",
@@ -60,9 +63,10 @@ export function AddEmployeeDialog({ open, onClose, onSuccess }) {
         date_joined: new Date().toISOString().split("T")[0],
       });
 
+      success("Employee created successfully.");
       onSuccess();
     } catch (err) {
-      setError(err.message || "Failed to create employee.");
+      setError(getErrorMessage(err, "Failed to create employee."));
     } finally {
       setLoading(false);
     }

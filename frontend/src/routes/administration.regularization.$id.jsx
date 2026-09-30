@@ -20,6 +20,7 @@ import {
   fetchAdminRegularizationRequest,
   rejectRegularizationRequest,
 } from "../lib/api.js";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 
 export const Route = createFileRoute("/administration/regularization/$id")({
   component: () => (
@@ -64,6 +65,7 @@ function RegularizationReviewPage() {
   const [checkOut, setCheckOut] = useState("");
   const [dayTimes, setDayTimes] = useState({});
   const [rejectionReason, setRejectionReason] = useState("");
+  const { success, notifyError } = useFeedback();
 
   const loadRequest = async () => {
     setLoading(true);
@@ -129,9 +131,10 @@ function RegularizationReviewPage() {
           check_out: dateTime(request.attendance_date, checkOut),
         });
       }
+      success("Regularization approved successfully.");
       await loadRequest();
     } catch (actionError) {
-      setError(actionError.message || "Approval failed.");
+      notifyError(actionError, { title: "Regularization approval failed", fallback: "Approval failed." });
     } finally {
       setSubmitting(false);
     }
@@ -146,9 +149,10 @@ function RegularizationReviewPage() {
     setSubmitting(true);
     try {
       await rejectRegularizationRequest(id, rejectionReason.trim());
+      success("Regularization rejected.");
       await loadRequest();
     } catch (actionError) {
-      setError(actionError.message || "Rejection failed.");
+      notifyError(actionError, { title: "Regularization rejection failed", fallback: "Rejection failed." });
     } finally {
       setSubmitting(false);
     }

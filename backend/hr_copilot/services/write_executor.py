@@ -9,8 +9,8 @@ from typing import Dict, Any
 from .pipeline import CopilotError
 from ..models import CopilotPendingAction, CopilotActionAudit
 from employees.models import Employee
-from attendance.models import Attendance, AttendanceEvent, AttendanceCorrection
-from leave_management.models import LeaveRequest
+from attendance.models import Attendance, AttendanceEvent, AttendanceCorrection, RegularizationRequest, Shift
+from leave_management.models import LeaveRequest, LeaveType
 from system_logs.services import record_event
 
 
@@ -38,11 +38,24 @@ class WriteActionExecutor:
                 elif action_type == 'leave_create':
                     result = self._execute_leave_create(pending_action)
                 elif action_type == 'leave_cancel':
-                    result = self._execute_leave_cancel(pending_action)
+                    result = self._execute_leave_cancel(pending_action, user)
                 elif action_type in {'leave_approve', 'leave_deny'}:
                     result = self._execute_leave_review(pending_action, user)
+                elif action_type == 'attendance_force_checkout':
+                    result = self._execute_force_checkout(pending_action, user)
+                elif action_type == 'regularization_create':
+                    result = self._execute_regularization_create(pending_action, user)
+                elif action_type in {'regularization_approve', 'regularization_reject'}:
+                    result = self._execute_regularization_review(pending_action, user)
+                elif action_type == 'employee_shift_assign':
+                    result = self._execute_shift_assignment(pending_action, user)
+                elif action_type == 'employee_status_update':
+                    result = self._execute_employee_status(pending_action, user)
                 else:
                     raise CopilotError("unsupported_action", f"Action type '{action_type}' not implemented")
+                result.setdefault('action_id', str(pending_action['action_id']))
+                if pending_action.get('warning_message'):
+                    result.setdefault('warning', pending_action['warning_message'])
                 action_record = CopilotPendingAction.objects.select_for_update().get(action_id=pending_action['action_id'], user=user)
                 new_state = {key: value for key, value in result.items() if key not in {'message'}}
                 if pending_action.get('target_data', {}).get('reason'):
@@ -120,16 +133,32 @@ class WriteActionExecutor:
             }
         )
         
-        AttendanceEvent.objects.filter(employee_id=employee_id, timestamp__date=target_date).delete()
+        correction = AttendanceCorrection.objects.create(
+            attendance=attendance,
+            admin_user=user,
+            correction_type='HR_COPILOT',
+            reason=(
+                f"{target_data.get('reason') or 'HR Copilot approved attendance update'} "
+                f"(action {pending_action['action_id']})"
+            ),
+            previous_data={
+                **previous_state,
+                'effective_event_mode': 'REPLACE',
+                'copilot_action_id': str(pending_action['action_id']),
+            },
+        )
         if target_status == 'PRESENT':
             local_date = target_date
             check_in = timezone.make_aware(datetime.combine(local_date, time.fromisoformat(target_data['check_in_time'])))
             check_out = timezone.make_aware(datetime.combine(local_date, time.fromisoformat(target_data['check_out_time'])))
-            AttendanceEvent.objects.create(employee_id=employee_id, timestamp=check_in, event_type='CHECK_IN', source='ADMIN')
-            AttendanceEvent.objects.create(employee_id=employee_id, timestamp=check_out, event_type='CHECK_OUT', source='ADMIN')
-            attendance.check_in = check_in
-            attendance.check_out = check_out
-            attendance.working_duration = check_out - check_in
+            AttendanceEvent.objects.create(
+                employee_id=employee_id, timestamp=check_in, event_type='CHECK_IN',
+                source='ADMIN', correction=correction,
+            )
+            AttendanceEvent.objects.create(
+                employee_id=employee_id, timestamp=check_out, event_type='CHECK_OUT',
+                source='ADMIN', correction=correction,
+            )
             attendance.leave_request = None
         else:
             attendance.check_in = None
@@ -140,11 +169,10 @@ class WriteActionExecutor:
                 setattr(attendance, field, None)
         attendance.status = target_status
         attendance.save()
-        AttendanceCorrection.objects.create(
-            attendance=attendance, admin_user=user, correction_type='HR_COPILOT',
-            reason=target_data.get('reason') or 'HR Copilot approved attendance update',
-            previous_data=previous_state,
-        )
+        attendance.recompute_from_events()
+        if target_status in {'ABSENT', 'LEAVE'}:
+            attendance.status = target_status
+            attendance.save(update_fields=['status', 'updated_at'])
         result = {
             'success': True,
             'operation': 'updated' if not created else 'created',
@@ -175,16 +203,25 @@ class WriteActionExecutor:
         leave_type_id = target_data['leave_type_id']
         reason = target_data['reason']
         
-        # Create leave request
-        leave_request = LeaveRequest.objects.create(
-            employee_id=employee_id,
-            leave_type_id=leave_type_id,
-            start_date=start_date,
-            end_date=end_date,
-            duration_days=duration_days,
-            reason=reason,
-            status='PENDING'  # Default to pending for approval workflow
-        )
+        leave_request = LeaveRequest(employee_id=employee_id, leave_type_id=leave_type_id,
+            start_date=start_date, end_date=end_date, duration_days=duration_days, reason=reason, status='PENDING')
+        from leave_management.services import validate_leave_request, calculate_working_days, get_active_policy
+        leave_type = LeaveType.objects.get(pk=leave_type_id)
+        # Use the authoritative validator whenever a policy exists. Legacy
+        # installations may have leave types without policies; retain the
+        # existing Copilot behavior there while still using the shared day
+        # calculation service.
+        if get_active_policy(leave_request.employee, leave_type, target_date=start_date):
+            validated_duration = validate_leave_request(
+                leave_request.employee, leave_type, start_date, end_date,
+                day_type=leave_request.day_type, reason=reason,
+            )
+        else:
+            validated_duration = calculate_working_days(start_date, end_date, leave_request.day_type)
+            if validated_duration <= 0:
+                raise CopilotError('invalid_leave_dates', 'The requested leave range contains no working days.')
+        leave_request.duration_days = validated_duration
+        leave_request.save()
         
         result = {
             'success': True,
@@ -200,16 +237,16 @@ class WriteActionExecutor:
         
         return result
     
-    def _execute_leave_cancel(self, pending_action: Dict[str, Any]) -> Dict[str, Any]:
+    def _execute_leave_cancel(self, pending_action: Dict[str, Any], user) -> Dict[str, Any]:
         """Execute leave request cancellation action."""
         target_data = pending_action['target_data']
         leave_request_id = target_data['leave_request_id']
         
-        # Get and update leave request
-        leave_request = LeaveRequest.objects.get(id=leave_request_id)
+        leave_request = LeaveRequest.objects.select_related('employee', 'leave_type').get(id=leave_request_id, employee_id=target_data['employee_id'])
         old_status = leave_request.status
-        leave_request.status = 'CANCELLED'
-        leave_request.save()
+        from leave_management.services import cancel_leave_request
+        cancel_leave_request(leave_request, user)
+        leave_request.refresh_from_db()
         
         result = {
             'success': True,
@@ -222,6 +259,71 @@ class WriteActionExecutor:
         }
         
         return result
+
+    def _execute_force_checkout(self, pending_action, user):
+        target = pending_action['target_data']
+        target_date = datetime.fromisoformat(target['date']).date()
+        attendance = Attendance.objects.select_related('employee').get(employee_id=target['employee_id'], date=target_date)
+        events = list(AttendanceEvent.objects.filter(employee_id=target['employee_id'], timestamp__date=target_date).order_by('timestamp', 'id'))
+        if not events or events[-1].event_type != 'CHECK_IN':
+            raise CopilotError('no_active_checkin', 'No active check-in remains for this employee and date.')
+        event = AttendanceEvent.objects.create(employee=attendance.employee, shift=attendance.employee.get_effective_shift(),
+            timestamp=timezone.now(), event_type='CHECK_OUT', source='ADMIN')
+        attendance.recompute_from_events()
+        return {'success': True, 'operation': 'force_checkout', 'employee_name': target['employee_name'],
+                'date': target_date.isoformat(), 'event_id': event.id, 'message': f"Checked out {target['employee_name']} successfully."}
+
+    def _execute_regularization_create(self, pending_action, user):
+        target = pending_action['target_data']
+        target_date = datetime.fromisoformat(target['attendance_date']).date()
+        values = {
+            'employee_id': target['employee_id'], 'attendance_date': target_date,
+            'request_type': target['request_type'], 'reason': target['reason'], 'status': 'PENDING',
+        }
+        if target.get('requested_check_in'):
+            values['requested_check_in'] = timezone.make_aware(datetime.combine(target_date, time.fromisoformat(target['requested_check_in'])))
+        if target.get('requested_check_out'):
+            values['requested_check_out'] = timezone.make_aware(datetime.combine(target_date, time.fromisoformat(target['requested_check_out'])))
+        request = RegularizationRequest.objects.create(**values)
+        return {'success': True, 'operation': 'regularization_created', 'request_id': request.id,
+                'employee_name': target['employee_name'], 'attendance_date': target_date.isoformat(),
+                'status': request.status, 'message': f"Regularization request created for {target['employee_name']}."}
+
+    def _execute_regularization_review(self, pending_action, user):
+        target = pending_action['target_data']
+        request = RegularizationRequest.objects.select_for_update().get(pk=target['request_id'], employee_id=target['employee_id'])
+        if request.status != 'PENDING':
+            raise CopilotError('regularization_changed', 'This regularization request is no longer pending.')
+        if pending_action['action_type'] == 'regularization_approve':
+            correction = request.approve(user)
+            status = 'APPROVED'
+            message = f"Regularization request #{request.id} approved successfully."
+        else:
+            request.reject(user, pending_action['proposed_changes'].get('reason', ''))
+            correction = None
+            status = 'REJECTED'
+            message = f"Regularization request #{request.id} rejected."
+        return {'success': True, 'operation': status.lower(), 'request_id': request.id,
+                'correction_id': correction.id if correction else None, 'status': status, 'message': message}
+
+    def _execute_shift_assignment(self, pending_action, user):
+        target = pending_action['target_data']
+        employee = Employee.objects.select_for_update().get(pk=target['employee_id'])
+        shift = Shift.objects.get(pk=target['shift_id'])
+        employee.shift = shift
+        employee.save(update_fields=['shift'])
+        return {'success': True, 'operation': 'shift_assigned', 'employee_name': target['employee_name'],
+                'shift_id': shift.id, 'shift_name': shift.name,
+                'message': f"Shift assigned successfully to {target['employee_name']}."}
+
+    def _execute_employee_status(self, pending_action, user):
+        target = pending_action['target_data']
+        employee = Employee.objects.select_for_update().get(pk=target['employee_id'])
+        employee.is_active = bool(target['is_active'])
+        employee.save(update_fields=['is_active'])
+        return {'success': True, 'operation': 'activated' if employee.is_active else 'deactivated',
+                'employee_name': target['employee_name'], 'is_active': employee.is_active,
+                'message': f"Employee {'activated' if employee.is_active else 'deactivated'} successfully."}
 
     def _execute_leave_review(self, pending_action: Dict[str, Any], user) -> Dict[str, Any]:
         """Use the leave app's existing review services and attendance updates."""
@@ -444,6 +546,17 @@ class PendingActionManager:
         actions = CopilotPendingAction.objects.filter(
             session_id=session_id, user_id=user_id, status__in=['PENDING', 'AWAITING_INFORMATION'], expires_at__gt=timezone.now(),
         )
+        return {str(action.action_id): self._as_dict(action) for action in actions}
+
+    def get_user_actions(self, user_id: int, conversation_id=None):
+        """List active actions while retaining each action's exact session identity."""
+        actions = CopilotPendingAction.objects.filter(
+            user_id=user_id,
+            status__in=['PENDING', 'AWAITING_INFORMATION'],
+            expires_at__gt=timezone.now(),
+        )
+        if conversation_id:
+            actions = actions.filter(conversation_id=conversation_id)
         return {str(action.action_id): self._as_dict(action) for action in actions}
 
 

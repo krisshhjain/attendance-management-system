@@ -14,6 +14,10 @@ class IntentNormalizer:
     """Normalizes LLM intent output to backend-compatible format."""
     
     def __init__(self):
+        self.unsupported_write_intents = {
+            'attendance_delete', 'leave_update', 'employee_update',
+            'bulk_attendance_update',
+        }
         # Deterministic intent → source mapping
         self.intent_source_mapping = {
             # Attendance operations
@@ -23,6 +27,15 @@ class IntentNormalizer:
             'attendance_summary': 'attendance',
             'attendance_count': 'attendance',
             'attendance_trend': 'attendance',
+            'attendance_intelligence': 'attendance',
+            'leave_regularization_intelligence': 'leave',
+            'workforce_intelligence': 'employee',
+            'attendance_force_checkout': 'attendance',
+            'regularization_create': 'attendance',
+            'regularization_approve': 'attendance',
+            'regularization_reject': 'attendance',
+            'employee_shift_assign': 'employee',
+            'employee_status_update': 'employee',
             
             # Employee operations  
             'employee_lookup': 'employee',
@@ -55,6 +68,15 @@ class IntentNormalizer:
             'attendance_summary': 'attendance_read_tool', 
             'attendance_count': 'attendance_read_tool',
             'attendance_trend': 'attendance_read_tool',
+            'attendance_intelligence': 'attendance_intelligence_tool',
+            'leave_regularization_intelligence': 'leave_regularization_intelligence_tool',
+            'workforce_intelligence': 'workforce_intelligence_tool',
+            'attendance_force_checkout': 'attendance_force_checkout_tool',
+            'regularization_create': 'regularization_create_tool',
+            'regularization_approve': 'regularization_review_tool',
+            'regularization_reject': 'regularization_review_tool',
+            'employee_shift_assign': 'employee_shift_assign_tool',
+            'employee_status_update': 'employee_status_update_tool',
             
             'employee_lookup': 'employee_lookup_tool',
             'employee_summary': 'employee_lookup_tool',
@@ -84,6 +106,9 @@ class IntentNormalizer:
         # Read vs Write classification
         self.read_intents = {
             'attendance_lookup', 'attendance_summary', 'attendance_count', 'attendance_trend',
+            'attendance_intelligence',
+            'leave_regularization_intelligence',
+            'workforce_intelligence',
             'employee_lookup', 'employee_summary', 'employee_count', 
             'leave_lookup', 'leave_summary', 'leave_count', 'leave_trend',
             'absence_lookup', 'absence_count',
@@ -94,6 +119,8 @@ class IntentNormalizer:
             'attendance_update', 'attendance_create', 'attendance_delete',
             'leave_create', 'leave_update', 'leave_cancel', 'leave_approve', 'leave_deny',
             'employee_update', 'bulk_attendance_update'
+            , 'attendance_force_checkout', 'regularization_create', 'regularization_approve',
+            'regularization_reject', 'employee_shift_assign', 'employee_status_update'
         }
         
         # Status normalization mapping
@@ -123,6 +150,31 @@ class IntentNormalizer:
         intent_name = llm_output.get('intent')
         if not intent_name:
             raise CopilotError("invalid_intent", "Missing intent in LLM output")
+
+        if intent_name in self.unsupported_write_intents:
+            raise CopilotError("unsupported_write", "That HR Copilot action is not supported yet.")
+
+        # Keep one typed attendance-intelligence intent even when the model
+        # selects a legacy attendance read intent but supplies a metric.
+        if intent_name in {"attendance_lookup", "attendance_summary", "attendance_trend"} and (
+            (llm_output.get("entities") or {}).get("attendance_metric")
+        ):
+            intent_name = "attendance_intelligence"
+        if intent_name in {"leave_lookup", "leave_summary", "leave_trend"} and (
+            (llm_output.get("entities") or {}).get("intelligence_metric")
+        ):
+            intent_name = "leave_regularization_intelligence"
+        if intent_name in {"employee_lookup", "employee_summary", "employee_count"} and (
+            (llm_output.get("entities") or {}).get("workforce_metric")
+        ):
+            intent_name = "workforce_intelligence"
+
+        inferred_read = self._infer_read_intelligence(original_query)
+        if inferred_read and not self._looks_like_explicit_write(original_query):
+            intent_name, inferred_entities = inferred_read
+            llm_entities = dict(llm_output.get("entities") or {})
+            llm_entities.update(inferred_entities)
+            llm_output = {**llm_output, "intent": intent_name, "entities": llm_entities}
 
         # Keep the LLM as the semantic analyzer, while correcting a clear
         # imperative attendance write if the model returned an unrelated read intent.
@@ -174,8 +226,99 @@ class IntentNormalizer:
             intent_name, 
             original_query
         )
-        
+
+        # Small local models sometimes echo a field in missing_information
+        # even after extracting that field. Do not ask the user for data we
+        # already have; preserve semantic markers such as employee_identity.
+        field_aliases = {
+            'employee': ('employee_id', 'employee_name', 'employee_email'),
+            'employee_name': ('employee_id', 'employee_name', 'employee_email'),
+            'employee_email': ('employee_id', 'employee_name', 'employee_email'),
+            'date': ('date_range', 'temporal_expression'),
+            'attendance_date': ('date_range', 'temporal_expression'),
+            'section': ('section',),
+            'subsection': ('subsection',),
+            'department': ('department',),
+            'status': ('target_status', 'attendance_status'),
+            'reason': ('reason',),
+        }
+        normalized['missing_information'] = [
+            item for item in normalized['missing_information']
+            if item not in field_aliases or not any(normalized['entities'].get(key) for key in field_aliases[item])
+        ]
+
         return normalized
+
+    @staticmethod
+    def _looks_like_explicit_write(query: str) -> bool:
+        return bool(re.match(r"\s*(?:please\s+)?(?:approve|reject|deny|cancel|create|submit|file|mark|edit|change|update|assign|activate|deactivate|force|reset)\b", query or "", re.IGNORECASE))
+
+    @staticmethod
+    def _infer_read_intelligence(query: str):
+        """Recover existing typed metrics when a small model selects a legacy read intent."""
+        text = (query or "").casefold()
+        if re.search(r"\bnot\s+(?:yet\s+)?checked\s*[- ]?in\b", text):
+            return "attendance_intelligence", {"attendance_metric": "missing_checkins"}
+        if re.search(r"\blate\b|after\s+(?:the\s+)?shift\s+start", text):
+            return "attendance_intelligence", {"attendance_metric": "late_employees"}
+        if re.search(r"\bhow many hours\b|\bhours did .* work\b|\bworking hours\b", text):
+            return "attendance_intelligence", {"attendance_metric": "working_hours"}
+        if re.search(r"\bincomplete\b|forgot(?:ten)?\s+to\s+check\s*[- ]?out", text):
+            return "attendance_intelligence", {"attendance_metric": "incomplete_explanation"}
+        if re.search(r"\bconsecutive absences?\b|absence streak", text):
+            return "attendance_intelligence", {"attendance_metric": "absence_streaks"}
+        if re.search(r"\bcompare\b.*\b(?:week|month)\b|\bweek\s+(?:over\s+)?week\b", text):
+            return "attendance_intelligence", {"attendance_metric": "period_comparison"}
+        if re.search(r"\bleave\s+balance\b|\bcasual leaves? .*left\b|\bremaining leave\b", text):
+            return "leave_regularization_intelligence", {"intelligence_metric": "leave_balance"}
+        if re.search(r"\bpending\s+leave\b", text):
+            return "leave_regularization_intelligence", {"intelligence_metric": "leave_requests"}
+        if re.search(r"\bpending\s+regulari[sz]ation\b", text):
+            return "leave_regularization_intelligence", {"intelligence_metric": "regularization_pending"}
+        if re.search(r"\bregulari[sz]ation\s+history\b|\battendance\s+(?:was\s+)?corrected\b", text):
+            return "leave_regularization_intelligence", {"intelligence_metric": "regularization_history"}
+        if re.search(r"\bemployee\s+details?\b|\bfind\s+[\w .'-]+$", text):
+            return "workforce_intelligence", {"workforce_metric": "employee_details" if "details" in text else "employee_search"}
+        if re.search(r"\bshift\b.*\bassigned\b|\bassigned\s+shift\b|\bassigned\s+to\b.*\bshift\b|\bwhich\s+shift\b.*\bwork\s+in\b", text):
+            entities = {"workforce_metric": "shift_assignments"}
+            identity = IntentNormalizer._extract_workforce_employee_identity(query)
+            if identity:
+                entities.update(identity)
+            assigned_shift = re.search(r"\bassigned\s+to\s+(?P<shift>[A-Za-z][A-Za-z .'-]*?)\s+shift\b", text, re.IGNORECASE)
+            if assigned_shift:
+                entities["shift_name"] = assigned_shift.group("shift").strip()
+            return "workforce_intelligence", entities
+        if re.search(r"\bface\s+enrollment\b|\benrolled\s+(?:their\s+)?face\b", text):
+            return "workforce_intelligence", {"workforce_metric": "face_enrollment"}
+        if re.search(r"\boffice\s+locations?\b", text):
+            return "workforce_intelligence", {"workforce_metric": "office_locations"}
+        if re.search(r"\bactive\b|\binactive\b", text) and "employee" in text:
+            return "workforce_intelligence", {"workforce_metric": "employee_status"}
+        if re.search(r"\bconfigured\s+shifts?\b|\ball\s+shifts\b", text):
+            return "workforce_intelligence", {"workforce_metric": "shift_configuration"}
+        return None
+
+    @staticmethod
+    def _extract_workforce_employee_identity(query: str) -> Dict[str, Any]:
+        """Preserve an explicit workforce target when Qwen omits it."""
+        text = query or ""
+        email = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", text, re.IGNORECASE)
+        if email:
+            return {"employee_email": email.group(0)}
+
+        patterns = (
+            r"\bshift\s+is\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+assigned\b",
+            r"\b(?:show|find)\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+(?:'s|’s)\s+(?:current\s+)?shift\b",
+            r"\bdoes\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+work\s+in\s+which\s+shift\b",
+            r"\bwhich\s+shift\s+does\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+work\s+in\b",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                name = match.group("name").strip(" .,'\"?")
+                if name:
+                    return {"employee_name": name}
+        return {}
     
     def _normalize_entities(self, entities: Dict[str, Any], intent: str, query: str) -> Dict[str, Any]:
         """Normalize and validate entities."""

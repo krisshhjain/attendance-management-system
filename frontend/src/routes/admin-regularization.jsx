@@ -24,6 +24,7 @@ import {
   fetchAdminRegularizationRequests,
   updateAdminRegularizationQuotaPolicy,
 } from "../lib/api.js";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 
 export const Route = createFileRoute("/admin-regularization")({
   component: () => (
@@ -73,7 +74,7 @@ function AdminRegularizationPage() {
   const [quotaLoading, setQuotaLoading] = useState(true);
   const [quotaSaving, setQuotaSaving] = useState(false);
   const [quotaError, setQuotaError] = useState("");
-  const [quotaSaved, setQuotaSaved] = useState("");
+  const { success, notifyError } = useFeedback();
 
   const loadRequests = useCallback(async () => {
     if (!canReview) return;
@@ -120,7 +121,6 @@ function AdminRegularizationPage() {
     event.preventDefault();
     setQuotaSaving(true);
     setQuotaError("");
-    setQuotaSaved("");
     try {
       const saved = await updateAdminRegularizationQuotaPolicy({
         weekly_limit: Number(quotaDraft.weekly_limit),
@@ -131,9 +131,9 @@ function AdminRegularizationPage() {
         weekly_limit: String(saved.weekly_limit),
         monthly_limit: String(saved.monthly_limit),
       });
-      setQuotaSaved("Request limits saved. The new limits apply to future submissions immediately.");
+      success("Quota settings saved successfully.");
     } catch (saveError) {
-      setQuotaError(saveError.message || "Could not save the request limits.");
+      notifyError(saveError, { title: "Quota settings failed", fallback: "Could not save the request limits." });
     } finally {
       setQuotaSaving(false);
     }
@@ -178,7 +178,6 @@ function AdminRegularizationPage() {
             </Button>
           </Box>
           {quotaError && <Alert severity="error" sx={{ mb: 2 }}>{quotaError}</Alert>}
-          {quotaSaved && <Alert severity="success" sx={{ mb: 2 }}>{quotaSaved}</Alert>}
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2, maxWidth: 680 }}>
             <TextField
               type="number"

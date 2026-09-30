@@ -14,10 +14,16 @@ class SessionState:
     last_intent: Optional[str] = None
     employee_id: Optional[int] = None
     employee_name: Optional[str] = None
+    employee_email: Optional[str] = None
     current_date: Optional[str] = None
+    current_date_end: Optional[str] = None
     current_section: Optional[str] = None
+    current_subsection: Optional[str] = None
     current_department: Optional[str] = None
     pending_action: Optional[str] = None
+    current_request_id: Optional[int] = None
+    current_request_type: Optional[str] = None
+    current_metric: Optional[str] = None
     last_query: Optional[str] = None
     context_count: int = 0
     
@@ -70,6 +76,9 @@ class SessionMemoryManager:
         
         # Remove internal tracking fields
         context.pop('context_count', None)
+        # The previous question is useful for diagnostics but wastes scarce
+        # prompt tokens and can make a follow-up depend on stale wording.
+        context.pop('last_query', None)
         
         # Keep only relevant context
         if not context.get('employee_id') and not context.get('employee_name'):
@@ -93,16 +102,34 @@ class SessionMemoryManager:
         
         if entities.get("employee_id"):
             context["employee_id"] = entities["employee_id"]
+            try:
+                from employees.models import Employee
+                employee = Employee.objects.select_related("user").filter(pk=entities["employee_id"]).first()
+                if employee:
+                    context["employee_name"] = employee.user.get_full_name().strip() or employee.user.email
+                    context["employee_email"] = employee.user.email
+            except Exception:
+                pass
         
         if entities.get("employee_name"):
             context["employee_name"] = entities["employee_name"]
         
         if entities.get("date_range"):
-            # Store only the date, not the full range for context
             context["current_date"] = entities["date_range"].get("start")
+            context["current_date_end"] = entities["date_range"].get("end")
+
+        if entities.get("request_id"):
+            context["current_request_id"] = entities["request_id"]
+        if entities.get("intelligence_metric"):
+            context["current_metric"] = entities["intelligence_metric"]
+        elif entities.get("attendance_metric"):
+            context["current_metric"] = entities["attendance_metric"]
         
         if entities.get("section"):
             context["current_section"] = entities["section"]
+
+        if entities.get("subsection"):
+            context["current_subsection"] = entities["subsection"]
         
         if entities.get("department"):
             context["current_department"] = entities["department"]

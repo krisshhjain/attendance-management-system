@@ -1,14 +1,26 @@
 from django.conf import settings
 from django.db import models
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 
-def calculate_working_duration(events, now=None):
-    """Sum completed check-in/check-out intervals and the current open interval."""
+def attendance_day_end(target_date):
+    """Return the exclusive local boundary after an attendance date."""
+    from django.utils import timezone
+
+    return timezone.make_aware(
+        datetime.combine(target_date + timedelta(days=1), time.min),
+        timezone.get_current_timezone(),
+    )
+
+
+def calculate_working_duration(events, now=None, end_at=None):
+    """Sum intervals, bounded to the attendance date when ``end_at`` is set."""
     from django.utils import timezone
 
     if now is None:
         now = timezone.now()
+    if end_at is not None and now > end_at:
+        now = end_at
 
     working_duration = timedelta(0)
     open_check_in = None
@@ -23,10 +35,7 @@ def calculate_working_duration(events, now=None):
             open_check_in = None
 
     if open_check_in is not None and now >= open_check_in:
-        # Prevent open intervals from ticking endlessly for missed checkouts
-        # We cap the live calculation to a max of 24 hours.
-        if (now - open_check_in).total_seconds() < 24 * 3600:
-            working_duration += now - open_check_in
+        working_duration += now - open_check_in
 
     return working_duration
 
@@ -117,18 +126,7 @@ class Attendance(models.Model):
 
         # Filter events by matching the date part of timestamp (aware datetime)
         # Use simple __date lookup which works with timezone-aware datetimes
-        events = self.employee.attendance_events.filter(
-            timestamp__date=self.date
-        ).order_by("timestamp")
-
-        event_rows = list(events)
-        admin_event_types = {
-            event.event_type for event in event_rows if event.source == "ADMIN"
-        }
-        effective_events = [
-            event for event in event_rows
-            if event.source == "ADMIN" or event.event_type not in admin_event_types
-        ]
+        effective_events = get_effective_attendance_events(self.employee, self.date)
         check_in_events = [event for event in effective_events if event.event_type == "CHECK_IN"]
         check_out_events = [event for event in effective_events if event.event_type == "CHECK_OUT"]
 
@@ -158,7 +156,10 @@ class Attendance(models.Model):
         # Recompute working_duration from each event pair, excluding breaks.
         latest_event = effective_events[-1] if effective_events else None
         if self.check_in:
-            self.working_duration = calculate_working_duration(effective_events)
+            self.working_duration = calculate_working_duration(
+                effective_events,
+                end_at=attendance_day_end(self.date),
+            )
             self.status = "INCOMPLETE" if latest_event and latest_event.event_type == "CHECK_IN" else "PRESENT"
         else:
             self.working_duration = None
@@ -181,10 +182,11 @@ class Attendance(models.Model):
         This is a derived status separate from the core Attendance.status.
         """
         # If no shift assigned, return None
-        if not self.employee.shift or not self.employee.shift.is_active:
+        effective_shift = self.employee.get_effective_shift()
+        if not effective_shift or not effective_shift.is_active:
             return None
         
-        shift = self.employee.shift
+        shift = effective_shift
         first_check_in = self.check_in
         
         if not first_check_in:
@@ -297,6 +299,13 @@ class AttendanceEvent(models.Model):
         on_delete=models.CASCADE,
         related_name="attendance_events",
     )
+    correction = models.ForeignKey(
+        "AttendanceCorrection",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="attendance_events",
+    )
     shift = models.ForeignKey(
         Shift,
         on_delete=models.SET_NULL,
@@ -322,6 +331,59 @@ class AttendanceEvent(models.Model):
 
     def __str__(self):
         return f"{self.employee} - {self.event_type} at {self.timestamp}"
+
+
+def get_effective_attendance_events(employee, target_date):
+    """Return the events that currently define one attendance date.
+
+    Historical events are never deleted. Once a correction-linked event
+    exists, only events from the latest correction remain authoritative among
+    correction events; unlinked operational/admin events remain available for
+    the counterpart of a partial correction.
+    """
+    event_rows = list(
+        employee.attendance_events.filter(timestamp__date=target_date)
+        .select_related("correction")
+        .order_by("timestamp", "id")
+    )
+    correction_ids = {event.correction_id for event in event_rows if event.correction_id}
+    corrections = list(
+        AttendanceCorrection.objects.filter(
+            attendance__employee=employee,
+            attendance__date=target_date,
+        ).order_by("timestamp", "id")
+    )
+    latest_correction = corrections[-1] if corrections else None
+    latest_correction_id = latest_correction.id if latest_correction else None
+
+    if (
+        latest_correction is not None
+        and latest_correction.previous_data.get("effective_event_mode") == "REPLACE"
+        and not latest_correction.attendance_events.exists()
+    ):
+        return []
+
+    if correction_ids:
+        active_correction_events = [
+            event for event in event_rows
+            if event.correction_id == latest_correction_id
+        ]
+        unlinked_events = [event for event in event_rows if event.correction_id is None]
+        corrected_types = {event.event_type for event in active_correction_events}
+        effective_events = [
+            event for event in unlinked_events
+            if event.source == "ADMIN" or event.event_type not in corrected_types
+        ]
+        effective_events.extend(active_correction_events)
+        return sorted(effective_events, key=lambda event: (event.timestamp, event.id))
+
+    admin_event_types = {
+        event.event_type for event in event_rows if event.source == "ADMIN"
+    }
+    return [
+        event for event in event_rows
+        if event.source == "ADMIN" or event.event_type not in admin_event_types
+    ]
 
 
 class AttendanceAuditLog(models.Model):
@@ -560,6 +622,12 @@ class RegularizationRequest(models.Model):
         if final_check_in and final_check_out and final_check_out <= final_check_in:
             raise ValueError("Final check-out time must be after final check-in time.")
 
+        # Only explicitly corrected fields become correction-linked events.
+        # The other final value is retained for request metadata and is read
+        # from the historical counterpart during effective-event selection.
+        correction_check_in = approved_check_in if approved_check_in is not None else self.requested_check_in
+        correction_check_out = approved_check_out if approved_check_out is not None else self.requested_check_out
+
         with transaction.atomic():
             # Update request status
             self.status = "APPROVED"
@@ -574,7 +642,11 @@ class RegularizationRequest(models.Model):
 
             if apply_correction:
                 return self._apply_attendance_correction(
-                    reviewed_by_user, final_check_in, final_check_out
+                    reviewed_by_user,
+                    final_check_in,
+                    final_check_out,
+                    correction_check_in=correction_check_in,
+                    correction_check_out=correction_check_out,
                 )
         
         return None
@@ -601,7 +673,12 @@ class RegularizationRequest(models.Model):
         ])
     
     def _apply_attendance_correction(
-        self, reviewed_by_user, final_check_in, final_check_out
+        self,
+        reviewed_by_user,
+        final_check_in,
+        final_check_out,
+        correction_check_in=None,
+        correction_check_out=None,
     ):
         """
         Apply the regularization correction to attendance records.
@@ -633,12 +710,6 @@ class RegularizationRequest(models.Model):
                 "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
             }
             
-            # Create corrective AttendanceEvents based on request type
-            self._create_correction_events(final_check_in, final_check_out)
-            
-            # Recompute attendance from events (preserves event-based architecture)
-            attendance.recompute_from_events()
-            
             # Create audit record
             correction = AttendanceCorrection.objects.create(
                 attendance=attendance,
@@ -647,6 +718,18 @@ class RegularizationRequest(models.Model):
                 reason=f"Regularization approved: {self.reason}",
                 previous_data=previous_data,
             )
+
+            # Create corrective events linked to this exact correction.
+            self._create_correction_events(
+                final_check_in,
+                final_check_out,
+                correction=correction,
+                correction_check_in=correction_check_in,
+                correction_check_out=correction_check_out,
+            )
+
+            # Recompute attendance from effective events.
+            attendance.recompute_from_events()
             
             # Link the correction to this request
             self.attendance_correction = correction
@@ -654,7 +737,14 @@ class RegularizationRequest(models.Model):
             
             return correction
     
-    def _create_correction_events(self, check_in, check_out):
+    def _create_correction_events(
+        self,
+        check_in,
+        check_out,
+        correction,
+        correction_check_in=None,
+        correction_check_out=None,
+    ):
         """
         Create corrective AttendanceEvents based on the regularization request.
         
@@ -665,23 +755,25 @@ class RegularizationRequest(models.Model):
         shift = self.employee.get_effective_shift()
         
         # Create check-in event if requested
-        if check_in:
+        if correction_check_in:
             AttendanceEvent.objects.create(
                 employee=self.employee,
                 shift=shift,
-                timestamp=check_in,
+                timestamp=correction_check_in,
                 event_type="CHECK_IN",
                 source="ADMIN",
+                correction=correction,
             )
         
         # Create check-out event if requested
-        if check_out:
+        if correction_check_out:
             AttendanceEvent.objects.create(
                 employee=self.employee,
                 shift=shift,
-                timestamp=check_out,
+                timestamp=correction_check_out,
                 event_type="CHECK_OUT",
                 source="ADMIN",
+                correction=correction,
             )
 
 

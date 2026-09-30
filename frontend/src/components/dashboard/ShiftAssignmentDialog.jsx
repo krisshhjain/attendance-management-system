@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api.js";
+import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { getErrorMessage } from "../../feedback/errorMessage.js";
 import {
   Dialog,
   DialogTitle,
@@ -21,6 +23,7 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
   const [selectedShiftId, setSelectedShiftId] = useState("");
   const [isAssigning, setIsAssigning] = useState(false);
   const [error, setError] = useState(null);
+  const { success } = useFeedback();
 
   // Fetch available shifts
   const { data: shiftsResponse, isLoading: shiftsLoading } = useQuery({
@@ -54,9 +57,10 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
         },
       });
       
+      success("Employee shift assigned successfully.");
       onSuccess?.();
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to assign shift");
+      setError(getErrorMessage(err, "Failed to assign shift."));
     } finally {
       setIsAssigning(false);
     }

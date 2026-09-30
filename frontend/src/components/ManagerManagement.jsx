@@ -10,6 +10,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import KeyIcon from "@mui/icons-material/Key";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "../lib/api.js";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 
 const AVAILABLE_SECTIONS = ["A", "B", "C", "D", "E"];
 const AVAILABLE_SUBSECTIONS = ["A1", "A2", "B1", "B2", "C1", "C2", "C3", "D1", "D2", "E1"];
@@ -19,8 +20,7 @@ export function ManagerManagement() {
   const [editDialog, setEditDialog] = useState({ open: false, manager: null });
   const [passwordDialog, setPasswordDialog] = useState({ open: false, manager: null });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, manager: null });
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
+  const { success, notifyError } = useFeedback();
 
   const { data: managers = [], isLoading, refetch } = useQuery({
     queryKey: ["managers"],
@@ -29,28 +29,28 @@ export function ManagerManagement() {
 
   const createMutation = useMutation({
     mutationFn: (data) => apiRequest("/admin/employees/managers/", { method: "POST", body: data }),
-    onSuccess: () => { setSuccess("Manager created"); setCreateDialog(false); refetch(); },
-    onError: (err) => setError(err.message || "Failed to create manager"),
+    onSuccess: () => { success("Manager created successfully."); setCreateDialog(false); refetch(); },
+    onError: (err) => notifyError(err, { title: "Manager creation failed", fallback: "Failed to create manager." }),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => apiRequest(`/admin/employees/managers/${id}/`, { method: "PATCH", body: data }),
-    onSuccess: () => { setSuccess("Manager updated"); setEditDialog({ open: false, manager: null }); refetch(); },
-    onError: (err) => setError(err.message || "Failed to update manager"),
+    onSuccess: () => { success("Manager updated successfully."); setEditDialog({ open: false, manager: null }); refetch(); },
+    onError: (err) => notifyError(err, { title: "Manager update failed", fallback: "Failed to update manager." }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => apiRequest(`/admin/employees/managers/${id}/`, { method: "DELETE" }),
-    onSuccess: () => { setSuccess("Manager deleted"); setDeleteDialog({ open: false, manager: null }); refetch(); },
-    onError: (err) => setError(err.message || "Failed to delete manager"),
+    onSuccess: () => { success("Manager deleted successfully."); setDeleteDialog({ open: false, manager: null }); refetch(); },
+    onError: (err) => notifyError(err, { title: "Manager deletion failed", fallback: "Failed to delete manager." }),
   });
 
   const passwordMutation = useMutation({
     mutationFn: ({ id, password }) => apiRequest(`/admin/employees/managers/${id}/change-password/`, {
       method: "POST", body: { new_password: password },
     }),
-    onSuccess: () => { setSuccess("Password changed"); setPasswordDialog({ open: false, manager: null }); },
-    onError: (err) => setError(err.message || "Failed to change password"),
+    onSuccess: () => { success("Manager password changed successfully."); setPasswordDialog({ open: false, manager: null }); },
+    onError: (err) => notifyError(err, { title: "Password change failed", fallback: "Failed to change manager password." }),
   });
 
   return (
@@ -67,9 +67,6 @@ export function ManagerManagement() {
           Create Manager
         </Button>
       </Box>
-
-      {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
-      {success && <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>{success}</Alert>}
 
       <Paper elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
         <TableContainer>

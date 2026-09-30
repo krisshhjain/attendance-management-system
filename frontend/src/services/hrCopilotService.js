@@ -21,9 +21,9 @@ export function sendMessage({ message, conversationId, scope }) {
   });
 }
 
-export function respondToAction({ actionId, action }) {
+export function respondToAction({ actionId, action, conversationId }) {
   return apiRequest("/hr-copilot/actions/approve/", {
     method: "POST",
-    body: { action_id: actionId, action },
+    body: { action_id: actionId, action, conversation_id: conversationId },
   });
 }

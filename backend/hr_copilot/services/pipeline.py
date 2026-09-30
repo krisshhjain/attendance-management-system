@@ -303,6 +303,19 @@ def plan_query(intent, scope):
         _validate_absence_date_range(entities)
     if intent["intent"] == "comparison" and len(entities.get("comparison_subsections", [])) < 2:
         raise CopilotError("clarification_required", "Which two sections or sub-sections should I compare?")
+    if intent["intent"] == "attendance_intelligence" and not entities.get("attendance_metric"):
+        raise CopilotError("clarification_required", "Which attendance metric should I calculate?")
+    if intent["intent"] == "leave_regularization_intelligence" and not entities.get("intelligence_metric"):
+        raise CopilotError("clarification_required", "Which leave or regularization information should I retrieve?")
+    if intent["intent"] == "workforce_intelligence" and not entities.get("workforce_metric"):
+        raise CopilotError("clarification_required", "Which workforce information should I retrieve?")
+    if intent["intent"] == "workforce_intelligence" and entities.get("workforce_metric") == "shift_assignments":
+        # An employee-specific assignment query must resolve a target before
+        # execution; otherwise the tool returns scoped employee assignments,
+        # never the unrelated shift configuration list.
+        if entities.get("employee_name") or entities.get("employee_email"):
+            if employee_resolution["status"] != "resolved":
+                raise CopilotError("employee_not_found", "No employee matched that name or email.")
     section, subsection = entities.get("section"), entities.get("subsection")
     if not scope["unrestricted"]:
         if section and section not in scope["sections"]:
@@ -326,6 +339,9 @@ def plan_query(intent, scope):
         "scope": scope, "limit": MAX_ROWS, "employee": employee_resolution,
         "temporal_scope": entities.get("temporal_scope"),
         "aggregation": "count" if intent["intent"].endswith("count") else None,
+        "attendance_metric": entities.get("attendance_metric"),
+        "intelligence_metric": entities.get("intelligence_metric"),
+        "workforce_metric": entities.get("workforce_metric"),
     }
 
 

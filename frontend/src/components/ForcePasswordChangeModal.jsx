@@ -15,9 +15,11 @@ import LockResetIcon from "@mui/icons-material/LockReset";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { apiRequest } from "../lib/api.js";
 import { useAuth } from "../lib/auth.jsx";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 
 export function ForcePasswordChangeModal({ open }) {
-  const { logout } = useAuth();
+  const { logout, refreshUser } = useAuth();
+  const { success, notifyError } = useFeedback();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -42,10 +44,11 @@ export function ForcePasswordChangeModal({ open }) {
         method: "POST",
         body: { current_password: currentPassword, new_password: newPassword },
       });
-      // After changing password, reload so the fresh /auth/me/ profile is fetched
-      window.location.reload();
+      await refreshUser();
+      success("Password changed successfully.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to change password.");
+      notifyError(err, { title: "Password change failed", fallback: "Failed to change password." });
+    } finally {
       setLoading(false);
     }
   };

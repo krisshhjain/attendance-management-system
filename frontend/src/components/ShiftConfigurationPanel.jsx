@@ -24,12 +24,14 @@ import {
   fetchAdminShiftConfiguration,
   configureEmploymentTypeShifts,
 } from "../lib/api.js";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { getErrorMessage } from "../feedback/errorMessage.js";
 
 export function ShiftConfigurationPanel() {
   const [selectedType, setSelectedType] = useState("PERMANENT");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
+  const { success, notifyError } = useFeedback();
   const [configuration, setConfiguration] = useState({
     PERMANENT: [],
     CONTRACT: [],
@@ -51,7 +53,7 @@ export function ShiftConfigurationPanel() {
       const data = await fetchAdminShiftConfiguration();
       setConfiguration(data.configuration || {});
     } catch (err) {
-      setError(err.message || "Failed to load shift configuration");
+      setError(getErrorMessage(err, "Failed to load shift configuration."));
     } finally {
       setLoading(false);
     }
@@ -67,7 +69,6 @@ export function ShiftConfigurationPanel() {
     setEditingShifts([]);
     setHasChanges(false);
     setError(null);
-    setSuccess(null);
   };
 
   const startEditing = () => {
@@ -85,7 +86,6 @@ export function ShiftConfigurationPanel() {
     }
     setHasChanges(true); // Set to true to trigger editing mode
     setError(null);
-    setSuccess(null);
   };
 
   const addShift = () => {
@@ -110,7 +110,6 @@ export function ShiftConfigurationPanel() {
 
   const handleSave = async () => {
     setError(null);
-    setSuccess(null);
 
     // Validation
     for (let i = 0; i < editingShifts.length; i++) {
@@ -131,14 +130,12 @@ export function ShiftConfigurationPanel() {
         selectedType,
         editingShifts
       );
-      setSuccess(
-        `Successfully configured ${editingShifts.length} shift(s) for ${selectedType} employees`
-      );
+      success("Shift configuration saved successfully.");
       setEditingShifts([]);
       setHasChanges(false);
       await loadConfiguration();
     } catch (err) {
-      setError(err.message || "Failed to save shift configuration");
+      notifyError(err, { title: "Shift configuration failed", fallback: "Failed to save shift configuration." });
     } finally {
       setLoading(false);
     }
@@ -154,7 +151,6 @@ export function ShiftConfigurationPanel() {
     setEditingShifts([]);
     setHasChanges(false);
     setError(null);
-    setSuccess(null);
   };
 
   const currentShifts = configuration[selectedType] || [];
@@ -204,11 +200,6 @@ export function ShiftConfigurationPanel() {
       {error && (
         <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
           {error}
-        </Alert>
-      )}
-      {success && (
-        <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>
-          {success}
         </Alert>
       )}
 

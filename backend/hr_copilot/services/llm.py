@@ -12,21 +12,29 @@ ALLOWED_INTENTS = {
     # Read operations (existing)
     "employee_lookup", "employee_count", "employee_summary",
     "attendance_lookup", "attendance_summary", "attendance_trend",
+    "attendance_intelligence",
+    "leave_regularization_intelligence",
+    "workforce_intelligence",
     "absence_lookup", "absence_count",
     "leave_lookup", "leave_summary", "leave_trend", "comparison", "unknown",
     # Write operations (new)
     "attendance_update", "attendance_create", "attendance_delete",
     "leave_create", "leave_update", "leave_cancel", "leave_approve", "leave_deny",
     "employee_update", "bulk_attendance_update",
+    "attendance_force_checkout", "attendance_reset",
+    "regularization_create", "regularization_approve", "regularization_reject",
+    "employee_shift_assign",
+    "employee_status_update",
 }
 ALLOWED_SOURCES = {"employee", "attendance", "leave", None}
 ALLOWED_ENTITIES = {
     "section", "subsection", "comparison_subsections", "employee_type",
-    "employee_name", "employee_email", "department", "is_active", "attendance_status", "leave_status", "date_range",
-    "temporal_expression", "missing_information", "ambiguities", "operation_type",
+    "employee_id", "employee_name", "employee_email", "department", "is_active", "attendance_status", "leave_status", "date_range",
+    "temporal_expression", "missing_information", "ambiguities", "operation_type", "request_id", "regularization_status", "intelligence_metric", "workforce_metric", "access_key", "face_enrolled",
     # Write operation entities (new)
-    "action_type", "target_status", "reason", "duration_days", "leave_type", "bulk_target",
+    "action_type", "target_status", "reason", "duration_days", "leave_type", "bulk_target", "request_type", "shift_id", "shift_name", "is_active",
     "check_in_time", "check_out_time"
+                , "attendance_metric"
 }
 VALID_DATE_RANGE_KEYS = {"start", "end"}
 FINAL_ANSWER_SCHEMA = {
@@ -49,6 +57,7 @@ INTENT_SCHEMA = {
                 "subsection": {"type": "string"},
                 "comparison_subsections": {"type": "array", "items": {"type": "string"}},
                 "employee_type": {"type": "string"},
+                "employee_id": {"type": "integer"},
                 "employee_name": {"type": "string"},
                 "employee_email": {"type": "string"},
                 "department": {"type": "string"},
@@ -61,11 +70,31 @@ INTENT_SCHEMA = {
                 "operation_type": {"type": "string", "enum": ["list", "count", "summary", "trend", "lookup"]},
                 # Write operation entities
                 "target_status": {"type": "string"},
+                "request_type": {"type": "string"},
                 "reason": {"type": "string"},
                 "duration_days": {"type": "number"},
                 "leave_type": {"type": "string"},
                 "bulk_target": {"type": "string", "enum": ["section", "subsection", "department"]},
-                "check_in_time": {"type": "string"}, "check_out_time": {"type": "string"}
+                "check_in_time": {"type": "string"}, "check_out_time": {"type": "string"},
+                "shift_id": {"type": "integer"}, "shift_name": {"type": "string"}
+                , "attendance_metric": {"type": "string", "enum": [
+                    "missing_checkins", "late_employees", "working_hours",
+                    "incomplete_explanation", "absence_streaks", "summary",
+                    "period_comparison"
+                ]},
+                "intelligence_metric": {"type": "string", "enum": [
+                    "leave_balance", "leave_requests", "leave_history", "leave_summary", "leave_usage",
+                    "regularization_history", "regularization_pending", "regularization_summary",
+                    "attendance_correction_explanation", "leave_policy"
+                ]},
+                "request_id": {"type": "integer"},
+                "regularization_status": {"type": "string"}
+                , "workforce_metric": {"type": "string", "enum": [
+                    "employee_search", "employee_details", "org_counts", "manager_info", "shift_assignments",
+                    "shift_configuration", "face_enrollment", "office_locations", "employee_status", "access_status"
+                ]},
+                "access_key": {"type": "string"},
+                "face_enrolled": {"type": "boolean"}
             },
         },
         "missing_information": {"type": "array", "items": {"type": "string"}},
@@ -92,8 +121,16 @@ def get_structured_intent(question, session_id=None, context=None):
     
     # Build compact system prompt - focus only on semantic understanding
     system_content = (
-        "Extract HR semantic intent as JSON. Focus on WHAT the user wants, not backend implementation.\n"
-        "Intents: attendance_lookup, attendance_update, employee_lookup, leave_lookup, leave_create, absence_lookup\n"
+        "Extract exactly one HR semantic intent as JSON. Focus on WHAT the user wants, not backend implementation.\n"
+        "READ/WRITE RULE: questions beginning with who, what, when, where, why, how, show, list, find, is, does, did, or compare are READ requests. They must never use a write intent, must never require approval, and must never be treated as an action. Use a write intent only for an explicit command to change data such as approve, reject, cancel, create, mark, edit, assign, activate, deactivate, or force checkout.\n"
+        "Return ONLY the required JSON object. Use only the declared intent and entity enum values. Do not emit unrelated entities, guessed fields, missing-information fields for values that are not required by the selected read tool, or action fields for a read request.\n"
+        "Intents include attendance_intelligence for attendance metrics and leave_regularization_intelligence for leave/regularization read-only metrics; choose the matching metric rather than inventing a new intent.\n"
+        "Attendance metrics: missing_checkins, late_employees, working_hours, incomplete_explanation, absence_streaks, summary, period_comparison.\n"
+        "Leave/regularization metrics: leave_balance, leave_requests, leave_history, leave_summary, leave_usage, regularization_history, regularization_pending, regularization_summary, attendance_correction_explanation, leave_policy.\n"
+        "Workforce metrics: employee_search, employee_details, org_counts, manager_info, shift_assignments, shift_configuration, face_enrollment, office_locations, employee_status, access_status.\n"
+        "Supported writes: attendance_update for explicit past attendance edits, attendance_force_checkout, leave_create/leave_cancel/leave_approve/leave_deny, regularization_create/regularization_approve/regularization_reject, and employee_shift_assign. All writes require confirmation. Extract request_id, date_range, employee identity, reason, leave_type, request_type, check times, shift_id or shift_name when explicitly supplied.\n"
+        "Read mappings: 'not checked in' -> attendance_intelligence/missing_checkins; 'late' -> attendance_intelligence/late_employees; 'hours worked' -> attendance_intelligence/working_hours; 'incomplete' or 'forgot to check out' -> attendance_intelligence/incomplete_explanation; 'leave balance' -> leave_regularization_intelligence/leave_balance; 'pending leave' -> leave_regularization_intelligence/leave_requests; 'pending regularization' -> leave_regularization_intelligence/regularization_pending; employee details -> workforce_intelligence/employee_details; assigned shift -> workforce_intelligence/shift_assignments.\n"
+        "Intents: attendance_lookup, attendance_summary, attendance_trend, employee_lookup, leave_lookup, leave_create, absence_lookup\n"
         "Use attendance_update when the user asks to mark/change an employee's attendance status to PRESENT, ABSENT, or LEAVE. Keep ABSENT distinct from LEAVE; only use LEAVE for an explicit leave status. Use leave_create only when they ask to submit/file a leave request.\n"
         "Partial write actions are valid: extract every known employee/date/action field even when time or reason is missing; leave missing fields absent and report them in missing_information.\n"
         "For attendance writes, recognize employee names after mark/make/set and extract dates such as 29th September, September 29, or numeric day/month/year.\n"
@@ -175,9 +212,26 @@ def get_structured_intent(question, session_id=None, context=None):
         ("employee_type", {"PERMANENT", "CONTRACT", "INTERN"}),
         ("attendance_status", {"PRESENT", "INCOMPLETE", "LEAVE"}),
         ("leave_status", {"PENDING", "APPROVED", "DENIED", "CANCELLED"}),
+        ("regularization_status", {"PENDING", "APPROVED", "REJECTED"}),
     ):
         if key in clean and clean[key] not in choices:
             raise CopilotError("invalid_intent", "The HR intent service returned an unsupported filter.", 503)
+    if "attendance_metric" in clean and clean["attendance_metric"] not in {
+        "missing_checkins", "late_employees", "working_hours", "incomplete_explanation",
+        "absence_streaks", "summary", "period_comparison",
+    }:
+        raise CopilotError("invalid_intent", "The HR intent service returned an unsupported attendance metric.", 503)
+    if "intelligence_metric" in clean and clean["intelligence_metric"] not in {
+        "leave_balance", "leave_requests", "leave_history", "leave_summary", "leave_usage",
+        "regularization_history", "regularization_pending", "regularization_summary",
+        "attendance_correction_explanation", "leave_policy",
+    }:
+        raise CopilotError("invalid_intent", "The HR intent service returned an unsupported HR metric.", 503)
+    if "workforce_metric" in clean and clean["workforce_metric"] not in {
+        "employee_search", "employee_details", "org_counts", "manager_info", "shift_assignments",
+        "shift_configuration", "face_enrollment", "office_locations", "employee_status", "access_status",
+    }:
+        raise CopilotError("invalid_intent", "The HR intent service returned an unsupported workforce metric.", 503)
     if "is_active" in clean and not isinstance(clean["is_active"], bool):
         raise CopilotError("invalid_intent", "The HR intent service returned an invalid employee status.", 503)
     
@@ -220,60 +274,74 @@ def extract_pending_action_fields(question, required_fields):
 
 
 def generate_natural_answer(question, intent, data, session_id=None):
-    """Ask local Qwen to phrase only the verified backend result, with deterministic fallback."""
-    
-    # First try deterministic response generation (no Qwen dependency)
-    deterministic_answer = _generate_deterministic_answer(intent, data)
-    if deterministic_answer:
-        return deterministic_answer
-    
-    # If deterministic fails, try Qwen (but don't fail the entire request if Qwen is unavailable)
-    try:
-        provider = get_llm_provider()
-    except LLMProviderError:
-        # Qwen unavailable - return deterministic fallback
-        return _generate_fallback_answer(intent, data)
-    
-    if provider is None:
-        # Qwen not configured - return deterministic fallback
-        return _generate_fallback_answer(intent, data)
+    """Return a deterministic answer derived only from typed tool output.
 
-    try:
-        # Reduce data size - send only essential facts, not full records
-        compact_data = _compact_result_data(data, intent)
-        verified_result = json.dumps(compact_data, ensure_ascii=False, default=str, separators=(',', ':'))
-        
-        # Compact system prompt
-        system_content = (
-            "HR response writer. Return JSON with 'answer' key. "
-            "Use ONLY facts in VERIFIED_RESULT. Repeat names/emails/numbers exactly. "
-            "No pronouns - use verified names. No inferences beyond VERIFIED_RESULT. "
-            "Empty result = 'No matching HR records found.'"
-        )
-        
-        messages = [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": f"Q: {question}\nINTENT: {intent['intent']}\nDATA: {verified_result}"},
-        ]
-        
-        result = provider.structured_output(messages, schema=FINAL_ANSWER_SCHEMA, options={"num_predict": 96})
-        answer = result.get("answer", "").strip() if isinstance(result, dict) else ""
-        if not answer:
-            # Qwen returned invalid response - use fallback
-            return _generate_fallback_answer(intent, data)
-        
-        _validate_grounded_answer(answer, compact_data)
-        return answer
-        
-    except (LLMProviderError, Exception):
-        # Any Qwen error - return deterministic fallback
-        return _generate_fallback_answer(intent, data)
+    Qwen remains responsible for intent extraction, but result phrasing is
+    intentionally deterministic so a model response can never add facts.
+    """
+    return _deterministic_grounded_answer(intent, data)
+
+
+def _deterministic_grounded_answer(intent, data):
+    """Format only facts present in ``data`` or the number of returned rows."""
+    if not data:
+        return "No matching HR records were found."
+
+    entities = intent.get("entities", {})
+    metric = entities.get("attendance_metric") or entities.get("intelligence_metric") or entities.get("workforce_metric")
+    if metric == "shift_assignments" and len(data) == 1:
+        row = data[0]
+        name = row.get("name") or row.get("employee_name") or "The employee"
+        assigned = row.get("assigned_shift_name")
+        if not assigned:
+            return f"{name} has no shift assigned."
+        return f"{name} is assigned to the {assigned} shift."
+    if metric == "missing_checkins":
+        return f"{len(data)} employee{'s' if len(data) != 1 else ''} have not checked in today."
+    if metric == "late_employees":
+        return f"{len(data)} employee{'s' if len(data) != 1 else ''} arrived late today."
+    if metric == "working_hours":
+        row = data[0]
+        name = row.get("employee_name") or "The employee"
+        duration = row.get("total_working_duration")
+        return f"{name} worked {duration} in the requested range." if duration is not None else "Working duration is unavailable for the requested range."
+    if metric == "incomplete_explanation":
+        return data[0].get("explanation") or "The attendance record needs review."
+    if metric == "period_comparison":
+        row = data[0]
+        return f"Attendance comparison is available for the requested periods: {json.dumps(row, default=str, sort_keys=True)}."
+    if metric in {"absence_streaks", "summary", "leave_summary", "regularization_summary", "org_counts"}:
+        return f"Found {len(data)} summary row{'s' if len(data) != 1 else ''}."
+    if metric:
+        return f"Found {len(data)} result{'s' if len(data) != 1 else ''} for {metric.replace('_', ' ')}."
+
+    if len(data) == 1 and "value" in data[0]:
+        return f"The result is {data[0]['value']}."
+    source = intent.get("source") or "HR"
+    return f"Found {len(data)} {source} record{'s' if len(data) != 1 else ''}."
 
 
 def _generate_deterministic_answer(intent, data):
     """Generate deterministic responses for common cases without needing Qwen."""
     intent_name = intent.get("intent", "")
-    
+
+    if intent_name == "attendance_intelligence":
+        metric = intent.get("entities", {}).get("attendance_metric")
+        if metric == "missing_checkins":
+            return f"{len(data)} employee{'s' if len(data) != 1 else ''} have not checked in today."
+        if metric == "late_employees":
+            return f"{len(data)} employee{'s' if len(data) != 1 else ''} arrived late today."
+        if metric == "absence_streaks":
+            return f"Found {len(data)} absence streak{'s' if len(data) != 1 else ''} of at least two working days."
+        if metric == "summary":
+            return f"Attendance summary returned {len(data)} working-day row{'s' if len(data) != 1 else ''}."
+        if metric == "period_comparison":
+            return "Here is the attendance comparison for the current and previous week."
+        if metric == "working_hours" and data:
+            return f"{data[0].get('employee_name', 'The employee')} worked {data[0].get('total_working_duration', '0:00:00')} in the requested range."
+        if metric == "incomplete_explanation" and data:
+            return data[0].get("explanation", "The attendance needs review.")
+
     # Handle empty results
     if not data:
         if intent_name.startswith("absence_"):

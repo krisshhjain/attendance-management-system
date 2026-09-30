@@ -14,7 +14,10 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 import django
 django.setup()
 
-from hr_copilot.services.intent_normalizer import intent_normalizer
+import pytest
+
+from hr_copilot.services.intent_normalizer import IntentNormalizer, intent_normalizer
+from hr_copilot.services.pipeline import CopilotError
 
 
 def test_intent_normalization():
@@ -132,3 +135,11 @@ def test_intent_normalization():
 
 if __name__ == '__main__':
     test_intent_normalization()
+
+
+@pytest.mark.parametrize('intent_name', [
+    'attendance_delete', 'leave_update', 'employee_update', 'bulk_attendance_update',
+])
+def test_unsupported_write_intent_is_rejected_before_execution(intent_name):
+    with pytest.raises(CopilotError, match='not supported yet'):
+        IntentNormalizer().normalize_intent({'intent': intent_name, 'entities': {}})

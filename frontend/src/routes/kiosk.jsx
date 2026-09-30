@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Box, Typography, Button, Paper, Alert, Snackbar } from "@mui/material";
+import { Box, Typography, Button, Paper } from "@mui/material";
 import WebcamCapture from "../components/WebcamCapture.jsx";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 
 export const Route = createFileRoute("/kiosk")({
   component: Kiosk,
@@ -9,16 +10,8 @@ export const Route = createFileRoute("/kiosk")({
 
 function Kiosk() {
   const [loading, setLoading] = useState(false);
-  const [notification, setNotification] = useState({ open: false, message: "", severity: "info" });
   const [actionType, setActionType] = useState(null); // 'check-in' or 'check-out'
-
-  const handleCloseNotification = () => {
-    setNotification({ ...notification, open: false });
-  };
-
-  const showNotification = (message, severity) => {
-    setNotification({ open: true, message, severity });
-  };
+  const { success, info, notifyError } = useFeedback();
 
   const processFaceAction = async (images) => {
     if (images.length === 0 || !actionType) return;
@@ -54,10 +47,10 @@ function Kiosk() {
         throw new Error(data.error || "Action failed");
       }
       
-      showNotification(data.message, "success");
+      success(actionType === "check-in" ? "Attendance marked successfully." : "Checked out successfully.");
       
     } catch (err) {
-      showNotification(err.message, "error");
+      notifyError(err, { title: "Kiosk attendance unavailable", fallback: "Kiosk attendance could not be completed." });
     } finally {
       setLoading(false);
       setActionType(null);
@@ -85,6 +78,7 @@ function Kiosk() {
         <Box sx={{ display: "flex", justifyContent: "center", mb: 4 }}>
           <WebcamCapture 
             mode="single"
+            purpose="attendance"
             onCapture={processFaceAction}
             onCancel={() => setActionType(null)}
             isLoading={loading}
@@ -100,7 +94,7 @@ function Kiosk() {
               setActionType('check-in');
               // The button press sets the action type, but we actually need the WebcamCapture 
               // to trigger the capture. We will just show a tip.
-              showNotification("Please press 'Capture & Verify' to Check In", "info");
+              info("Press Capture & Verify to check in.");
             }}
             sx={{ px: 6, py: 2, fontSize: "1.2rem", borderRadius: 2 }}
             disabled={loading}
@@ -113,7 +107,7 @@ function Kiosk() {
             size="large"
             onClick={() => {
               setActionType('check-out');
-              showNotification("Please press 'Capture & Verify' to Check Out", "info");
+              info("Press Capture & Verify to check out.");
             }}
             sx={{ px: 6, py: 2, fontSize: "1.2rem", borderRadius: 2 }}
             disabled={loading}
@@ -123,16 +117,6 @@ function Kiosk() {
         </Box>
       </Paper>
 
-      <Snackbar 
-        open={notification.open} 
-        autoHideDuration={6000} 
-        onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert onClose={handleCloseNotification} severity={notification.severity} sx={{ width: '100%', fontSize: '1.2rem', py: 2, px: 4 }}>
-          {notification.message}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 }

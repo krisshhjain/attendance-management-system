@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
 from hr_copilot.services import conversation
+from hr_copilot.services.session_memory import SessionMemoryManager
+from hr_copilot.services import session_memory
 
 
 def test_follow_up_uses_only_structured_employee_context():
@@ -36,3 +38,50 @@ def test_context_is_saved_without_raw_question_or_response(monkeypatch):
         "current_date_context": {"type": "today"},
         "last_intent": "employee_lookup",
     }}
+
+
+def test_compact_session_context_does_not_send_raw_previous_question(monkeypatch):
+    manager = SessionMemoryManager()
+    monkeypatch.setattr(session_memory.cache, "get", lambda *_args: {
+        "last_intent": "attendance_lookup",
+        "employee_name": "Asha Rao",
+        "last_query": "Show Asha's attendance for last month",
+        "context_count": 2,
+    })
+
+    assert manager.get_compact_context("conversation-a") == {
+        "last_intent": "attendance_lookup",
+        "employee_name": "Asha Rao",
+    }
+
+
+def test_follow_up_inherits_employee_and_full_date_range():
+    intent = {"intent": "attendance_intelligence", "source": "attendance", "entities": {"attendance_metric": "working_hours"}}
+    result = conversation.apply_context(
+        "How many hours did he work?", intent,
+        {
+            "current_employee_id": 9,
+            "current_date": "2026-09-01",
+            "current_date_end": "2026-09-30",
+            "last_intent": "attendance_intelligence",
+        },
+    )
+    assert result["entities"]["employee_id"] == 9
+    assert result["entities"]["date_range"] == {"start": "2026-09-01", "end": "2026-09-30"}
+
+
+def test_relative_date_and_leave_request_reference_are_resolved():
+    intent = {"intent": "leave_approve", "source": "leave", "entities": {}}
+    result = conversation.apply_context(
+        "Approve that leave request for yesterday", intent,
+        {"current_employee_id": 9, "current_request_id": 41},
+    )
+    assert result["entities"] == {"employee_id": 9, "request_id": 41}
+
+
+def test_context_reset_removes_follow_up_facts(monkeypatch):
+    manager = SessionMemoryManager()
+    deleted = []
+    monkeypatch.setattr(session_memory.cache, "delete", lambda key: deleted.append(key))
+    manager.clear_session("conversation-reset")
+    assert deleted == ["hr_copilot_session:conversation-reset"]

@@ -23,6 +23,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api.js";
+import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
 
 const notificationsQueryKey = ["notifications"];
 const unreadNotificationsQueryKey = ["notifications", "unread"];
@@ -64,6 +65,7 @@ export function NotificationBell() {
   const queryClient = useQueryClient();
   const theme = useTheme();
   const [anchorEl, setAnchorEl] = useState(null);
+  const { notifyError } = useFeedback();
 
   const notificationsQuery = useQuery({
     queryKey: notificationsQueryKey,
@@ -110,9 +112,10 @@ export function NotificationBell() {
 
       return { previousNotifications, previousUnread };
     },
-    onError: (_error, _notificationId, context) => {
+    onError: (error, _notificationId, context) => {
       queryClient.setQueryData(notificationsQueryKey, context?.previousNotifications);
       queryClient.setQueryData(unreadNotificationsQueryKey, context?.previousUnread);
+      notifyError(error, { title: "Notification update failed", fallback: "We couldn't mark that notification as read." });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
@@ -150,9 +153,10 @@ export function NotificationBell() {
 
       return { previousNotifications, previousUnread };
     },
-    onError: (_error, _notification, context) => {
+    onError: (error, _notification, context) => {
       queryClient.setQueryData(notificationsQueryKey, context?.previousNotifications);
       queryClient.setQueryData(unreadNotificationsQueryKey, context?.previousUnread);
+      notifyError(error, { title: "Notification dismissal failed", fallback: "We couldn't dismiss that notification." });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: notificationsQueryKey });

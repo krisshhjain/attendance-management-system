@@ -11,6 +11,7 @@ import { ChatMessages } from "../components/hr-copilot/ChatMessages.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import { useOrganizationScope } from "../lib/organizationScope.jsx";
 import { fetchConversation, respondToAction, sendMessage } from "../services/hrCopilotService.js";
+import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 
 const suggestions = [
   "Show me today's attendance summary",
@@ -32,6 +33,7 @@ function HRCopilotPage() {
   const sendingRef = useRef(false);
   const conversationRef = useRef(conversation);
   const restoredPendingActions = useRef(false);
+  const { success, notifyError } = useFeedback();
 
   useEffect(() => { conversationRef.current = conversation; }, [conversation]);
 
@@ -124,7 +126,7 @@ function HRCopilotPage() {
     setBusyActionId(actionId);
     setError(null);
     try {
-      const response = await respondToAction({ actionId, action });
+      const response = await respondToAction({ actionId, action, conversationId: conversationRef.current.id });
       const updated = {
         ...conversationRef.current,
         messages: conversationRef.current.messages.map((message) => message.pendingAction?.action_id === actionId
@@ -133,8 +135,9 @@ function HRCopilotPage() {
       };
       conversationRef.current = updated;
       setConversation(updated);
+      success(action === "approve" ? "Action completed successfully." : "Action cancelled successfully.");
     } catch (actionError) {
-      setError(actionError.message || "The requested action could not be completed.");
+      notifyError(actionError, { title: "Copilot action failed", fallback: "We couldn't complete that action. Please try again." });
     } finally {
       setBusyActionId(null);
     }

@@ -9,7 +9,13 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from employees.models import Employee, FaceProfile
-from attendance.models import Attendance, AttendanceEvent, calculate_working_duration
+from attendance.models import (
+    Attendance,
+    AttendanceEvent,
+    attendance_day_end,
+    calculate_working_duration,
+    get_effective_attendance_events,
+)
 from attendance.geofence import (
     WORKPLACE_LATITUDE,
     WORKPLACE_LONGITUDE,
@@ -100,6 +106,44 @@ class RegularizationWorkflowTests(APITestCase):
         created = RegularizationRequest.objects.get(id=response.data["request_id"])
         self.assertEqual(created.status, "PENDING")
         self.assertEqual(created.employee, self.employee)
+
+    def test_approved_forgotten_checkout_creates_day_scoped_correction(self):
+        self.original_check_out_event.delete()
+        self.attendance.check_out = None
+        self.attendance.status = "INCOMPLETE"
+        self.attendance.working_duration = None
+        self.attendance.save(update_fields=["check_out", "status", "working_duration"])
+        self.request.delete()
+        request_row = RegularizationRequest.objects.create(
+            employee=self.employee,
+            attendance_date=self.attendance_date,
+            request_type="FORGOT_CHECK_OUT",
+            existing_check_in=self.check_in,
+            requested_check_out=self.check_out,
+            reason="I forgot to check out.",
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            f"/api/attendance/admin/regularization/{request_row.id}/approve/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.attendance.refresh_from_db()
+        request_row.refresh_from_db()
+        self.assertEqual(self.attendance.status, "PRESENT")
+        self.assertEqual(self.attendance.check_out, self.check_out)
+        self.assertTrue(
+            AttendanceEvent.objects.filter(
+                employee=self.employee,
+                timestamp=self.check_out,
+                event_type="CHECK_OUT",
+                source="ADMIN",
+            ).exists()
+        )
+        self.assertIsNotNone(request_row.attendance_correction)
 
     def test_weekly_quota_counts_submitted_requests_and_blocks_second(self):
         self.request.status = "REJECTED"
@@ -242,6 +286,117 @@ class RegularizationWorkflowTests(APITestCase):
             datetime.fromisoformat(self.request.attendance_correction.previous_data["check_in"]),
             self.check_in,
         )
+
+    def _approve_request(self, check_in=None, check_out=None, reason="Correction"):
+        RegularizationRequest.objects.filter(
+            employee=self.employee,
+            attendance_date=self.attendance_date,
+            status="PENDING",
+        ).delete()
+        request_row = RegularizationRequest.objects.create(
+            employee=self.employee,
+            attendance_date=self.attendance_date,
+            request_type="INCORRECT_ATTENDANCE",
+            existing_check_in=self.attendance.check_in,
+            existing_check_out=self.attendance.check_out,
+            requested_check_in=check_in,
+            requested_check_out=check_out,
+            reason=reason,
+        )
+        correction = request_row.approve(
+            self.admin_user,
+            approved_check_in=check_in,
+            approved_check_out=check_out,
+        )
+        self.attendance.refresh_from_db()
+        return request_row, correction
+
+    def test_both_times_correction_is_the_only_effective_interval(self):
+        corrected_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(10, 0)))
+        corrected_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(18, 0)))
+
+        request_row, correction = self._approve_request(corrected_in, corrected_out)
+
+        self.assertEqual(self.attendance.check_in, corrected_in)
+        self.assertEqual(self.attendance.check_out, corrected_out)
+        self.assertEqual(self.attendance.working_duration, timedelta(hours=8))
+        self.assertEqual(
+            list(get_effective_attendance_events(self.employee, self.attendance_date)),
+            list(correction.attendance_events.order_by("timestamp", "id")),
+        )
+        self.assertEqual(request_row.attendance_correction, correction)
+
+    def test_repeated_corrections_use_only_the_latest_approved_correction(self):
+        first_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(10, 0)))
+        first_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(18, 0)))
+        second_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(11, 0)))
+        second_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(19, 0)))
+
+        _, first_correction = self._approve_request(first_in, first_out, "First correction")
+        _, second_correction = self._approve_request(second_in, second_out, "Second correction")
+
+        self.assertEqual(self.attendance.working_duration, timedelta(hours=8))
+        self.assertEqual(self.attendance.check_in, second_in)
+        self.assertEqual(self.attendance.check_out, second_out)
+        effective = get_effective_attendance_events(self.employee, self.attendance_date)
+        self.assertTrue(effective)
+        self.assertTrue(all(event.correction_id == second_correction.id for event in effective))
+        self.assertTrue(first_correction.attendance_events.exists())
+        self.assertEqual(AttendanceEvent.objects.filter(employee=self.employee).count(), 6)
+
+    def test_check_in_only_correction_retains_historical_checkout(self):
+        corrected_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(10, 0)))
+
+        self._approve_request(corrected_in, None, "Correct check-in")
+
+        self.assertEqual(self.attendance.check_in, corrected_in)
+        self.assertEqual(self.attendance.check_out, self.check_out)
+        self.assertEqual(self.attendance.working_duration, timedelta(hours=7))
+
+    def test_check_out_only_correction_retains_historical_checkin(self):
+        corrected_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(18, 0)))
+
+        self._approve_request(None, corrected_out, "Correct check-out")
+
+        self.assertEqual(self.attendance.check_in, self.check_in)
+        self.assertEqual(self.attendance.check_out, corrected_out)
+        self.assertEqual(self.attendance.working_duration, timedelta(hours=9))
+
+    def test_multiple_cycles_are_replaced_by_latest_both_times_correction(self):
+        AttendanceEvent.objects.all().delete()
+        first_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(9, 0)))
+        first_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(13, 0)))
+        second_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(14, 0)))
+        second_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(17, 0)))
+        AttendanceEvent.objects.bulk_create([
+            AttendanceEvent(employee=self.employee, timestamp=first_in, event_type="CHECK_IN", source="MOBILE"),
+            AttendanceEvent(employee=self.employee, timestamp=first_out, event_type="CHECK_OUT", source="MOBILE"),
+            AttendanceEvent(employee=self.employee, timestamp=second_in, event_type="CHECK_IN", source="MOBILE"),
+            AttendanceEvent(employee=self.employee, timestamp=second_out, event_type="CHECK_OUT", source="MOBILE"),
+        ])
+        self.attendance.check_in = first_in
+        self.attendance.check_out = second_out
+        self.attendance.status = "PRESENT"
+        self.attendance.save(update_fields=["check_in", "check_out", "status"])
+
+        corrected_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(10, 0)))
+        corrected_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(18, 0)))
+        self._approve_request(corrected_in, corrected_out, "Replace cycles")
+
+        self.assertEqual(self.attendance.working_duration, timedelta(hours=8))
+        self.assertEqual(AttendanceEvent.objects.filter(employee=self.employee).count(), 6)
+
+    def test_api_duration_uses_same_effective_events_as_persisted_duration(self):
+        corrected_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(10, 0)))
+        corrected_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(18, 0)))
+        self._approve_request(corrected_in, corrected_out, "API duration")
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.get("/api/attendance/history/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(item for item in response.data if str(item["date"]) == self.attendance_date.isoformat())
+        self.assertEqual(row["working_duration"], timedelta(hours=8))
 
     def test_admin_cannot_approve_with_invalid_final_times(self):
         self.client.force_authenticate(user=self.admin_user)
@@ -2095,6 +2250,144 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertIsNotNone(attendance.check_in)
         self.assertIsNone(attendance.check_out)
 
+    def test_forgotten_checkout_is_detected_without_creating_checkout(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        check_in = timezone.make_aware(
+            datetime.combine(yesterday, datetime_time(9, 0)),
+            timezone.get_current_timezone(),
+        )
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=yesterday,
+            check_in=check_in,
+            status="INCOMPLETE",
+        )
+
+        response = self.client.get("/api/attendance/today/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        warning = response.data["previous_incomplete_attendance"]
+        self.assertEqual(str(warning["date"]), yesterday.isoformat())
+        self.assertTrue(warning["needs_regularization"])
+        self.assertEqual(
+            AttendanceEvent.objects.filter(employee=self.employee, event_type="CHECK_OUT").count(),
+            0,
+        )
+
+    def test_next_day_checkin_stays_separate_from_forgotten_checkout(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        yesterday_check_in = timezone.now() - timedelta(days=1)
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=yesterday_check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=yesterday,
+            check_in=yesterday_check_in,
+            status="INCOMPLETE",
+        )
+
+        response = self.client.post(
+            "/api/attendance/check-in/",
+            self.valid_location,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        today = timezone.localdate()
+        self.assertTrue(Attendance.objects.filter(employee=self.employee, date=today).exists())
+        self.assertIsNone(
+            Attendance.objects.get(employee=self.employee, date=yesterday).check_out
+        )
+        self.assertEqual(
+            AttendanceEvent.objects.filter(employee=self.employee).count(),
+            2,
+        )
+
+    def test_persisted_and_dynamic_duration_share_date_bounded_rules(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        start = timezone.make_aware(
+            datetime.combine(yesterday, datetime_time(9, 0)),
+            timezone.get_current_timezone(),
+        )
+        observed_now = timezone.make_aware(
+            datetime.combine(yesterday + timedelta(days=1), datetime_time(10, 0)),
+            timezone.get_current_timezone(),
+        )
+        event = AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=start,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=yesterday,
+            check_in=start,
+            status="INCOMPLETE",
+        )
+
+        with patch("django.utils.timezone.now", return_value=observed_now):
+            attendance.recompute_from_events()
+        dynamic_duration = calculate_working_duration(
+            [event],
+            now=observed_now,
+            end_at=attendance_day_end(yesterday),
+        )
+
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.working_duration, dynamic_duration)
+        self.assertEqual(dynamic_duration, timedelta(hours=15))
+
+    def test_day_two_checkout_does_not_close_day_one(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        yesterday_check_in = timezone.now() - timedelta(days=1)
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=yesterday_check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        yesterday_attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=yesterday,
+            check_in=yesterday_check_in,
+            status="INCOMPLETE",
+        )
+        today_attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=timezone.localdate(),
+            check_in=timezone.now() - timedelta(minutes=10),
+            status="INCOMPLETE",
+        )
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=today_attendance.check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+
+        response = self.client.post(
+            "/api/attendance/check-out/",
+            self.valid_location,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        yesterday_attendance.refresh_from_db()
+        today_attendance.refresh_from_db()
+        self.assertIsNone(yesterday_attendance.check_out)
+        self.assertIsNotNone(today_attendance.check_out)
+
     def test_open_interval_after_checkout_includes_only_current_interval(self):
         """A current check-in adds to completed intervals without counting the break."""
         today = timezone.localdate()
@@ -2151,6 +2444,88 @@ class EventBasedAttendanceTests(APITestCase):
 # ---------------------------------------------------------------------------
 
 from attendance.models import Shift
+
+
+class AdminForceCheckoutTests(APITestCase):
+    def setUp(self):
+        self.target_date = timezone.localdate()
+        self.admin = User.objects.create_user(
+            email="force-checkout.admin@example.com",
+            password="password123",
+            is_staff=True,
+        )
+        self.employee_user = User.objects.create_user(
+            email="force-checkout.employee@example.com",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            user=self.employee_user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=self.target_date,
+            is_active=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def _timestamp(self, hour):
+        return timezone.make_aware(
+            datetime.combine(self.target_date, datetime_time(hour, 0)),
+            timezone.get_current_timezone(),
+        )
+
+    def test_force_checkout_uses_latest_event_for_reopened_attendance(self):
+        first_check_in = self._timestamp(9)
+        first_check_out = self._timestamp(12)
+        second_check_in = self._timestamp(13)
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=first_check_in, event_type="CHECK_IN")
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=first_check_out, event_type="CHECK_OUT")
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=second_check_in, event_type="CHECK_IN")
+        attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=self.target_date,
+            check_in=first_check_in,
+            check_out=first_check_out,
+            status="INCOMPLETE",
+        )
+
+        response = self.client.post("/api/admin/force-checkout/", {
+            "employee": self.employee_user.email,
+            "date": self.target_date.isoformat(),
+        }, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["count"], 1)
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.status, "PRESENT")
+        self.assertEqual(
+            AttendanceEvent.objects.filter(employee=self.employee).count(),
+            4,
+        )
+
+    def test_force_checkout_all_processes_only_currently_open_intervals(self):
+        check_in = self._timestamp(9)
+        check_out = self._timestamp(12)
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=check_in, event_type="CHECK_IN")
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=check_out, event_type="CHECK_OUT")
+        Attendance.objects.create(
+            employee=self.employee,
+            date=self.target_date,
+            check_in=check_in,
+            check_out=check_out,
+            status="PRESENT",
+        )
+
+        response = self.client.post("/api/admin/force-checkout/", {
+            "all": True,
+            "date": self.target_date.isoformat(),
+        }, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["count"], 0)
+        self.assertEqual(
+            AttendanceEvent.objects.filter(employee=self.employee).count(),
+            2,
+        )
 
 
 class ShiftAssignmentTests(APITestCase):

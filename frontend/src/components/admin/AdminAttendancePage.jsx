@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Alert,
   Box,
   Button,
   Dialog,
@@ -13,7 +12,6 @@ import {
   MenuItem,
   Paper,
   Select,
-  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -27,6 +25,7 @@ import DownloadIcon from "@mui/icons-material/Download";
 import { editAdminAttendance, forceAdminCheckout, getAdminAttendance, resetAdminAttendance } from "../../lib/attendance.js";
 import { formatDuration, formatTime } from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
+import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
 
 function todayISO() {
   const date = new Date();
@@ -79,8 +78,7 @@ export function AdminAttendancePage({ allowReset = false }) {
   const [resetRecord, setResetRecord] = useState(null);
   const [reason, setReason] = useState("");
   const [editFields, setEditFields] = useState({ status: "", check_in: "", check_out: "" });
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const { success, notifyError } = useFeedback();
   const { data: response, isLoading, isError, refetch } = useQuery({
     queryKey: ["adminAttendance", selectedDate],
     queryFn: () => getAdminAttendance(selectedDate),
@@ -96,26 +94,26 @@ export function AdminAttendancePage({ allowReset = false }) {
       .some((value) => value.toLowerCase().includes(query));
   }), [records, searchQuery, statusFilter]);
 
-  const refreshAfterMutation = async () => {
+  const refreshAfterMutation = async (message) => {
     await refetch();
-    setSuccessMessage("Attendance updated successfully.");
+    success(message);
   };
 
   const handleCheckout = async (record) => {
     try {
       await forceAdminCheckout({ employee: record.employee, date: selectedDate });
-      await refreshAfterMutation();
+      await refreshAfterMutation("Checked out successfully.");
     } catch (error) {
-      setErrorMessage(error.message || "Could not force checkout.");
+      notifyError(error, { title: "Checkout failed", fallback: "Could not force checkout." });
     }
   };
 
   const handleCheckoutAll = async () => {
     try {
       await forceAdminCheckout({ all: true, date: selectedDate });
-      await refreshAfterMutation();
+      await refreshAfterMutation("Employees checked out successfully.");
     } catch (error) {
-      setErrorMessage(error.message || "Could not checkout all employees.");
+      notifyError(error, { title: "Checkout failed", fallback: "Could not checkout all employees." });
     }
   };
 
@@ -136,9 +134,9 @@ export function AdminAttendancePage({ allowReset = false }) {
         check_out: editFields.check_out ? new Date(`${editRecord.date}T${editFields.check_out}:00`).toISOString() : "",
       });
       setEditRecord(null);
-      await refreshAfterMutation();
+      await refreshAfterMutation("Attendance updated successfully.");
     } catch (error) {
-      setErrorMessage(error.message || "Could not edit attendance.");
+      notifyError(error, { title: "Attendance update failed", fallback: "Could not edit attendance." });
     }
   };
 
@@ -146,9 +144,9 @@ export function AdminAttendancePage({ allowReset = false }) {
     try {
       await resetAdminAttendance({ employee: resetRecord.employee, reason, reset_type: "both" });
       setResetRecord(null);
-      await refreshAfterMutation();
+      await refreshAfterMutation("Attendance reset successfully.");
     } catch (error) {
-      setErrorMessage(error.message || "Could not reset attendance.");
+      notifyError(error, { title: "Attendance reset failed", fallback: "Could not reset attendance." });
     }
   };
 
@@ -183,8 +181,6 @@ export function AdminAttendancePage({ allowReset = false }) {
 
       <Dialog open={Boolean(editRecord)} onClose={() => setEditRecord(null)} maxWidth="sm" fullWidth><DialogTitle>Edit Attendance</DialogTitle><DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}><FormControl fullWidth size="small"><InputLabel>Status</InputLabel><Select value={editFields.status} label="Status" onChange={(event) => setEditFields({ ...editFields, status: event.target.value })}><MenuItem value="PRESENT">Present</MenuItem><MenuItem value="INCOMPLETE">Incomplete</MenuItem><MenuItem value="LEAVE">Leave</MenuItem></Select></FormControl><Box sx={{ display: "flex", gap: 2 }}><TextField fullWidth type="time" label="Check In" value={editFields.check_in} onChange={(event) => setEditFields({ ...editFields, check_in: event.target.value })} InputLabelProps={{ shrink: true }} /><TextField fullWidth type="time" label="Check Out" value={editFields.check_out} onChange={(event) => setEditFields({ ...editFields, check_out: event.target.value })} InputLabelProps={{ shrink: true }} /></Box><TextField fullWidth multiline rows={2} label="Reason for correction" value={reason} onChange={(event) => setReason(event.target.value)} /></DialogContent><DialogActions><Button onClick={() => setEditRecord(null)}>Cancel</Button><Button variant="contained" onClick={handleEdit} disabled={!reason.trim()}>Save Changes</Button></DialogActions></Dialog>
       <Dialog open={Boolean(resetRecord)} onClose={() => setResetRecord(null)} maxWidth="sm" fullWidth><DialogTitle>Reset Attendance</DialogTitle><DialogContent sx={{ pt: 2 }}><TextField fullWidth multiline rows={3} label="Reason for reset" value={reason} onChange={(event) => setReason(event.target.value)} /></DialogContent><DialogActions><Button onClick={() => setResetRecord(null)}>Cancel</Button><Button variant="contained" color="error" onClick={handleReset} disabled={!reason.trim()}>Reset Attendance</Button></DialogActions></Dialog>
-      <Snackbar open={Boolean(successMessage)} autoHideDuration={4000} onClose={() => setSuccessMessage("")}><Alert severity="success" onClose={() => setSuccessMessage("")}>{successMessage}</Alert></Snackbar>
-      <Snackbar open={Boolean(errorMessage)} autoHideDuration={5000} onClose={() => setErrorMessage("")}><Alert severity="error" onClose={() => setErrorMessage("")}>{errorMessage}</Alert></Snackbar>
     </Box>
   );
 }

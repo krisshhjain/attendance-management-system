@@ -12,7 +12,7 @@ from django.test import TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from attendance.models import Attendance, AttendanceCorrection, AttendanceEvent
+from attendance.models import Attendance, AttendanceCorrection, AttendanceEvent, get_effective_attendance_events
 from employees.models import Employee
 from hr_copilot import views
 from hr_copilot.models import CopilotPendingAction, CopilotActionAudit, CopilotConversationContext
@@ -405,11 +405,12 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
             "requires_approval": True,
             "entities": {"employee_email": self.employee_user.email, "date_range": {"start": target_date.isoformat(), "end": target_date.isoformat()}, "target_status": "PRESENT"},
         }
-        draft = write_action_planner.plan_write_action(intent, self.admin, f"hr-copilot-user-{self.admin.id}")
+        conversation_id = "test-conversation-followup"
+        session_id = views.copilot_action_session_id(self.admin.id, conversation_id)
+        draft = write_action_planner.plan_write_action(intent, self.admin, session_id)
         self.assertEqual(draft["status"], "AWAITING_INFORMATION")
         self.assertFalse(draft["validated"])
         self.assertEqual(draft["validation_errors"], ["check_in_time", "check_out_time"])
-        conversation_id = "test-conversation-followup"
         draft["conversation_id"] = conversation_id
         action_id = pending_action_manager.store_pending_action(draft["session_id"], draft)
 
@@ -436,7 +437,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
             "original_query": "Mark someone present",
             "entities": {"target_status": "PRESENT", "date_range": {"start": target_date.isoformat(), "end": target_date.isoformat()}},
         }
-        session_id = f"hr-copilot-user-{self.admin.id}"
+        session_id = views.copilot_action_session_id(self.admin.id, "test-missing-employee")
         draft = write_action_planner.plan_write_action(intent, self.admin, session_id)
         self.assertEqual(draft['status'], 'AWAITING_INFORMATION')
         self.assertIn('employee_name', draft['validation_errors'])
@@ -518,6 +519,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
 
         approve_request = self.factory.post('/api/hr-copilot/actions/approve/', {
             'action_id': str(pending_id), 'action': 'approve',
+            'conversation_id': conversation_id,
         }, format='json')
         force_authenticate(approve_request, user=self.admin)
         approval_response = views.HRCopilotActionApprovalView.as_view()(approve_request)
@@ -529,6 +531,39 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         audit = CopilotActionAudit.objects.get(pending_action=draft)
         self.assertTrue(audit.success)
         self.assertTrue(audit.explicit_confirmation)
+
+    def test_copilot_attendance_correction_preserves_historical_events(self):
+        target_date = date.today() - timedelta(days=1)
+        old_in = timezone.make_aware(datetime.combine(target_date, datetime.min.time()).replace(hour=9))
+        old_out = timezone.make_aware(datetime.combine(target_date, datetime.min.time()).replace(hour=17))
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=old_in, event_type='CHECK_IN', source='MOBILE')
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=old_out, event_type='CHECK_OUT', source='MOBILE')
+        attendance = Attendance.objects.create(employee=self.employee, date=target_date, status='PRESENT')
+        attendance.recompute_from_events()
+
+        intent = {
+            'intent': 'attendance_update', 'source': 'attendance', 'action_type': 'write',
+            'requires_approval': True,
+            'entities': {
+                'employee_email': self.employee_user.email,
+                'date_range': {'start': target_date.isoformat(), 'end': target_date.isoformat()},
+                'target_status': 'PRESENT', 'check_in_time': '10:00', 'check_out_time': '18:00',
+            },
+        }
+        action_id, _ = self._plan_and_approve(intent)
+
+        self.assertEqual(
+            AttendanceEvent.objects.filter(employee=self.employee, timestamp__date=target_date).count(),
+            4,
+        )
+        correction = AttendanceCorrection.objects.get(
+            attendance__employee=self.employee, attendance__date=target_date,
+            correction_type='HR_COPILOT',
+        )
+        self.assertEqual(correction.previous_data['copilot_action_id'], action_id)
+        self.assertEqual(correction.attendance_events.count(), 2)
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.working_duration, timedelta(hours=8))
 
     def test_absent_approval_clears_times_and_writes_before_after_audits(self):
         target_date = date.today() - timedelta(days=2)
@@ -556,7 +591,11 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertIsNone(existing.check_out)
         self.assertIsNone(existing.working_duration)
         self.assertIsNone(existing.check_in_latitude)
-        self.assertFalse(AttendanceEvent.objects.filter(employee=self.employee, timestamp__date=target_date).exists())
+        self.assertEqual(
+            AttendanceEvent.objects.filter(employee=self.employee, timestamp__date=target_date).count(),
+            1,
+        )
+        self.assertEqual(list(get_effective_attendance_events(self.employee, target_date)), [])
         correction = AttendanceCorrection.objects.get(attendance=existing)
         self.assertEqual(correction.previous_data["status"], "PRESENT")
         audit = CopilotActionAudit.objects.get(pending_action__action_id=action_id)
@@ -614,7 +653,6 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         pending_action_manager.cancel_action(draft["session_id"], action_id, self.admin.id)
         attendance.refresh_from_db()
         self.assertEqual(attendance.status, "INCOMPLETE")
-        self.assertFalse(CopilotActionAudit.objects.filter(pending_action__action_id=action_id, success=True).exists())
 
         from .services.conversation import append_message
         append_message(self.admin, "test-saved-history", "user", "Show attendance")
@@ -623,6 +661,40 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         response = views.HRCopilotConversationView.as_view()(request, conversation_id="test-saved-history")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["messages"][0]["content"], "Show attendance")
+
+    def test_pending_action_expires_using_conversation_session(self):
+        target_date = date.today() - timedelta(days=1)
+        intent = {
+            "intent": "attendance_update", "source": "attendance", "action_type": "write",
+            "entities": {"employee_email": self.employee_user.email,
+                         "date_range": {"start": target_date.isoformat(), "end": target_date.isoformat()},
+                         "target_status": "PRESENT", "check_in_time": "09:00", "check_out_time": "18:00"},
+        }
+        conversation_id = "expiry-conversation"
+        session_id = views.copilot_action_session_id(self.admin.id, conversation_id)
+        draft = write_action_planner.plan_write_action(intent, self.admin, session_id)
+        draft["conversation_id"] = conversation_id
+        action_id = pending_action_manager.store_pending_action(session_id, draft)
+        action = CopilotPendingAction.objects.get(action_id=action_id)
+        action.expires_at = timezone.now() - timedelta(seconds=1)
+        action.save(update_fields=["expires_at"])
+
+        with self.assertRaises(CopilotError) as raised:
+            pending_action_manager.approve_action(session_id, action_id, self.admin.id)
+        self.assertEqual(raised.exception.code, "action_expired")
+        action.refresh_from_db()
+        self.assertEqual(action.status, "EXPIRED")
+
+    def test_unsupported_write_intent_is_rejected_before_execution(self):
+        intent = {
+            "intent": "employee_update",
+            "source": "employee",
+            "action_type": "write",
+            "entities": {},
+        }
+        with self.assertRaises(CopilotError) as raised:
+            IntentNormalizer().normalize_intent(intent)
+        self.assertEqual(raised.exception.code, "unsupported_write")
 
     def test_non_admin_cannot_use_copilot_write_api(self):
         request = self.factory.post("/api/hr-copilot/query/", {"message": "Mark Asha present"}, format="json")

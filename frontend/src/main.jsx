@@ -4,6 +4,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router.jsx";
 import CssBaseline from "@mui/material/CssBaseline";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
+import { FeedbackProvider } from "./feedback/FeedbackProvider.jsx";
 
 const router = getRouter();
 
@@ -160,7 +161,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <StrictMode>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <RouterProvider router={router} />
+      <FeedbackProvider>
+        <RouterProvider router={router} />
+      </FeedbackProvider>
     </ThemeProvider>
   </StrictMode>,
 );

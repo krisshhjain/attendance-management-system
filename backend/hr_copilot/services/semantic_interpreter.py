@@ -45,10 +45,30 @@ class SemanticInterpreter:
         structured_intent = get_structured_intent(question, session_id=session_id, context=context)
         if not structured_intent:
             raise CopilotError("llm_unavailable", "Natural language processing is not available.")
+
+        # Preserve one typed read intent even when a provider or test double
+        # returns a legacy employee/leave intent alongside a domain metric.
+        entities = structured_intent.get("entities") or {}
+        if entities.get("workforce_metric") and structured_intent.get("intent") in {
+            "employee_lookup", "employee_summary", "employee_count",
+        }:
+            structured_intent["intent"] = "workforce_intelligence"
+        if entities.get("intelligence_metric") and structured_intent.get("intent") in {
+            "leave_lookup", "leave_summary", "leave_trend",
+        }:
+            structured_intent["intent"] = "leave_regularization_intelligence"
         
         # Apply conversation context
         if context:
             structured_intent = self._apply_conversation_context(structured_intent, context, question)
+
+        # Resolve common relative dates deterministically so follow-ups do not
+        # depend on the provider emitting a temporal entity.
+        entities = structured_intent.setdefault("entities", {})
+        if not entities.get("date_range") and not entities.get("temporal_expression"):
+            relative = re.search(r"\b(yesterday|today|last week|this week|this month|last month)\b", question, re.IGNORECASE)
+            if relative:
+                entities["temporal_expression"] = relative.group(1).lower()
         
         # Resolve temporal expressions to actual dates
         self._resolve_temporal_expressions(structured_intent)
@@ -80,20 +100,48 @@ class SemanticInterpreter:
         if re.search(r"\b(br|business region)\b", lower):
             raise CopilotError("unsupported_entity", "BR is not represented in the current HR data model.")
         
-        if re.search(r"\bleave\s+balances?\b", lower):
-            raise CopilotError("unsupported_metric", "Leave balances use policy calculations and are not supported by this Copilot query version.")
     
     def _apply_conversation_context(self, intent: Dict[str, Any], context: Dict[str, Any], question: str) -> Dict[str, Any]:
         """Apply conversation context for follow-up questions."""
-        entities = intent.get("entities", {})
+        entities = dict(intent.get("entities") or {})
+
+        current_employee_id = context.get("current_employee_id") or context.get("employee_id")
+        explicit_email = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", question or "", re.IGNORECASE)
+        explicit_id = entities.get("employee_id") or re.search(
+            r"\b(?:employee\s+)?(?:id|#)\s*(\d+)\b", question or "", re.IGNORECASE,
+        )
+
+        # Explicit identity in the current turn always wins. This prevents a
+        # previous employee from swallowing a deliberate context switch.
+        if explicit_email or explicit_id:
+            intent["entities"] = entities
+            return intent
+
+        # If the model extracted a name, reuse the current employee only when
+        # that name clearly refers to the established employee. A different
+        # name remains eligible for fresh, ambiguity-safe resolution.
+        if current_employee_id and entities.get("employee_name"):
+            current = Employee.objects.select_related("user").filter(pk=current_employee_id).first()
+            requested = str(entities["employee_name"]).strip().casefold()
+            current_names = set()
+            if current:
+                current_names = {
+                    current.user.first_name.casefold(),
+                    current.user.last_name.casefold(),
+                    current.user.get_full_name().strip().casefold(),
+                    current.user.email.casefold(),
+                }
+            if requested in current_names:
+                entities["employee_id"] = current_employee_id
+                entities.pop("employee_name", None)
 
         # Handle pronoun references to previous employee
-        follow_up_reference = re.compile(r"\b(?:he|she|they|them|that employee|the employee)\b", re.IGNORECASE)
-        if (context.get("current_employee_id") and 
+        follow_up_reference = re.compile(r"\b(?:he|she|they|them|him|her|his|their|that employee|the employee|this employee)\b", re.IGNORECASE)
+        if (current_employee_id and
             not entities.get("employee_name") and 
             not entities.get("employee_email") and 
             follow_up_reference.search(question)):
-            entities["employee_id"] = context["current_employee_id"]
+            entities["employee_id"] = current_employee_id
         
         # Inherit temporal context for relative references
         relative_temporal = re.search(r"\b(?:what about|how about)\s+(?:yesterday|today|last week|this month)\b", question.lower())
@@ -310,7 +358,18 @@ class SemanticInterpreter:
         
         # Check for employee name ambiguity
         employee_name = entities.get("employee_name")
-        if employee_name and not entities.get("employee_email"):
+        employee_email = entities.get("employee_email")
+        if employee_email and not entities.get("employee_id"):
+            from .employee_resolver import employee_resolver
+            resolution = employee_resolver.resolve_employee(email=employee_email)
+            if resolution.status == "resolved":
+                entities["employee_id"] = resolution.employee_id
+                entities.pop("employee_email", None)
+            elif resolution.status == "not_found":
+                missing_info = intent.setdefault("missing_information", [])
+                if "employee_identity" not in missing_info:
+                    missing_info.append("employee_identity")
+        elif employee_name and not employee_email:
             from .employee_resolver import employee_resolver
             resolution = employee_resolver.resolve_employee(name=employee_name)
             
