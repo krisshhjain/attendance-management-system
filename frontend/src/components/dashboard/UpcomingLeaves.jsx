@@ -1,32 +1,12 @@
 import { Box, Paper, Typography, Divider, useTheme } from "@mui/material";
 import EventNoteIcon from '@mui/icons-material/EventNote';
 import CelebrationIcon from '@mui/icons-material/Celebration';
-
-const UPCOMING_LEAVES = [
-  { name: "New Year", date: "01-01-2026", color: "#ec4899" }, // pink
-  { name: "Republic Day", date: "26-01-2026", color: "#3b82f6" }, // blue
-  { name: "Holi", date: "04-03-2026", color: "#8b5cf6" }, // purple
-  { name: "Eid-Ul-fitr", date: "20-03-2026", color: "#10b981" }, // green
-  { name: "Good Friday", date: "03-04-2026", color: "#f59e0b" }, // amber
-  { name: "Gandhi Jayanti", date: "02-10-2026", color: "#6366f1" }, // indigo
-  { name: "Dussehra", date: "20-10-2026", color: "#ef4444" }, // red
-  { name: "Govardhan Puja", date: "09-11-2026", color: "#14b8a6" }, // teal
-  { name: "Christmas", date: "25-12-2026", color: "#22c55e" }, // green
-];
+import { getUpcomingHolidays } from "../../data/holidayCalendar.js";
 
 export function UpcomingLeaves() {
   const theme = useTheme();
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const futureLeaves = UPCOMING_LEAVES.map(leave => {
-    const [day, month, year] = leave.date.split("-");
-    const parsedDate = new Date(year, month - 1, day);
-    return { ...leave, parsedDate };
-  })
-  .filter(leave => leave.parsedDate >= today)
-  .sort((a, b) => a.parsedDate - b.parsedDate);
+  const futureLeaves = getUpcomingHolidays();
 
   return (
     <Paper
