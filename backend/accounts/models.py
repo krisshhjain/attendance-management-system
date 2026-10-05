@@ -39,3 +39,35 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+
+
+class ManagerScope(models.Model):
+    SECTION = "SECTION"
+    DEPARTMENT = "DEPARTMENT"
+    SCOPE_TYPES = (
+        (SECTION, "Section"),
+        (DEPARTMENT, "Department"),
+    )
+
+    manager = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="manager_scopes",
+    )
+    scope_type = models.CharField(max_length=20, choices=SCOPE_TYPES)
+    value = models.CharField(max_length=100)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("manager", "scope_type", "value"),
+                name="unique_manager_scope_value",
+            ),
+        ]
+        ordering = ("scope_type", "value", "id")
+
+    def __str__(self):
+        return f"{self.manager.email}: {self.scope_type}={self.value}"

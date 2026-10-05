@@ -107,6 +107,7 @@ function RegularizationPage() {
   const [days, setDays] = useState({});
   const cutoff = new Date(TODAY()); cutoff.setDate(cutoff.getDate() - 2);
   const cutoffString = localDateString(cutoff);
+  const currentWeekStart = weekStart(TODAY());
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -286,11 +287,13 @@ function RegularizationPage() {
           ) : generatedPeriodDates.map((date) => {
             const day = days[date] || {};
             const attendance = attendanceByDate[date];
-            const eligible = date >= cutoffString && !pendingDates.has(date);
+            const isMultiDay = periodType === "WEEK" || periodType === "MONTH";
+            const dateEligible = isMultiDay ? date >= currentWeekStart : date >= cutoffString;
+            const eligible = dateEligible && !pendingDates.has(date);
             return <Paper key={date} data-attendance-date={date} variant="outlined" sx={{ p: 2, minWidth: 0 }}>
               <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1, alignItems: "center", mb: 1 }}>
                 <Typography fontWeight={700}>{dateLabel(date)}</Typography>
-                {!eligible && <Chip size="small" color="warning" label={pendingDates.has(date) ? "Pending request" : "Outside 48 hours"} />}
+                {!eligible && <Chip size="small" color="warning" label={pendingDates.has(date) ? "Pending request" : "Outside allowed window"} />}
                 <Chip size="small" variant="outlined" label={attendance ? attendance.status : "No attendance row"} />
               </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Current: {formatTime(attendance?.check_in)} – {formatTime(attendance?.check_out)}</Typography>

@@ -41,12 +41,11 @@ def _date_range(filters, default_year=False):
 
 
 class LeaveRegularizationIntelligence:
-    def _employees(self, scope, employee_id=None):
+    def _employees(self, user, scope, employee_id=None):
         qs = Employee.objects.select_related("user").filter(is_active=True, user__is_active=True)
-        if not scope["unrestricted"]:
-            qs = qs.filter(section__in=scope["sections"])
-            if scope["subsections"]:
-                qs = qs.filter(subsection__in=scope["subsections"])
+        if user:
+            from accounts.scope_service import filter_employees_by_manager_scope
+            qs = filter_employees_by_manager_scope(user, qs)
         if employee_id:
             employee = qs.filter(pk=employee_id).first()
             if not employee:
@@ -81,11 +80,11 @@ class LeaveRegularizationIntelligence:
     def execute(self, *, metric, scope, user, filters, employee_id=None):
         if metric not in METRICS:
             raise CopilotError("invalid_intelligence_metric", "That leave or regularization query is not supported.")
-        employees = self._employees(scope, employee_id)
+        employees = self._employees(user, scope, employee_id)
         if metric == "leave_balance":
             if not employee_id:
                 employee = getattr(user, "employee", None)
-                employees = self._employees(scope, getattr(employee, "id", None)) if employee else []
+                employees = self._employees(user, scope, getattr(employee, "id", None)) if employee else []
                 if not employees:
                     raise CopilotError("employee_required", "Please specify an employee for the leave balance.")
             year = int(filters.get("year") or timezone.localdate().year)

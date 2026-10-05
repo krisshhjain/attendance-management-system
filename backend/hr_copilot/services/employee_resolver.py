@@ -19,7 +19,7 @@ class EmployeeResolution:
 class EmployeeResolver:
     """Resolve only real employee records; never trust an LLM-provided identity."""
 
-    def resolve_employee(self, *, name=None, email=None, employee_id=None):
+    def resolve_employee(self, *, user=None, name=None, email=None, employee_id=None):
         supplied = [value for value in (name, email, employee_id) if value not in (None, "")]
         if not supplied:
             return EmployeeResolution("missing")
@@ -46,6 +46,9 @@ class EmployeeResolver:
                     user__last_name__iexact=" ".join(parts[1:]),
                 )
 
+        if user:
+            from accounts.scope_service import filter_employees_by_manager_scope
+            matches = filter_employees_by_manager_scope(user, matches)
         matching_ids = list(matches.values_list("id", flat=True)[:2])
         if not matching_ids:
             return EmployeeResolution("not_found")

@@ -101,10 +101,10 @@ export function ManagerManagement() {
                         color={manager.is_active ? "success" : "error"} size="small" variant="outlined" />
                     </TableCell>
                     <TableCell>
-                      {manager.hr_copilot_sections?.length > 0 ? (
+                      {manager.scopes?.length > 0 ? (
                         <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-                          {manager.hr_copilot_sections.map((s) => (
-                            <Chip key={s} label={s} size="small" variant="outlined" />
+                          {manager.scopes.map((scope) => (
+                            <Chip key={`${scope.scope_type}-${scope.value}`} label={`${scope.scope_type}: ${scope.value}`} size="small" variant="outlined" />
                           ))}
                         </Box>
                       ) : (<Typography variant="caption" color="text.secondary">No scope</Typography>)}
@@ -152,12 +152,19 @@ function CreateManagerDialog({ open, onClose, onSubmit, loading }) {
   const [formData, setFormData] = useState({
     email: "", password: "", first_name: "", last_name: "",
     hr_copilot_sections: [], hr_copilot_subsections: [],
+    scope_departments: [],
   });
 
-  const handleSubmit = (e) => { e.preventDefault(); onSubmit(formData); };
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit({ ...formData, scopes: [
+      ...formData.hr_copilot_sections.map((value) => ({ scope_type: "SECTION", value })),
+      ...formData.scope_departments.map((value) => ({ scope_type: "DEPARTMENT", value })),
+    ] });
+  };
   const handleClose = () => {
     setFormData({ email: "", password: "", first_name: "", last_name: "",
-      hr_copilot_sections: [], hr_copilot_subsections: [] });
+      hr_copilot_sections: [], hr_copilot_subsections: [], scope_departments: [] });
     onClose();
   };
 
@@ -181,6 +188,9 @@ function CreateManagerDialog({ open, onClose, onSubmit, loading }) {
             <Autocomplete multiple options={AVAILABLE_SECTIONS} value={formData.hr_copilot_sections}
               onChange={(e, value) => setFormData({ ...formData, hr_copilot_sections: value })}
               renderInput={(params) => <TextField {...params} label="Sections" helperText="Sections this manager can access" />} />
+            <Autocomplete multiple freeSolo options={[]} value={formData.scope_departments}
+              onChange={(e, value) => setFormData({ ...formData, scope_departments: value })}
+              renderInput={(params) => <TextField {...params} label="Departments" helperText="Departments this manager can access" />} />
             <Autocomplete multiple options={AVAILABLE_SUBSECTIONS} value={formData.hr_copilot_subsections}
               onChange={(e, value) => setFormData({ ...formData, hr_copilot_subsections: value })}
               renderInput={(params) => <TextField {...params} label="Subsections (Optional)" />} />
@@ -200,20 +210,28 @@ function CreateManagerDialog({ open, onClose, onSubmit, loading }) {
 function EditManagerDialog({ open, manager, onClose, onSubmit, loading }) {
   const [formData, setFormData] = useState({
     first_name: "", last_name: "", hr_copilot_sections: [], hr_copilot_subsections: [], is_active: true,
+    scope_departments: [],
   });
 
   React.useEffect(() => {
     if (manager) {
       setFormData({
         first_name: manager.first_name || "", last_name: manager.last_name || "",
-        hr_copilot_sections: manager.hr_copilot_sections || [],
+        hr_copilot_sections: (manager.scopes || []).filter((scope) => scope.scope_type === "SECTION").map((scope) => scope.value),
         hr_copilot_subsections: manager.hr_copilot_subsections || [],
+        scope_departments: (manager.scopes || []).filter((scope) => scope.scope_type === "DEPARTMENT").map((scope) => scope.value),
         is_active: manager.is_active ?? true,
       });
     }
   }, [manager]);
 
-  const handleSubmit = (e) => { e.preventDefault(); onSubmit(formData); };
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit({ ...formData, scopes: [
+      ...formData.hr_copilot_sections.map((value) => ({ scope_type: "SECTION", value })),
+      ...formData.scope_departments.map((value) => ({ scope_type: "DEPARTMENT", value })),
+    ] });
+  };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -230,6 +248,9 @@ function EditManagerDialog({ open, manager, onClose, onSubmit, loading }) {
             <Autocomplete multiple options={AVAILABLE_SECTIONS} value={formData.hr_copilot_sections}
               onChange={(e, value) => setFormData({ ...formData, hr_copilot_sections: value })}
               renderInput={(params) => <TextField {...params} label="Sections" />} />
+            <Autocomplete multiple freeSolo options={[]} value={formData.scope_departments}
+              onChange={(e, value) => setFormData({ ...formData, scope_departments: value })}
+              renderInput={(params) => <TextField {...params} label="Departments" />} />
             <Autocomplete multiple options={AVAILABLE_SUBSECTIONS} value={formData.hr_copilot_subsections}
               onChange={(e, value) => setFormData({ ...formData, hr_copilot_subsections: value })}
               renderInput={(params) => <TextField {...params} label="Subsections (Optional)" />} />

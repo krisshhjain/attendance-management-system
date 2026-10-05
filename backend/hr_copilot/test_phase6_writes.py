@@ -1,3 +1,4 @@
+from accounts.models import ManagerScope
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
@@ -18,8 +19,11 @@ class Phase6WriteTests(TestCase):
         User = get_user_model()
         self.admin = User.objects.create_user(
             email="phase6-admin@example.test", is_system_admin=True,
-            hr_copilot_sections=["C"], hr_copilot_subsections=["C1"],
+             
         )
+        ManagerScope.objects.create(manager=self.admin, scope_type='SECTION', value='C')
+        ManagerScope.objects.create(manager=self.admin, scope_type='DEPARTMENT', value='Engineering')
+
         user = User.objects.create_user(email="phase6-employee@example.test", first_name="Asha", last_name="Rao")
         self.employee = Employee.objects.create(
             user=user, department="Engineering", employment_type="PERMANENT",
@@ -47,7 +51,7 @@ class Phase6WriteTests(TestCase):
         return result
 
     def test_attendance_edit_preserves_historical_events(self):
-        target = timezone.localdate() - timedelta(days=3)
+        target = timezone.localdate()
         original = timezone.make_aware(datetime.combine(target, time(8, 30)))
         AttendanceEvent.objects.create(employee=self.employee, timestamp=original, event_type="CHECK_IN")
         Attendance.objects.create(employee=self.employee, date=target, status="INCOMPLETE")

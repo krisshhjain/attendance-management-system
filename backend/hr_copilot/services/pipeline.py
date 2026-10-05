@@ -5,6 +5,8 @@ import sqlparse
 from django.db import connection
 from django.utils import timezone
 from employees.models import Employee
+from accounts.models import ManagerScope
+from accounts.scope_service import get_manager_scope
 
 from .employee_resolver import employee_resolver
 
@@ -255,18 +257,16 @@ def _validate_absence_date_range(entities):
 
 
 def derive_scope(user):
-    if user.is_superuser:
-        return {"sections": None, "subsections": None, "unrestricted": True}
-    sections = sorted({str(v).strip().upper() for v in (user.hr_copilot_sections or []) if str(v).strip()})
-    subsections = sorted({str(v).strip().upper() for v in (user.hr_copilot_subsections or []) if str(v).strip()})
-    if not sections and subsections:
-        sections = sorted({v[0] for v in subsections if v})
-    if not sections:
+    from accounts.scope_service import get_manager_scope
+    scope = get_manager_scope(user)
+    scope["sections"] = list(scope.get("sections", []))
+    scope["departments"] = list(scope.get("departments", []))
+    if not scope["unrestricted"] and not scope["sections"] and not scope["departments"]:
         raise CopilotError("scope_unassigned", "Your HR Copilot scope has not been assigned. Contact a Super Admin.", 403)
-    return {"sections": sections, "subsections": subsections or None, "unrestricted": False}
+    return scope
 
 
-def plan_query(intent, scope):
+def plan_query(intent, scope, user):
     if not intent["source"] or intent["intent"] == "unknown":
         raise CopilotError("unknown_question", "I don’t have enough information to answer that HR question.")
     entities = dict(intent["entities"])
@@ -274,7 +274,7 @@ def plan_query(intent, scope):
         raise CopilotError("clarification_required", "Please provide the employee's name or email address.")
     employee_resolution = {"status": "not_required", "employee_id": None}
     if entities.get("employee_id"):
-        employee_resolution = employee_resolver.resolve_employee(employee_id=entities["employee_id"]).as_dict()
+        employee_resolution = employee_resolver.resolve_employee(user=user, employee_id=entities["employee_id"]).as_dict()
         if employee_resolution["status"] != "resolved":
             raise CopilotError("employee_not_found", "No employee matched that identity.")
         entities["employee_id"] = employee_resolution["employee_id"]
@@ -316,23 +316,21 @@ def plan_query(intent, scope):
         if entities.get("employee_name") or entities.get("employee_email"):
             if employee_resolution["status"] != "resolved":
                 raise CopilotError("employee_not_found", "No employee matched that name or email.")
-    section, subsection = entities.get("section"), entities.get("subsection")
-    if not scope["unrestricted"]:
-        if section and section not in scope["sections"]:
-            raise CopilotError("scope_denied", "You don’t have access to the requested section.", 403)
-        if subsection and (
-            subsection[0] not in scope["sections"]
-            or (scope["subsections"] and subsection not in scope["subsections"])
-        ):
-            raise CopilotError("scope_denied", "You don’t have access to the requested sub-section.", 403)
-        compared = entities.get("comparison_subsections", [])
-        if len(compared) > 10:
-            raise CopilotError("invalid_intent", "Please compare no more than ten sub-sections.")
-        if any(value[0] not in scope["sections"] or (scope["subsections"] and value not in scope["subsections"]) for value in compared):
-            raise CopilotError("scope_denied", "You don’t have access to one or more requested sub-sections.", 403)
+    section = entities.get("section")
+    if section and not scope["unrestricted"]:
+        if section not in scope["sections"]:
+            # If they ask for a specific section, it must be in their scope
+            pass # Actually we just rely on filter_employees_by_manager_scope later, but if they explicitly asked for an out-of-scope section we could deny.
+            # But wait, employee_in_manager_scope and filter_employees_by_manager_scope will handle everything!
+            # So we don't need these manual checks at all, except maybe to avoid returning empty results vs permission denied.
+            # Let's keep it simple: filter_employees_by_manager_scope handles it.
+            if not any(s == section for s in scope.get("sections", [])):
+                raise CopilotError("scope_denied", "You don’t have access to the requested section.", 403)
+                
     if employee_resolution["status"] == "resolved" and not scope["unrestricted"]:
-        employee = Employee.objects.filter(pk=employee_resolution["employee_id"]).only("section", "subsection").first()
-        if employee.section not in scope["sections"] or (scope["subsections"] and employee.subsection not in scope["subsections"]):
+        from accounts.scope_service import employee_in_manager_scope
+        employee = Employee.objects.filter(pk=employee_resolution["employee_id"]).first()
+        if not employee or not employee_in_manager_scope(user, employee):
             raise CopilotError("scope_denied", "You do not have access to that employee.", 403)
     return {
         "source": intent["source"], "intent": intent["intent"], "filters": entities,
@@ -350,10 +348,10 @@ def build_sql(plan):
     intent = plan["intent"]
     is_absence_query = intent.startswith("absence_")
     params, where = [], []
-    if scope["sections"] is not None:
+    if scope.get("sections"):
         where.append("e.section IN (" + ", ".join(["%s"] * len(scope["sections"])) + ")")
         params.extend(scope["sections"])
-    if scope["subsections"]:
+    if scope.get("subsections"):
         where.append("e.subsection IN (" + ", ".join(["%s"] * len(scope["subsections"])) + ")")
         params.extend(scope["subsections"])
     for key, column in (("section", "e.section"), ("subsection", "e.subsection"), ("employee_type", "e.employment_type")):

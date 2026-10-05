@@ -19,13 +19,12 @@ def _name(employee):
 
 
 class WorkforceIntelligence:
-    def _employees(self, scope, employee_id=None, filters=None):
+    def _employees(self, user, scope, employee_id=None, filters=None):
         filters = filters or {}
         qs = Employee.objects.select_related("user", "shift").prefetch_related("face_profile")
-        if not scope["unrestricted"]:
-            qs = qs.filter(section__in=scope["sections"])
-            if scope["subsections"]:
-                qs = qs.filter(subsection__in=scope["subsections"])
+        if user:
+            from accounts.scope_service import filter_employees_by_manager_scope
+            qs = filter_employees_by_manager_scope(user, qs)
         if employee_id:
             employee = qs.filter(pk=employee_id).first()
             if not employee:
@@ -64,7 +63,7 @@ class WorkforceIntelligence:
     def execute(self, *, metric, scope, user, filters, employee_id=None):
         if metric not in METRICS:
             raise CopilotError("invalid_intelligence_metric", "That workforce query is not supported.")
-        employees = self._employees(scope, employee_id, filters)
+        employees = self._employees(user, scope, employee_id, filters)
         if metric in {"employee_search", "employee_details", "employee_status", "access_status", "face_enrollment"}:
             rows = [self._employee_row(employee, include_access=metric in {"employee_details", "access_status"}) for employee in employees]
             if metric == "employee_status":

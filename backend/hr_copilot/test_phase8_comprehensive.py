@@ -1,3 +1,4 @@
+from accounts.models import ManagerScope
 """Phase 8: reproducible end-to-end coverage of the existing Copilot contract."""
 
 from datetime import date, timedelta, time
@@ -28,8 +29,11 @@ class Phase8ComprehensiveTests(TestCase):
         User = get_user_model()
         self.admin = User.objects.create_user(
             email="phase8-admin@example.test", is_system_admin=True,
-            hr_copilot_sections=["C"], hr_copilot_subsections=["C1"],
+             
         )
+        ManagerScope.objects.create(manager=self.admin, scope_type='SECTION', value='C')
+        ManagerScope.objects.create(manager=self.admin, scope_type='DEPARTMENT', value='Engineering')
+
         employee_user = User.objects.create_user(email="krish@example.test", first_name="Krish", last_name="Rao")
         self.employee = Employee.objects.create(
             user=employee_user, department="Engineering", employment_type="PERMANENT",
@@ -131,7 +135,7 @@ class Phase8ComprehensiveTests(TestCase):
     def test_unsupported_and_malformed_requests_never_execute_writes(self):
         with patch("hr_copilot.services.semantic_interpreter.get_structured_intent", return_value=self.raw_intent("unknown")):
             with self.assertRaises(CopilotError) as error:
-                plan_query(analyze_question("Reset attendance completely"), self.scope)
+                plan_query(analyze_question("Reset attendance completely"), self.scope, self.admin)
         self.assertEqual(error.exception.code, "unknown_question")
         self.assertNotIn("SQL", safe_error_message("invalid_intent", "SQL parser traceback"))
 
@@ -145,5 +149,5 @@ class Phase8ComprehensiveTests(TestCase):
         outside = Employee.objects.create(user=outside_user, department="Finance", employment_type="PERMANENT", date_joined=timezone.localdate(), section="D", subsection="D1")
         intent = {"intent": "employee_shift_assign", "source": "employee", "action_type": "write", "requires_approval": True, "entities": {"employee_id": outside.id, "shift_id": self.shift.id}}
         with self.assertRaises(CopilotError) as error:
-            write_action_planner.plan_write_action(intent, self.admin, "phase8-scope")
+            write_action_planner.plan_write_action(intent, self.admin, self.scope)
         self.assertEqual(error.exception.code, "scope_denied")

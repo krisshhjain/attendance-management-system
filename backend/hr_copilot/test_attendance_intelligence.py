@@ -1,4 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import time as datetime_time
+from accounts.models import ManagerScope
+from datetime import datetime, timedelta, time as datetime_time
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -17,11 +19,20 @@ class AttendanceIntelligenceTests(TestCase):
         self.admin = User.objects.create_user(
             email="copilot-intelligence-admin@example.test",
             is_system_admin=True,
-            hr_copilot_sections=["C"],
-            hr_copilot_subsections=["C1"],
+            
+            
         )
+        ManagerScope.objects.create(manager=self.admin, scope_type='SECTION', value='C')
+        ManagerScope.objects.create(manager=self.admin, scope_type='DEPARTMENT', value='Engineering')
+
+        today = timezone.localdate()
+        # Guarantee a Wednesday so today, today-1, etc. are all working days
+        while today.weekday() != 2:
+            today -= timedelta(days=1)
+        self.today = today
+
         self.shift = Shift.objects.create(
-            name="Morning", code="INT-MORNING", start_time="09:00", end_time="18:00",
+            name="Morning", code="INT-MORNING", start_time=datetime_time(9, 0), end_time=datetime_time(18, 0),
             is_active=True,
         )
         self.employee_user = User.objects.create_user(
@@ -29,18 +40,17 @@ class AttendanceIntelligenceTests(TestCase):
         )
         self.employee = Employee.objects.create(
             user=self.employee_user, department="Engineering", employment_type="PERMANENT",
-            date_joined=timezone.localdate() - timedelta(days=30), section="C", subsection="C1",
+            date_joined=self.today - timedelta(days=30), section="C", subsection="C1",
             shift=self.shift,
         )
         self.other_user = User.objects.create_user(
             email="out-of-scope@example.test", first_name="Out", last_name="Scope",
         )
         self.other = Employee.objects.create(
-            user=self.other_user, department="Engineering", employment_type="PERMANENT",
-            date_joined=timezone.localdate() - timedelta(days=30), section="D", subsection="D1",
+            user=self.other_user, department="Marketing", employment_type="PERMANENT",
+            date_joined=self.today - timedelta(days=30), section="D", subsection="D1",
         )
         self.scope = {"sections": ["C"], "subsections": ["C1"], "unrestricted": False}
-        self.today = timezone.localdate()
 
     def event(self, employee, target_date, hour, event_type):
         timestamp = timezone.make_aware(datetime.combine(target_date, datetime.min.time()).replace(hour=hour))
@@ -52,20 +62,20 @@ class AttendanceIntelligenceTests(TestCase):
         return attendance
 
     def test_missing_checkins_and_scope(self):
-        result = attendance_intelligence.missing_checkins(scope=self.scope, target_date=self.today)
+        result = attendance_intelligence.missing_checkins(user=self.admin, scope=self.scope, target_date=self.today)
         self.assertEqual(result["metric"], "missing_checkins")
         self.assertEqual(result["date_range"]["start"], self.today.isoformat())
         self.assertEqual([row["employee_id"] for row in result["rows"]], [self.employee.id])
         self.event(self.employee, self.today, 9, "CHECK_IN")
         self.recompute(self.employee, self.today)
-        result = attendance_intelligence.missing_checkins(scope=self.scope, target_date=self.today)
+        result = attendance_intelligence.missing_checkins(user=self.admin, scope=self.scope, target_date=self.today)
         self.assertEqual(result["rows"], [])
         self.assertNotIn(self.other.id, {row["employee_id"] for row in result["rows"]})
 
     def test_late_employees_reuses_shift_adherence(self):
         self.event(self.employee, self.today, 10, "CHECK_IN")
         self.recompute(self.employee, self.today)
-        result = attendance_intelligence.late_employees(scope=self.scope, target_date=self.today)
+        result = attendance_intelligence.late_employees(user=self.admin, scope=self.scope, target_date=self.today)
         self.assertEqual([row["employee_id"] for row in result["rows"]], [self.employee.id])
 
     def test_working_hours_uses_effective_closed_intervals(self):
@@ -93,11 +103,11 @@ class AttendanceIntelligenceTests(TestCase):
     def test_absence_streaks_summary_and_week_comparison(self):
         end = self.today - timedelta(days=1)
         start = end - timedelta(days=6)
-        streaks = attendance_intelligence.absence_streaks(scope=self.scope, start=start, end=end)
+        streaks = attendance_intelligence.absence_streaks(user=self.admin, scope=self.scope, start=start, end=end)
         self.assertEqual(streaks["rows"][0]["employee_id"], self.employee.id)
-        summary = attendance_intelligence.summary(scope=self.scope, start=start, end=end)
+        summary = attendance_intelligence.summary(user=self.admin, scope=self.scope, start=start, end=end)
         self.assertTrue(summary["rows"])
-        comparison = attendance_intelligence.period_comparison(scope=self.scope, end_date=self.today)
+        comparison = attendance_intelligence.period_comparison(user=self.admin, scope=self.scope, end_date=self.today)
         self.assertIn("current", comparison["date_range"])
         self.assertIn("delta", comparison["rows"][0])
 
@@ -109,4 +119,4 @@ class AttendanceIntelligenceTests(TestCase):
             intent = analyze_question("Which staff arrived after the shift start today?")
         self.assertEqual(intent["intent"], "attendance_intelligence")
         self.assertEqual(intent["entities"]["attendance_metric"], "late_employees")
-        self.assertEqual(intent["entities"]["date_range"]["start"], self.today.isoformat())
+        self.assertEqual(intent["entities"]["date_range"]["start"], timezone.localdate().isoformat())

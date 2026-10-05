@@ -1,3 +1,4 @@
+from accounts.models import ManagerScope
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
@@ -19,8 +20,11 @@ class LeaveRegularizationIntelligenceTests(TestCase):
         User = get_user_model()
         self.admin = User.objects.create_user(
             email="leave-copilot-admin@example.test", is_system_admin=True,
-            hr_copilot_sections=["C"], hr_copilot_subsections=["C1"],
+             
         )
+        ManagerScope.objects.create(manager=self.admin, scope_type='SECTION', value='C')
+        ManagerScope.objects.create(manager=self.admin, scope_type='DEPARTMENT', value='Engineering')
+
         self.user = User.objects.create_user(email="leave-employee@example.test", first_name="Asha", last_name="Rao")
         self.employee = Employee.objects.create(
             user=self.user, department="Engineering", employment_type="PERMANENT",
@@ -28,7 +32,7 @@ class LeaveRegularizationIntelligenceTests(TestCase):
         )
         other_user = User.objects.create_user(email="leave-other@example.test", first_name="Other")
         self.other = Employee.objects.create(
-            user=other_user, department="Engineering", employment_type="PERMANENT",
+            user=other_user, department="Marketing", employment_type="PERMANENT",
             date_joined=timezone.localdate() - timedelta(days=30), section="D", subsection="D1",
         )
         self.scope = {"sections": ["C"], "subsections": ["C1"], "unrestricted": False}

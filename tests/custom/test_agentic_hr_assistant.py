@@ -1,8 +1,11 @@
 """Test script to verify the agentic HR assistant write actions with human-in-the-loop approval."""
 
 import os
-import django
 import json
+import sys
+import django
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend")))
 
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')

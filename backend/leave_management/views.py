@@ -271,7 +271,10 @@ class AdminLeaveRequestsView(APIView):
     permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
-        requests = LeaveRequest.objects.select_related(
+        from accounts.scope_service import filter_employees_by_manager_scope
+        from employees.models import Employee
+        scoped_employees = filter_employees_by_manager_scope(request.user, Employee.objects.all())
+        requests = LeaveRequest.objects.filter(employee__in=scoped_employees).select_related(
             "employee", "employee__user", "leave_type", "reviewed_by", "cancelled_by"
         )
 
@@ -299,6 +302,10 @@ class AdminLeaveRequestDetailView(APIView):
             ).get(pk=pk)
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
+            
+        from accounts.scope_service import employee_in_manager_scope
+        if not employee_in_manager_scope(request.user, leave_req.employee):
+            return Response({"error": "You do not have permission to access this leave request."}, status=403)
 
         return Response(LeaveRequestSerializer(leave_req).data)
 
@@ -312,6 +319,10 @@ class AdminApproveLeaveView(APIView):
             leave_req = LeaveRequest.objects.get(pk=pk)
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
+            
+        from accounts.scope_service import employee_in_manager_scope
+        if not employee_in_manager_scope(request.user, leave_req.employee):
+            return Response({"error": "You do not have permission to access this leave request."}, status=403)
 
         remarks = request.data.get("remarks", "")
         try:
@@ -349,6 +360,10 @@ class AdminDenyLeaveView(APIView):
             leave_req = LeaveRequest.objects.get(pk=pk)
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
+            
+        from accounts.scope_service import employee_in_manager_scope
+        if not employee_in_manager_scope(request.user, leave_req.employee):
+            return Response({"error": "You do not have permission to access this leave request."}, status=403)
 
         remarks = request.data.get("remarks", "")
         try:
@@ -386,6 +401,10 @@ class AdminCancelApprovedLeaveView(APIView):
             leave_req = LeaveRequest.objects.get(pk=pk)
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
+            
+        from accounts.scope_service import employee_in_manager_scope
+        if not employee_in_manager_scope(request.user, leave_req.employee):
+            return Response({"error": "You do not have permission to access this leave request."}, status=403)
 
         try:
             before_state = _leave_log_state(leave_req)
@@ -429,6 +448,10 @@ class AdminEmployeeLeaveBalancesView(APIView):
                 emp = Employee.objects.select_related("user").get(pk=employee_id)
             except Employee.DoesNotExist:
                 return Response({"error": "Employee not found."}, status=404)
+                
+            from accounts.scope_service import employee_in_manager_scope
+            if not employee_in_manager_scope(request.user, emp):
+                return Response({"error": "You do not have permission to access this employee."}, status=403)
 
             balances = calculate_employee_leave_balances(emp, year=year)
             return Response({
@@ -438,7 +461,8 @@ class AdminEmployeeLeaveBalancesView(APIView):
                 "balances": balances,
             })
         else:
-            employees = Employee.objects.filter(is_active=True).select_related("user")
+            from accounts.scope_service import filter_employees_by_manager_scope
+            employees = filter_employees_by_manager_scope(request.user, Employee.objects.filter(is_active=True).select_related("user"))
             result = []
             for emp in employees:
                 balances = calculate_employee_leave_balances(emp, year=year)

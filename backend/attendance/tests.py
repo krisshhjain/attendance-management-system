@@ -1,3 +1,4 @@
+from datetime import time as datetime_time
 from datetime import date, datetime, time as datetime_time, timedelta
 from unittest.mock import patch, Mock
 import requests
@@ -25,8 +26,61 @@ from attendance.geofence import (
 )
 from attendance.face_service import process_enrollment, find_closest_match, FaceExtractionError
 from attendance.models import RegularizationRequest
+from accounts.models import ManagerScope
 
 User = get_user_model()
+
+
+class ManagerEmployeeAttendanceScopeTests(APITestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(
+            email="scope.manager@example.com", password="password123", is_system_admin=True
+        )
+        ManagerScope.objects.create(manager=self.manager, scope_type="SECTION", value="C")
+        self.in_scope = self.make_employee("scope.c@example.com", "INTERN", section="C")
+        self.out_scope = self.make_employee("scope.d@example.com", "INTERN", section="D")
+        Attendance.objects.create(employee=self.in_scope, date=timezone.localdate(), status="PRESENT")
+        Attendance.objects.create(employee=self.out_scope, date=timezone.localdate(), status="PRESENT")
+
+    def make_employee(self, email, employment_type, section="", department="Engineering"):
+        user = User.objects.create_user(email=email, password="password123")
+        return Employee.objects.create(
+            user=user, department=department, employment_type=employment_type,
+            section=section, date_joined="2026-01-01",
+        )
+
+    def test_employee_list_and_detail_are_scoped(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.get("/api/admin/employees/list/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({row["id"] for row in response.data}, {self.in_scope.id})
+        self.assertEqual(self.client.get(f"/api/admin/employees/{self.in_scope.id}/").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/admin/employees/{self.out_scope.id}/").status_code, 403)
+
+    def test_attendance_history_and_daily_view_are_scoped(self):
+        self.client.force_authenticate(self.manager)
+        history = self.client.get("/api/attendance/history/")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual({row["employee_id"] for row in history.data}, {self.in_scope.id})
+        daily = self.client.get("/api/admin/attendance/")
+        self.assertEqual(daily.status_code, 200)
+        self.assertEqual({row["employee"] for row in daily.data}, {self.in_scope.user.email})
+
+    def test_manager_cannot_edit_or_reset_attendance(self):
+        self.client.force_authenticate(self.manager)
+        self.assertEqual(self.client.post("/api/admin/attendance/edit/", {}).status_code, 403)
+        self.assertEqual(self.client.post("/api/admin/attendance/reset/", {}).status_code, 403)
+
+    def test_permanent_scope_uses_department_and_superuser_is_unrestricted(self):
+        department_manager = User.objects.create_user(
+            email="department.manager@example.com", password="password123", is_system_admin=True
+        )
+        ManagerScope.objects.create(manager=department_manager, scope_type="DEPARTMENT", value="Engineering")
+        permanent = self.make_employee("permanent.engineering@example.com", "PERMANENT", section="D")
+        self.client.force_authenticate(department_manager)
+        self.assertEqual(self.client.get(f"/api/admin/employees/{permanent.id}/").status_code, 200)
+        self.client.force_authenticate(User.objects.create_superuser("scope.root@example.com", "password123"))
+        self.assertEqual(self.client.get(f"/api/admin/employees/{self.out_scope.id}/").status_code, 200)
 
 
 class RegularizationWorkflowTests(APITestCase):
@@ -53,7 +107,10 @@ class RegularizationWorkflowTests(APITestCase):
             email="regularization.admin@example.com",
             password="password123",
             is_staff=True,
+            is_system_admin=True,
         )
+        from accounts.models import ManagerScope
+        ManagerScope.objects.create(manager=self.admin_user, scope_type="DEPARTMENT", value="Engineering")
         self.check_in = timezone.make_aware(
             datetime.combine(self.attendance_date, datetime_time(9, 0)),
             timezone.get_current_timezone(),
@@ -204,7 +261,7 @@ class RegularizationWorkflowTests(APITestCase):
 
     def test_monthly_quota_resets_for_new_calendar_month(self):
         self.request.created_at = timezone.now() - timedelta(days=40)
-        self.request.save(update_fields=["created_at"])
+        RegularizationRequest.objects.filter(id=self.request.id).update(created_at=self.request.created_at)
         self.client.force_authenticate(user=self.employee_user)
         quota = self.client.get("/api/attendance/regularization/quota/")
         self.assertEqual(quota.status_code, status.HTTP_200_OK)
@@ -438,8 +495,100 @@ class RegularizationWorkflowTests(APITestCase):
             {"check_in": self.check_in.isoformat(), "check_out": self.check_out.isoformat()},
             format="json",
         )
-
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch("attendance.views.timezone.localdate")
+    def test_phase1_single_day_older_than_48h_blocked(self, mock_localdate):
+        # Anchor to a Wednesday
+        mock_localdate.return_value = date(2026, 10, 7) # Wednesday
+        self.client.force_authenticate(user=self.employee_user)
+        # 3 days ago is Sunday, older than 48h
+        response = self.client.post("/api/attendance/regularization/", {
+            "period_type": "DAY",
+            "days": [{"attendance_date": "2026-10-04", "request_type": "INCORRECT_ATTENDANCE", "reason": "Test"}]
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("must be within the past 48 hours", str(response.data))
+
+    @patch("attendance.views.timezone.localdate")
+    def test_phase1_current_week_allowed_and_previous_week_blocked(self, mock_localdate):
+        # Anchor to a Thursday
+        mock_localdate.return_value = date(2026, 10, 8) # Thursday
+        self.client.force_authenticate(user=self.employee_user)
+        # Monday is 2026-10-05
+        # Attempt to submit previous Friday (2026-10-02) -> blocked
+        res_prev = self.client.post("/api/attendance/regularization/", {
+            "period_type": "WEEK",
+            "days": [{"attendance_date": "2026-10-02", "request_type": "INCORRECT_ATTENDANCE", "reason": "Test"}]
+        }, format="json")
+        self.assertEqual(res_prev.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("current calendar week", str(res_prev.data))
+
+        # Attempt to submit current Monday (2026-10-05) -> allowed even if > 48 hours
+        # First ensure employee was joined before that date
+        self.employee.date_joined = date(2026, 1, 1)
+        self.employee.save()
+        Attendance.objects.create(employee=self.employee, date=date(2026, 10, 5), status="ABSENT")
+        res_curr = self.client.post("/api/attendance/regularization/", {
+            "period_type": "WEEK",
+            "days": [{"attendance_date": "2026-10-05", "request_type": "INCORRECT_ATTENDANCE", "reason": "Test", "requested_check_in": "2026-10-05T09:00:00Z", "requested_check_out": "2026-10-05T17:00:00Z"}]
+        }, format="json")
+        self.assertEqual(res_curr.status_code, status.HTTP_201_CREATED)
+
+    @patch("attendance.views.timezone.localdate")
+    def test_phase1_future_date_blocked(self, mock_localdate):
+        mock_localdate.return_value = date(2026, 10, 8)
+        self.client.force_authenticate(user=self.employee_user)
+        res = self.client.post("/api/attendance/regularization/", {
+            "period_type": "WEEK",
+            "days": [{"attendance_date": "2026-10-09", "request_type": "INCORRECT_ATTENDANCE", "reason": "Test"}]
+        }, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("future dates are not allowed", str(res.data))
+
+    @patch("django.utils.timezone.localdate")
+    def test_phase1_mixed_weeks_blocked(self, mock_localdate):
+        mock_localdate.return_value = date(2026, 10, 15)
+        self.client.force_authenticate(user=self.employee_user)
+        res = self.client.post("/api/attendance/regularization/", {
+            "period_type": "WEEK",
+            "days": [
+                {"attendance_date": "2026-10-05", "request_type": "INCORRECT_ATTENDANCE", "reason": "Test", "requested_check_in": "2026-10-05T09:00:00Z", "requested_check_out": "2026-10-05T17:00:00Z"},
+                {"attendance_date": "2026-10-12", "request_type": "INCORRECT_ATTENDANCE", "reason": "Test", "requested_check_in": "2026-10-12T09:00:00Z", "requested_check_out": "2026-10-12T17:00:00Z"}
+            ]
+        }, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("multi-day requests are only allowed for dates in the current calendar week", str(res.data))
+
+    @patch("django.utils.timezone.now")
+    @patch("django.utils.timezone.localdate")
+    def test_phase1_approval_revalidation(self, mock_localdate, mock_now):
+        mock_localdate.return_value = date(2026, 10, 5)
+        mock_now.return_value = timezone.make_aware(datetime.combine(date(2026, 10, 5), datetime_time(12, 0)))
+        # Request created properly
+        req = RegularizationRequest.objects.create(
+            employee=self.employee,
+            attendance_date=date(2026, 10, 5),
+            period_type="WEEK",
+            request_type="INCORRECT_ATTENDANCE",
+            reason="Test",
+            status="PENDING"
+        )
+        # Attempt to approve it when current date is next week
+        mock_localdate.return_value = date(2026, 10, 13) # Next Tuesday
+        mock_now.return_value = timezone.make_aware(datetime.combine(date(2026, 10, 13), datetime_time(12, 0)))
+        
+        self.client.force_authenticate(user=self.admin_user)
+        # Assuming admin can approve and requested_check_in / requested_check_out are handled or we pass them in approve
+        # Actually approve requires valid times, let's provide approved_check_in and approved_check_out
+        res = self.client.post(f"/api/attendance/admin/regularization/{req.id}/approve/", {
+            "check_in": "2026-10-05T09:00:00Z",
+            "check_out": "2026-10-05T17:00:00Z"
+        }, format="json")
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        req.refresh_from_db()
+        self.assertEqual(req.status, "APPROVED")
+
 
 
 class AttendanceGeofenceTests(APITestCase):
@@ -452,8 +601,8 @@ class AttendanceGeofenceTests(APITestCase):
         self.shift = Shift.objects.create(
             name="Morning Shift",
             code="MORN",
-            start_time="09:00:00",
-            end_time="17:00:00",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
             is_active=True,
         )
         self.employee = Employee.objects.create(
@@ -1583,8 +1732,8 @@ class ShiftModelTests(TestCase):
         self.shift = Shift.objects.create(
             name="Morning Shift",
             code="MORN",
-            start_time="09:00:00",
-            end_time="17:00:00",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
             is_active=True,
         )
 
@@ -1606,8 +1755,8 @@ class ShiftModelTests(TestCase):
             Shift.objects.create(
                 name="Another Morning",
                 code="MORN",
-                start_time="08:00:00",
-                end_time="16:00:00",
+                start_time=datetime_time(8, 0),
+                end_time=datetime_time(16, 0),
             )
 
     def test_shift_default_is_active(self):
@@ -1615,15 +1764,15 @@ class ShiftModelTests(TestCase):
         shift = Shift.objects.create(
             name="Night Shift",
             code="NIGHT",
-            start_time="22:00:00",
-            end_time="06:00:00",
+            start_time=datetime_time(22, 0),
+            end_time=datetime_time(6, 0),
         )
         self.assertTrue(shift.is_active)
 
     def test_shift_ordering_by_code(self):
         """Shifts are ordered by code."""
-        Shift.objects.create(name="A Shift", code="AAA", start_time="08:00", end_time="16:00")
-        Shift.objects.create(name="Z Shift", code="ZZZ", start_time="08:00", end_time="16:00")
+        Shift.objects.create(name="A Shift", code="AAA", start_time=datetime_time(8, 0), end_time=datetime_time(16, 0))
+        Shift.objects.create(name="Z Shift", code="ZZZ", start_time=datetime_time(8, 0), end_time=datetime_time(16, 0))
         codes = list(Shift.objects.values_list("code", flat=True))
         # MORN (from setUp) comes before AAA alphabetically? No, AAA < MORN < ZZZ
         self.assertEqual(codes, ["AAA", "MORN", "ZZZ"])
@@ -1635,7 +1784,7 @@ class EmployeeShiftRelationTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="emp@example.com", password="x")
         self.shift = Shift.objects.create(
-            name="Morning", code="MORN", start_time="09:00", end_time="17:00"
+            name="Morning", code="MORN", start_time=datetime_time(9, 0), end_time=datetime_time(17, 0)
         )
 
     def test_employee_can_have_no_shift(self):
@@ -1674,7 +1823,7 @@ class AttendanceEventModelTests(TestCase):
             date_joined=date.today(),
         )
         self.shift = Shift.objects.create(
-            name="Morning", code="MORN", start_time="09:00", end_time="17:00"
+            name="Morning", code="MORN", start_time=datetime_time(9, 0), end_time=datetime_time(17, 0)
         )
 
     def test_attendance_event_creation(self):
@@ -1786,8 +1935,8 @@ class EventBasedAttendanceTests(APITestCase):
         self.shift = Shift.objects.create(
             name="Morning Shift",
             code="MORN",
-            start_time="09:00:00",
-            end_time="17:00:00",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
             is_active=True,
         )
         self.employee = Employee.objects.create(
@@ -1923,7 +2072,7 @@ class EventBasedAttendanceTests(APITestCase):
 
     def test_first_in_remains_earliest(self):
         """First check-in remains the earliest even after multiple cycles."""
-        now = timezone.now()
+        now = timezone.make_aware(datetime.combine(timezone.localdate(), datetime_time(12, 0)), timezone.get_current_timezone())
         # Manually create events with different times
         AttendanceEvent.objects.create(
             employee=self.employee,
@@ -1956,7 +2105,7 @@ class EventBasedAttendanceTests(APITestCase):
 
     def test_last_out_becomes_latest_checkout(self):
         """Last check-out becomes the latest checkout event."""
-        now = timezone.now()
+        now = timezone.make_aware(datetime.combine(timezone.localdate(), datetime_time(12, 0)), timezone.get_current_timezone())
         AttendanceEvent.objects.create(
             employee=self.employee,
             timestamp=now - timedelta(hours=3),
@@ -2028,7 +2177,7 @@ class EventBasedAttendanceTests(APITestCase):
         """Attendance is not finalized at shift end - events continue to accumulate."""
         # This test verifies the design principle - no auto-finalization
         # Create events manually to avoid cooldown issues
-        base_time = timezone.now() - timedelta(hours=5)
+        base_time = timezone.make_aware(datetime.combine(timezone.localdate(), datetime_time(9, 0)), timezone.get_current_timezone())
         
         for i in range(3):
             check_in_time = base_time + timedelta(hours=i*2)
@@ -2139,7 +2288,7 @@ class EventBasedAttendanceTests(APITestCase):
 
     def test_single_in_out_pair_duration(self):
         """Single IN/OUT pair: working_duration = checkout - checkin."""
-        now = timezone.now()
+        now = timezone.make_aware(datetime.combine(timezone.localdate(), datetime_time(12, 0)), timezone.get_current_timezone())
         AttendanceEvent.objects.create(
             employee=self.employee,
             timestamp=now - timedelta(hours=8),
@@ -2162,7 +2311,7 @@ class EventBasedAttendanceTests(APITestCase):
 
     def test_multiple_intervals_duration_excludes_breaks(self):
         """Multiple IN/OUT intervals sum only time spent checked in."""
-        now = timezone.now()
+        now = timezone.make_aware(datetime.combine(timezone.localdate(), datetime_time(12, 0)), timezone.get_current_timezone())
         # First interval: 9am - 1pm (4 hours)
         AttendanceEvent.objects.create(
             employee=self.employee,
@@ -2200,7 +2349,7 @@ class EventBasedAttendanceTests(APITestCase):
 
     def test_three_intervals_duration(self):
         """Three intervals sum independently and exclude both breaks."""
-        now = timezone.now()
+        now = timezone.make_aware(datetime.combine(timezone.localdate(), datetime_time(12, 0)), timezone.get_current_timezone())
         today_start = timezone.make_aware(timezone.datetime.combine(
             timezone.localdate(), timezone.datetime.min.time()
         ))
@@ -2411,9 +2560,10 @@ class EventBasedAttendanceTests(APITestCase):
         AttendanceEvent.objects.create(employee=self.employee, timestamp=today_start + timedelta(hours=9), event_type="CHECK_IN")
 
         attendance = Attendance.objects.create(employee=self.employee, date=today)
-        attendance.recompute_from_events()
+        with patch('django.utils.timezone.now', return_value=today_start + timedelta(hours=15)):
+            attendance.recompute_from_events()
 
-        self.assertAlmostEqual(attendance.working_duration.total_seconds(), (timezone.now() - (today_start + timedelta(hours=9))).total_seconds(), delta=2)
+        self.assertEqual(attendance.working_duration, timedelta(hours=6))
 
     def test_today_and_history_return_event_derived_duration(self):
         """Today and history APIs expose the same break-excluding duration."""
@@ -2488,10 +2638,11 @@ class AdminForceCheckoutTests(APITestCase):
             status="INCOMPLETE",
         )
 
-        response = self.client.post("/api/admin/force-checkout/", {
-            "employee": self.employee_user.email,
-            "date": self.target_date.isoformat(),
-        }, format="json")
+        with patch("django.utils.timezone.now", return_value=self._timestamp(15)):
+            response = self.client.post("/api/admin/force-checkout/", {
+                "employee": self.employee_user.email,
+                "date": self.target_date.isoformat(),
+            }, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data["count"], 1)
@@ -2548,24 +2699,24 @@ class ShiftAssignmentTests(APITestCase):
         self.shift1 = Shift.objects.create(
             name="Morning Shift",
             code="MORN",
-            start_time="09:00:00",
-            end_time="17:00:00",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
             employment_type="PERMANENT",
             is_active=True,
         )
         self.shift2 = Shift.objects.create(
             name="Evening Shift",
             code="EVE",
-            start_time="17:00:00",
-            end_time="01:00:00",
+            start_time=datetime_time(17, 0),
+            end_time=datetime_time(1, 0),
             employment_type="PERMANENT",
             is_active=True,
         )
         self.inactive_shift = Shift.objects.create(
             name="Night Shift",
             code="NIGHT",
-            start_time="22:00:00",
-            end_time="06:00:00",
+            start_time=datetime_time(22, 0),
+            end_time=datetime_time(6, 0),
             employment_type="PERMANENT",
             is_active=False,
         )
@@ -3544,6 +3695,8 @@ class AdminEditAttendanceTests(APITestCase):
             password="password123",
             is_staff=True,
         )
+        from accounts.models import ManagerScope
+        ManagerScope.objects.create(manager=self.manager_user, scope_type="DEPARTMENT", value="Engineering")
         self.superuser = User.objects.create_user(
             email="super@example.com",
             password="password123",
@@ -3568,7 +3721,7 @@ class AdminEditAttendanceTests(APITestCase):
             source="MOBILE",
         )
 
-    def test_manager_edit_incomplete_to_present(self):
+    def test_manager_cannot_edit_past_attendance(self):
         self.client.force_authenticate(user=self.manager_user)
         
         new_check_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(9, 30)))
@@ -3583,17 +3736,7 @@ class AdminEditAttendanceTests(APITestCase):
             "check_out": new_check_out.isoformat()
         }, format="json")
 
-        self.assertEqual(response.status_code, 200)
-
-        # Verify DB state
-        self.attendance.refresh_from_db()
-        self.assertEqual(self.attendance.status, "PRESENT")
-        self.assertEqual(self.attendance.check_in, new_check_in)
-        self.assertEqual(self.attendance.check_out, new_check_out)
-
-        # Verify ADMIN events created
-        admin_events = AttendanceEvent.objects.filter(employee=self.employee, source="ADMIN")
-        self.assertEqual(admin_events.count(), 2)
+        self.assertEqual(response.status_code, 403)
 
     def test_superuser_edit_incomplete_to_present(self):
         self.client.force_authenticate(user=self.superuser)

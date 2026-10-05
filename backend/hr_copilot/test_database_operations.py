@@ -1,3 +1,4 @@
+from accounts.models import ManagerScope
 """Database integration tests for the HR Copilot read and approved-write paths.
 
 Run with ``python manage.py test hr_copilot.test_database_operations``. Django
@@ -41,9 +42,12 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
             first_name="Copilot",
             last_name="Admin",
             is_system_admin=True,
-            hr_copilot_sections=["C"],
-            hr_copilot_subsections=["C1"],
+            
+            
         )
+        ManagerScope.objects.create(manager=self.admin, scope_type='SECTION', value='C')
+        ManagerScope.objects.create(manager=self.admin, scope_type='DEPARTMENT', value='Engineering')
+
         self.employee_user = get_user_model().objects.create_user(
             email="asha.rao@example.test",
             password="unused-test-password",
@@ -100,10 +104,10 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["query_status"], "executed")
         self.assertEqual(response.data["data"]["rows"], [{"value": 1}])
-        self.assertEqual(response.data["scope"], {"sections": ["C"], "subsections": ["C1"]})
+        self.assertEqual(response.data["scope"], {"sections": ["C"], "subsections": None})
 
     def test_attendance_read_returns_the_test_database_record(self):
-        target_date = date.today() - timedelta(days=2)
+        target_date = date.today()
         Attendance.objects.create(employee=self.employee, date=target_date, status="PRESENT")
         intent = {
             "intent": "attendance_lookup",
@@ -171,7 +175,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         return action_id, result
 
     def test_approved_attendance_update_changes_the_database_record(self):
-        target_date = date.today() - timedelta(days=3)
+        target_date = date.today()
         attendance = Attendance.objects.create(
             employee=self.employee,
             date=target_date,
@@ -204,6 +208,15 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertTrue(audit.explicit_confirmation)
 
     def test_reported_mark_attendance_sentence_survives_name_to_id_resolution(self):
+        # This test validates NLP name→ID resolution and the write pipeline mechanics.
+        # The hardcoded date 2026-09-28 is intentionally in the past (from the original
+        # reported user scenario). Past attendance editing is SuperUser-only, so we use
+        # a SuperUser actor here. This is NOT a scope test; scope is not being verified.
+        superuser = get_user_model().objects.create_user(
+            email="superuser-name-resolution@example.test",
+            is_superuser=True,
+            is_system_admin=True,
+        )
         target_user = get_user_model().objects.create_user(
             email="akshat.awasthi@example.test",
             first_name="Akshat",
@@ -234,7 +247,14 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
             "original_query": question,
         }
         intent["entities"].update({"check_in_time": "09:00", "check_out_time": "18:00"})
-        action_id, result = self._plan_and_approve(intent)
+
+        # Use superuser for _plan_and_approve since past-date edit is SuperUser-only.
+        session_id = f"hr-copilot-user-{superuser.id}"
+        pending_action = write_action_planner.plan_write_action(intent, superuser, session_id)
+        action_id = pending_action_manager.store_pending_action(session_id, pending_action)
+        approved = pending_action_manager.approve_action(session_id, action_id, superuser.id)
+        result = write_action_executor.execute_approved_action(approved, superuser)
+        pending_action_manager.mark_executed(action_id, superuser.id, session_id, result)
 
         attendance = Attendance.objects.get(employee=target_employee, date=date(2026, 9, 28))
         action = CopilotPendingAction.objects.get(action_id=action_id)
@@ -243,7 +263,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(action.status, "EXECUTED")
 
     def test_approved_attendance_create_inserts_a_database_record(self):
-        target_date = date.today() - timedelta(days=4)
+        target_date = date.today()
         intent = {
             "intent": "attendance_create",
             "source": "attendance",
@@ -268,6 +288,8 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
 
     def test_approved_leave_create_adds_pending_request(self):
         start_date = date.today() + timedelta(days=8)
+        while start_date.weekday() >= 5:
+            start_date += timedelta(days=1)
         leave_type = LeaveType.objects.create(name="Annual Leave", code="TEST-CREATE")
         intent = {
             "intent": "leave_create",
@@ -399,7 +421,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(action.status, "EXECUTED")
 
     def test_present_action_waits_for_both_times_and_followup_completes_same_action(self):
-        target_date = date.today() - timedelta(days=1)
+        target_date = date.today()
         intent = {
             "intent": "attendance_update", "source": "attendance", "action_type": "write",
             "requires_approval": True,
@@ -431,7 +453,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertFalse(Attendance.objects.filter(employee=self.employee, date=target_date).exists())
 
     def test_missing_employee_is_asked_then_resolved_in_followup(self):
-        target_date = date.today() - timedelta(days=1)
+        target_date = date.today()
         intent = {
             "intent": "attendance_update", "source": "attendance", "action_type": "write",
             "original_query": "Mark someone present",
@@ -460,7 +482,22 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertFalse(Attendance.objects.filter(employee=self.employee, date=target_date).exists())
 
     def test_exact_ashish_present_conversation_preserves_slots_until_confirmation(self):
+        # This test validates multi-turn slot-filling (collecting check-in/out times
+        # across conversation turns) and conversation memory persistence. It does NOT
+        # test authorization.
+        #
+        # The sentence '29th September' is part of the original real-world user scenario
+        # and must remain to test realistic NLP parsing. The resolved date 2026-09-29 is
+        # past, so past-date editing requires a SuperUser actor (Rule 1 + Rule 3).
+        # Ashish is placed in section='C' (in scope) so scope itself is not the focus.
         from unittest.mock import patch
+
+        # Create a SuperUser for this test: past attendance editing is SuperUser-only.
+        slot_superuser = get_user_model().objects.create_user(
+            email='superuser-slot-test@example.test',
+            is_superuser=True,
+            is_system_admin=True,
+        )
 
         ashish_user = get_user_model().objects.create_user(
             email='ashish.rai@example.test', first_name='Ashish', last_name='Rai',
@@ -482,7 +519,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         first_request = self.factory.post('/api/hr-copilot/query/', {
             'message': first_question, 'conversation_id': conversation_id,
         }, format='json')
-        force_authenticate(first_request, user=self.admin)
+        force_authenticate(first_request, user=slot_superuser)
         with patch.object(views, 'analyze_question', side_effect=semantic_intent):
             first_response = views.HRCopilotQueryView.as_view()(first_request)
 
@@ -503,7 +540,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         second_request = self.factory.post('/api/hr-copilot/query/', {
             'message': '9:30 AM to 6:00 PM', 'conversation_id': conversation_id,
         }, format='json')
-        force_authenticate(second_request, user=self.admin)
+        force_authenticate(second_request, user=slot_superuser)
         with patch.object(views, 'extract_pending_action_fields', return_value={
             'check_in_time': '09:30', 'check_out_time': '18:00',
         }):
@@ -521,7 +558,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
             'action_id': str(pending_id), 'action': 'approve',
             'conversation_id': conversation_id,
         }, format='json')
-        force_authenticate(approve_request, user=self.admin)
+        force_authenticate(approve_request, user=slot_superuser)
         approval_response = views.HRCopilotActionApprovalView.as_view()(approve_request)
         self.assertEqual(approval_response.status_code, 200)
         attendance = Attendance.objects.get(employee=ashish, date=date(2026, 9, 29))
@@ -533,7 +570,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertTrue(audit.explicit_confirmation)
 
     def test_copilot_attendance_correction_preserves_historical_events(self):
-        target_date = date.today() - timedelta(days=1)
+        target_date = date.today()
         old_in = timezone.make_aware(datetime.combine(target_date, datetime.min.time()).replace(hour=9))
         old_out = timezone.make_aware(datetime.combine(target_date, datetime.min.time()).replace(hour=17))
         AttendanceEvent.objects.create(employee=self.employee, timestamp=old_in, event_type='CHECK_IN', source='MOBILE')
@@ -566,7 +603,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(attendance.working_duration, timedelta(hours=8))
 
     def test_absent_approval_clears_times_and_writes_before_after_audits(self):
-        target_date = date.today() - timedelta(days=2)
+        target_date = date.today()
         existing = Attendance.objects.create(
             employee=self.employee, date=target_date, status="PRESENT",
             check_in=timezone.make_aware(datetime.combine(target_date, datetime.min.time()).replace(hour=9)),
@@ -605,7 +642,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(audit.new_state["status"], "ABSENT")
 
     def test_leave_attendance_update_requires_reason_and_keeps_leave_status(self):
-        target_date = date.today() - timedelta(days=4)
+        target_date = date.today()
         intent = {
             "intent": "attendance_update", "source": "attendance", "action_type": "write",
             "requires_approval": True,
@@ -639,7 +676,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertFalse(LeaveRequest.objects.exists())
 
     def test_cancelled_action_does_not_write_and_history_is_restorable(self):
-        target_date = date.today() - timedelta(days=1)
+        target_date = date.today()
         attendance = Attendance.objects.create(employee=self.employee, date=target_date, status="INCOMPLETE")
         intent = {
             "intent": "attendance_update", "source": "attendance", "action_type": "write",
@@ -663,7 +700,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(response.data["messages"][0]["content"], "Show attendance")
 
     def test_pending_action_expires_using_conversation_session(self):
-        target_date = date.today() - timedelta(days=1)
+        target_date = date.today()
         intent = {
             "intent": "attendance_update", "source": "attendance", "action_type": "write",
             "entities": {"employee_email": self.employee_user.email,
@@ -705,7 +742,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
     def test_failed_attendance_transaction_rolls_back_without_success_audit(self):
         from unittest.mock import patch
 
-        target_date = date.today() - timedelta(days=1)
+        target_date = date.today()
         attendance = Attendance.objects.create(employee=self.employee, date=target_date, status="INCOMPLETE")
         intent = {
             "intent": "attendance_update", "source": "attendance", "action_type": "write",

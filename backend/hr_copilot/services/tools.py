@@ -23,18 +23,17 @@ class HRTools:
         return workforce_intelligence.execute(
             metric=metric, scope=scope, user=user, filters=filters, employee_id=employee_id,
         )
-    def get_employee_profile(self, *, employee_id, scope):
-        resolution = employee_resolver.resolve_employee(employee_id=employee_id)
+    def get_employee_profile(self, *, employee_id, scope, user=None):
+        resolution = employee_resolver.resolve_employee(user=user, employee_id=employee_id)
         if resolution.status != "resolved":
             raise CopilotError("employee_not_found", "No employee matched that identity.")
         employee = Employee.objects.select_related("user").filter(pk=resolution.employee_id).first()
         if employee is None:
             raise CopilotError("employee_not_found", "No employee matched that identity.")
-        if not scope["unrestricted"] and (
-            employee.section not in scope["sections"]
-            or (scope["subsections"] and employee.subsection not in scope["subsections"])
-        ):
-            raise CopilotError("scope_denied", "You do not have access to that employee.", 403)
+        if user:
+            from accounts.scope_service import employee_in_manager_scope
+            if not employee_in_manager_scope(user, employee):
+                raise CopilotError("scope_denied", "You do not have access to that employee.", 403)
         return [{
             "id": employee.id,
             "name": " ".join(part for part in [employee.user.first_name, employee.user.last_name] if part).strip(),

@@ -12,11 +12,11 @@ function AttendancePageContent() {
   const isManager = user?.is_staff;
 
   if (isSystemAdmin || isSuperAdmin) {
-    return <AdminAttendancePage allowReset={true} />;
+    return <AdminAttendancePage allowReset={true} allowEdit={true} />;
   }
 
   if (isManager) {
-    return <AdminAttendancePage allowReset={false} />;
+    return <AdminAttendancePage allowReset={false} allowEdit={false} />;
   }
 
   return <EmployeeAttendancePage />;

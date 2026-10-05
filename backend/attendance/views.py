@@ -38,6 +38,7 @@ from notifications.services import (
     queue_notification_after_commit,
 )
 from system_logs.services import record_event
+from accounts.scope_service import employee_in_manager_scope, filter_employees_by_manager_scope
 
 
 def _regularization_created_message(request_obj):
@@ -571,7 +572,7 @@ class IsEmployeeOrManager(BasePermission):
         if not request.user.is_authenticated:
             return False
         # Allow managers and admins
-        if request.user.is_staff or request.user.is_system_admin:
+        if request.user.is_staff or getattr(request.user, 'is_system_admin', False) or request.user.is_superuser:
             return True
         # Allow employees with app access
         try:
@@ -594,21 +595,24 @@ class AttendanceHistoryView(APIView):
         is_manager_or_admin = request.user.is_staff or request.user.is_system_admin
         
         if is_manager_or_admin:
+            manager_scoped = request.user.is_system_admin and not request.user.is_superuser
+            employee_scope = filter_employees_by_manager_scope(request.user, Employee.objects.all()) if manager_scoped else None
             # Managers/admins see all employees' attendance
             # Check for employee_id filter
             employee_id = request.query_params.get('employee_id')
             if employee_id:
                 try:
-                    attendance_records = Attendance.objects.filter(
-                        employee_id=employee_id
-                    ).select_related('employee__user').order_by("-date")
+                    attendance_records = Attendance.objects.filter(employee_id=employee_id)
+                    if employee_scope is not None:
+                        attendance_records = attendance_records.filter(employee_id__in=employee_scope.values("id"))
+                    attendance_records = attendance_records.select_related('employee__user').order_by("-date")
                 except ValueError:
                     return Response({"error": "Invalid employee_id"}, status=400)
             else:
                 # Return all employees' attendance
-                attendance_records = Attendance.objects.select_related(
-                    'employee__user'
-                ).order_by("-date")
+                attendance_records = Attendance.objects.select_related('employee__user').order_by("-date")
+                if employee_scope is not None:
+                    attendance_records = attendance_records.filter(employee_id__in=employee_scope.values("id"))
         else:
             # Regular employees see only their own attendance
             if not hasattr(request.user, "employee"):
@@ -660,6 +664,8 @@ class AdminAttendanceView(APIView):
                 )
 
         employees = Employee.objects.filter(is_active=True).select_related("user")
+        if request.user.is_system_admin and not request.user.is_superuser:
+            employees = filter_employees_by_manager_scope(request.user, employees)
         attendance_records = Attendance.objects.filter(date=filter_date).select_related("employee")
         attendance_map = {att.employee_id: att for att in attendance_records}
 
@@ -712,10 +718,16 @@ class AdminDashboardView(APIView):
     def get(self, request):
         today = timezone.localdate()
 
-        total_employees = Employee.objects.count()
-        active_employees = Employee.objects.filter(is_active=True).count()
+        scoped = request.user.is_system_admin and not request.user.is_superuser
+        employees = Employee.objects.all()
+        if scoped:
+            employees = filter_employees_by_manager_scope(request.user, employees)
+        total_employees = employees.count()
+        active_employees = employees.filter(is_active=True).count()
 
         today_attendance = Attendance.objects.filter(date=today)
+        if scoped:
+            today_attendance = today_attendance.filter(employee_id__in=employees.values("id"))
 
         present_today = today_attendance.filter(
             status="PRESENT"
@@ -763,7 +775,7 @@ class AdminDashboardView(APIView):
 
 class AdminResetAttendanceView(APIView):
     """Only SuperUser can reset attendance - Manager cannot."""
-    permission_classes = [IsAdminUser]  # Keep SuperUser-only
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request):
         employee_email = request.data.get("employee")
@@ -829,8 +841,8 @@ class AdminResetAttendanceView(APIView):
         return Response({"message": "Attendance successfully reset for today."})
 
 class AdminEditAttendanceView(APIView):
-    """Manager and Admin can edit past attendance."""
-    permission_classes = [IsManagerOrAdmin]
+    """SuperUser-only past attendance correction."""
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request):
         employee_email = request.data.get("employee")
@@ -969,6 +981,11 @@ class AdminForceCheckoutView(APIView):
         is_all = request.data.get("all", False)
         employee_email = request.data.get("employee")
 
+        if employee_email and request.user.is_system_admin and not request.user.is_superuser:
+            target = Employee.objects.filter(user__email=employee_email).first()
+            if target is not None and not employee_in_manager_scope(request.user, target):
+                return Response({"error": "You do not have access to this employee."}, status=403)
+
         # The summary row's ``check_out`` is the latest checkout for the day,
         # not necessarily the checkout for the currently open interval.  An
         # employee can check in again after an earlier checkout, so determine
@@ -977,6 +994,12 @@ class AdminForceCheckoutView(APIView):
             date=target_date,
             check_in__isnull=False,
         ).select_related("employee", "employee__user")
+        if request.user.is_system_admin and not request.user.is_superuser:
+            candidate_attendances = candidate_attendances.filter(
+                employee_id__in=filter_employees_by_manager_scope(
+                    request.user, Employee.objects.all()
+                ).values("id")
+            )
         active_attendances = [
             attendance
             for attendance in candidate_attendances
@@ -1635,6 +1658,11 @@ class AdminEmployeeShiftAssignView(APIView):
             employee = Employee.objects.get(user__email=employee_email)
         except Employee.DoesNotExist:
             return Response({"error": "Employee not found"}, status=404)
+            
+        if getattr(request.user, "is_system_admin", False) and not request.user.is_superuser and not request.user.is_staff:
+            from accounts.scope_service import employee_in_manager_scope
+            if not employee_in_manager_scope(request.user, employee):
+                return Response({"error": "You do not have permission to manage this employee's shift"}, status=403)
         
         before_state = {"shift": _shift_log_state(employee.shift)}
         shift = None
@@ -1691,6 +1719,10 @@ class AdminEmployeeShiftBulkAssignView(APIView):
         
         # Build queryset
         queryset = Employee.objects.filter(is_active=True)
+        if getattr(request.user, "is_system_admin", False) and not request.user.is_superuser and not request.user.is_staff:
+            from accounts.scope_service import filter_employees_by_manager_scope
+            queryset = filter_employees_by_manager_scope(request.user, queryset)
+            
         if employee_emails:
             queryset = queryset.filter(user__email__in=employee_emails)
         if section:
@@ -2160,12 +2192,22 @@ class RegularizationRequestCreateView(APIView):
                 raise ValueError("Choose a period and include at least one attendance date.")
             today = timezone.localdate()
             earliest = today - datetime_module.timedelta(days=2)
+            week_start = today - datetime_module.timedelta(days=today.weekday())
             valid_types = dict(RegularizationRequest.REQUEST_TYPES)
             parsed = []
             for item in payload:
                 day_date = date_type.fromisoformat(str(item.get("attendance_date", "")))
                 kind, reason = item.get("request_type"), str(item.get("reason", "")).strip()
-                if not earliest <= day_date <= today: raise ValueError(f"{day_date}: date must be within the past 48 hours.")
+                
+                if day_date > today:
+                    raise ValueError(f"{day_date}: future dates are not allowed.")
+                if period_type in ("WEEK", "MONTH"):
+                    if day_date < week_start:
+                        raise ValueError(f"{day_date}: multi-day requests are only allowed for dates in the current calendar week.")
+                else:
+                    if day_date < earliest:
+                        raise ValueError(f"{day_date}: date must be within the past 48 hours.")
+                        
                 if not is_working_day(day_date): raise ValueError(f"{day_date}: weekends are not eligible.")
                 if kind not in valid_types or not reason: raise ValueError(f"{day_date}: request type and reason are required.")
                 def parse_time(value, field):
@@ -2333,6 +2375,10 @@ class RegularizationRequestListView(APIView):
         manager = request.user.is_staff or request.user.is_system_admin or request.user.is_superuser
         requests = RegularizationRequest.objects.select_related("employee__user", "reviewed_by")
         if manager:
+            from accounts.scope_service import filter_employees_by_manager_scope
+            from employees.models import Employee
+            scoped_employees = filter_employees_by_manager_scope(request.user, Employee.objects.all())
+            requests = requests.filter(employee__in=scoped_employees)
             employee_id = request.query_params.get("employee_id")
             if employee_id: requests = requests.filter(employee_id=employee_id)
         elif hasattr(request.user, "employee"):
@@ -2367,6 +2413,10 @@ class RegularizationRequestDetailView(APIView):
             req = query.get(id=request_id) if manager else query.get(id=request_id, employee=request.user.employee)
         except (RegularizationRequest.DoesNotExist, AttributeError):
             return Response({"error": "Regularization request not found."}, status=404)
+        if manager:
+            from accounts.scope_service import employee_in_manager_scope
+            if not employee_in_manager_scope(request.user, req.employee):
+                return Response({"error": "You do not have permission to access this request."}, status=403)
         rows = list(req.days.all())
         days = [{"id": row.id, "attendance_date": row.attendance_date, "request_type": row.request_type, "reason": row.reason, "description": row.description, "existing_check_in": row.existing_check_in, "existing_check_out": row.existing_check_out, "requested_check_in": row.requested_check_in, "requested_check_out": row.requested_check_out, "approved_check_in": row.approved_check_in, "approved_check_out": row.approved_check_out} for row in rows]
         if not days:
@@ -2384,6 +2434,9 @@ class RegularizationRequestApproveView(APIView):
         try:
             with transaction.atomic():
                 req = RegularizationRequest.objects.select_for_update().select_related("employee__user").get(id=request_id)
+                from accounts.scope_service import employee_in_manager_scope
+                if not employee_in_manager_scope(request.user, req.employee):
+                    return Response({"error": "You do not have permission to access this request."}, status=403)
                 before_state = _regularization_log_state(req)
                 if req.status != "PENDING": return Response({"error": f"Cannot approve request with status {req.status}."}, status=400)
                 if not req.is_within_48_hours: return Response({"error": "Cannot approve request outside 48-hour window."}, status=400)
@@ -2495,6 +2548,9 @@ class RegularizationRequestRejectView(APIView):
                 regularization_request = RegularizationRequest.objects.select_for_update().select_related(
                     'employee__user'
                 ).get(id=request_id)
+                from accounts.scope_service import employee_in_manager_scope
+                if not employee_in_manager_scope(request.user, regularization_request.employee):
+                    return Response({"error": "You do not have permission to access this request."}, status=403)
                 if regularization_request.status != "PENDING":
                     return Response(
                         {"error": f"Cannot reject request with status {regularization_request.status}."},

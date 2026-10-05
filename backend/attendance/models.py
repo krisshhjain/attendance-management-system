@@ -195,25 +195,8 @@ class Attendance(models.Model):
         # Compare first check-in time with shift start time (same date)
         from datetime import datetime, time
         
-        # Safely normalize shift times to datetime.time
-        def to_time(t):
-            if isinstance(t, time):
-                return t
-            if isinstance(t, str):
-                # Parse HH:MM or HH:MM:SS format
-                for fmt in ("%H:%M:%S", "%H:%M"):
-                    try:
-                        return datetime.strptime(t, fmt).time()
-                    except ValueError:
-                        continue
-                raise ValueError(f"Invalid time format: {t}")
-            raise TypeError(f"Cannot convert {type(t)} to time")
-        
-        shift_start_time = to_time(shift.start_time)
-        shift_end_time = to_time(shift.end_time)
-        
-        shift_start = datetime.combine(self.date, shift_start_time)
-        shift_end = datetime.combine(self.date, shift_end_time)
+        shift_start = datetime.combine(self.date, shift.start_time)
+        shift_end = datetime.combine(self.date, shift.end_time)
         
         # Make timezone-aware if needed
         from django.utils import timezone
@@ -536,15 +519,25 @@ class RegularizationRequest(models.Model):
         from django.utils import timezone
         import datetime
         
-        # Validate 48-hour rule
+        # Validate 48-hour rule or current week rule
         if self.attendance_date:
-            now = timezone.localdate()
-            max_allowed_date = now - datetime.timedelta(days=2)
-            
-            if self.attendance_date < max_allowed_date:
-                raise ValidationError(
-                    "Regularization requests are only allowed within 48 hours of the attendance date."
-                )
+            reference_date = timezone.localtime(self.created_at).date() if self.id and self.created_at else timezone.localdate()
+            if self.attendance_date > reference_date:
+                raise ValidationError("Regularization requests are not allowed for future dates.")
+                
+            if self.period_type in ["WEEK", "MONTH"]:
+                week_start = reference_date - datetime.timedelta(days=reference_date.weekday())
+                if self.attendance_date < week_start:
+                    raise ValidationError(
+                        "Multi-day regularization requests are only allowed for dates in the current calendar week."
+                    )
+            else:
+                max_allowed_date = reference_date - datetime.timedelta(days=2)
+                
+                if self.attendance_date < max_allowed_date:
+                    raise ValidationError(
+                        "Regularization requests are only allowed within 48 hours of the attendance date."
+                    )
         
         # Validate requested times are logical
         if self.requested_check_in and self.requested_check_out:
@@ -573,12 +566,19 @@ class RegularizationRequest(models.Model):
     
     @property
     def is_within_48_hours(self):
-        """Check if the request is within the 48-hour window."""
+        """Check if the request is eligible based on the 48-hour or current-week window."""
         from django.utils import timezone
         import datetime
         
-        now = timezone.localdate()
-        cutoff_date = now - datetime.timedelta(days=2)
+        reference_date = timezone.localtime(self.created_at).date() if self.id and self.created_at else timezone.localdate()
+        if self.attendance_date > reference_date:
+            return False
+            
+        if self.period_type in ["WEEK", "MONTH"]:
+            week_start = reference_date - datetime.timedelta(days=reference_date.weekday())
+            return self.attendance_date >= week_start
+            
+        cutoff_date = reference_date - datetime.timedelta(days=2)
         return self.attendance_date >= cutoff_date
     
     @property

@@ -8,8 +8,10 @@ from rest_framework.views import APIView
 from .models import Employee, FaceProfile
 from .serializers import EmployeeCreateSerializer, EmployeeListSerializer, EmployeeUpdateSerializer
 from attendance.face_service import process_enrollment, FaceExtractionError
-from leave_management.permissions import IsManagerOrSuperUser
+from leave_management.permissions import IsManagerOrSuperUser, IsSuperAdmin
 from system_logs.services import record_event
+from accounts.models import ManagerScope
+from accounts.scope_service import employee_in_manager_scope, filter_employees_by_manager_scope
 
 
 def _employee_log_state(employee):
@@ -40,6 +42,66 @@ def _manager_log_state(user):
         "hr_copilot_sections": deepcopy(user.hr_copilot_sections),
         "hr_copilot_subsections": deepcopy(user.hr_copilot_subsections),
     }
+
+
+def _sync_legacy_manager_section_scopes(user):
+    """Keep existing Manager CRUD compatible with the authoritative scope rows."""
+    values = {
+        str(value).strip().upper()
+        for value in (user.hr_copilot_sections or [])
+        if str(value).strip()
+    }
+    ManagerScope.objects.filter(
+        manager=user,
+        scope_type=ManagerScope.SECTION,
+    ).exclude(value__in=values).update(is_active=False)
+    for value in values:
+        ManagerScope.objects.update_or_create(
+            manager=user,
+            scope_type=ManagerScope.SECTION,
+            value=value,
+            defaults={"is_active": True},
+        )
+
+
+def _normalize_manager_scopes(raw_scopes):
+    if raw_scopes is None:
+        return None
+    if not isinstance(raw_scopes, list):
+        raise ValueError("scopes must be a list")
+    normalized = set()
+    for item in raw_scopes:
+        if not isinstance(item, dict):
+            raise ValueError("Each scope must be an object")
+        scope_type = str(item.get("scope_type", "")).strip().upper()
+        value = str(item.get("value", "")).strip()
+        if scope_type not in {ManagerScope.SECTION, ManagerScope.DEPARTMENT}:
+            raise ValueError("scope_type must be SECTION or DEPARTMENT")
+        if not value or len(value) > 100:
+            raise ValueError("Scope value must contain 1 to 100 characters")
+        normalized.add((scope_type, value))
+    return normalized
+
+
+def _set_manager_scopes(user, raw_scopes):
+    scopes = _normalize_manager_scopes(raw_scopes)
+    if scopes is None:
+        return
+    ManagerScope.objects.filter(manager=user).update(is_active=False)
+    for scope_type, value in scopes:
+        ManagerScope.objects.update_or_create(
+            manager=user,
+            scope_type=scope_type,
+            value=value,
+            defaults={"is_active": True},
+        )
+
+
+def _manager_scope_data(user):
+    return [
+        {"scope_type": scope.scope_type, "value": scope.value, "is_active": scope.is_active}
+        for scope in user.manager_scopes.filter(is_active=True)
+    ]
 
 
 class IsAdminOrManager(BasePermission):
@@ -95,6 +157,8 @@ class EmployeeListView(APIView):
 
     def get(self, request):
         employees = Employee.objects.select_related("user", "shift").order_by("id")
+        if request.user.is_system_admin and not request.user.is_superuser:
+            employees = filter_employees_by_manager_scope(request.user, employees)
         serializer = EmployeeListSerializer(employees, many=True)
         return Response(serializer.data)
 
@@ -102,14 +166,19 @@ class EmployeeListView(APIView):
 class EmployeeDetailView(APIView):
     permission_classes = [IsManagerOrSuperUser]
 
-    def get_object(self, pk):
+    def get_object(self, request, pk):
         try:
-            return Employee.objects.select_related("user").get(pk=pk)
+            employee = Employee.objects.select_related("user").get(pk=pk)
         except Employee.DoesNotExist:
             return None
+        if request.user.is_system_admin and not request.user.is_superuser and not employee_in_manager_scope(request.user, employee):
+            return False
+        return employee
 
     def get(self, request, pk):
-        employee = self.get_object(pk)
+        employee = self.get_object(request, pk)
+        if employee is False:
+            return Response({"error": "You do not have access to this employee."}, status=status.HTTP_403_FORBIDDEN)
         if not employee:
             return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
         serializer = EmployeeListSerializer(employee)
@@ -117,7 +186,9 @@ class EmployeeDetailView(APIView):
 
     @transaction.atomic
     def patch(self, request, pk):
-        employee = self.get_object(pk)
+        employee = self.get_object(request, pk)
+        if employee is False:
+            return Response({"error": "You do not have access to this employee."}, status=status.HTTP_403_FORBIDDEN)
         if not employee:
             return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -201,7 +272,9 @@ class EmployeeDetailView(APIView):
 
     @transaction.atomic
     def delete(self, request, pk):
-        employee = self.get_object(pk)
+        employee = self.get_object(request, pk)
+        if employee is False:
+            return Response({"error": "You do not have access to this employee."}, status=status.HTTP_403_FORBIDDEN)
         if not employee:
             return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -351,7 +424,7 @@ class EmployeeFaceEnrollmentView(APIView):
 
 class ManagerCreateView(APIView):
     """SuperUser can create Manager accounts."""
-    permission_classes = [IsAdminUser]  # SuperUser only
+    permission_classes = [IsSuperAdmin]
 
     @transaction.atomic
     def post(self, request):
@@ -364,6 +437,7 @@ class ManagerCreateView(APIView):
         last_name = request.data.get("last_name", "").strip()
         hr_copilot_sections = request.data.get("hr_copilot_sections", [])
         hr_copilot_subsections = request.data.get("hr_copilot_subsections", [])
+        raw_scopes = request.data.get("scopes")
         
         # Validation
         if not email:
@@ -374,6 +448,11 @@ class ManagerCreateView(APIView):
             return Response({"error": "Password must be at least 8 characters"}, status=400)
         if User.objects.filter(email=email).exists():
             return Response({"error": "User with this email already exists"}, status=400)
+        if raw_scopes is not None:
+            try:
+                _normalize_manager_scopes(raw_scopes)
+            except ValueError as error:
+                return Response({"error": str(error)}, status=400)
         
         # Create Manager user
         user = User.objects.create_user(
@@ -389,6 +468,10 @@ class ManagerCreateView(APIView):
         user.hr_copilot_sections = hr_copilot_sections
         user.hr_copilot_subsections = hr_copilot_subsections
         user.save()
+        if raw_scopes is None:
+            _sync_legacy_manager_section_scopes(user)
+        else:
+            _set_manager_scopes(user, raw_scopes)
         record_event(
             event_type="MANAGER_CREATED",
             category="EMPLOYEE",
@@ -423,12 +506,13 @@ class ManagerCreateView(APIView):
             "is_system_admin": user.is_system_admin,
             "hr_copilot_sections": user.hr_copilot_sections,
             "hr_copilot_subsections": user.hr_copilot_subsections,
+            "scopes": _manager_scope_data(user),
         }, status=201)
 
 
 class ManagerListView(APIView):
     """SuperUser can list all Managers."""
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsSuperAdmin]
 
     def get(self, request):
         from django.contrib.auth import get_user_model
@@ -447,6 +531,7 @@ class ManagerListView(APIView):
             "is_active": m.is_active,
             "hr_copilot_sections": m.hr_copilot_sections,
             "hr_copilot_subsections": m.hr_copilot_subsections,
+            "scopes": _manager_scope_data(m),
         } for m in managers]
         
         return Response(data)
@@ -454,7 +539,7 @@ class ManagerListView(APIView):
 
 class ManagerDetailView(APIView):
     """SuperUser can view/update/delete Manager accounts."""
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsSuperAdmin]
 
     def get_object(self, pk):
         from django.contrib.auth import get_user_model
@@ -477,6 +562,7 @@ class ManagerDetailView(APIView):
             "is_active": manager.is_active,
             "hr_copilot_sections": manager.hr_copilot_sections,
             "hr_copilot_subsections": manager.hr_copilot_subsections,
+            "scopes": _manager_scope_data(manager),
         })
 
     @transaction.atomic
@@ -498,6 +584,13 @@ class ManagerDetailView(APIView):
             manager.hr_copilot_sections = request.data["hr_copilot_sections"]
         if "hr_copilot_subsections" in request.data:
             manager.hr_copilot_subsections = request.data["hr_copilot_subsections"]
+        if "scopes" in request.data:
+            try:
+                _set_manager_scopes(manager, request.data["scopes"])
+            except ValueError as error:
+                return Response({"error": str(error)}, status=400)
+        elif "hr_copilot_sections" in request.data:
+            _sync_legacy_manager_section_scopes(manager)
         manager.save()
         after_state = _manager_log_state(manager)
 
@@ -545,6 +638,7 @@ class ManagerDetailView(APIView):
             "is_active": manager.is_active,
             "hr_copilot_sections": manager.hr_copilot_sections,
             "hr_copilot_subsections": manager.hr_copilot_subsections,
+            "scopes": _manager_scope_data(manager),
         })
 
     @transaction.atomic
@@ -559,7 +653,7 @@ class ManagerDetailView(APIView):
 
 class ManagerPasswordChangeView(APIView):
     """SuperUser can change Manager password."""
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsSuperAdmin]
 
     @transaction.atomic
     def post(self, request, pk):

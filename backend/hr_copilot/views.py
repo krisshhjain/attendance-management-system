@@ -329,7 +329,7 @@ class HRCopilotQueryView(APIView):
                         "response_type": "action_preview",
                         "answer": pending_action['description'],
                         "intent": intent["intent"],
-                        "scope": {"sections": scope["sections"], "subsections": scope["subsections"]},
+                        "scope": {"sections": scope.get("sections", []), "subsections": scope.get("subsections")},
                         "query_status": query_status,
                         "conversation_id": conversation_id,
                         "action_id": action_id,
@@ -399,7 +399,7 @@ class HRCopilotQueryView(APIView):
                     ) from write_error
             
             # Handle read operations (existing logic)
-            plan = plan_query(intent, scope)
+            plan = plan_query(intent, scope, user)
             audit.query_plan = plan
             sql, data, columns = "", [], []
             metadata = None
@@ -478,7 +478,7 @@ class HRCopilotQueryView(APIView):
                 "response_type": "result",
                 "answer": answer,
                 "intent": intent["intent"],
-                "scope": {"sections": scope["sections"], "subsections": scope["subsections"]},
+                "scope": {"sections": scope["sections"], "subsections": scope.get("subsections")},
                 "query_status": "executed",
                 "conversation_id": conversation_id,
                 "data": response_data,
@@ -519,7 +519,7 @@ class HRCopilotQueryView(APIView):
                 "detail": public_message,
                 "answer": public_message,
                 "intent": intent["intent"] if intent else "unknown",
-                "scope": {"sections": scope["sections"], "subsections": scope["subsections"]} if scope else None,
+                "scope": {"sections": scope.get("sections", []), "subsections": scope.get("subsections", []), "departments": scope.get("departments", [])} if scope else None,
                 "query_status": "rejected",
                 "conversation_id": conversation_id,
                 "data": None,
@@ -550,7 +550,7 @@ class HRCopilotQueryView(APIView):
                 "detail": "I couldn't complete that HR query. Please try a more specific question.",
                 "answer": "I couldn't complete that HR query. Please try a more specific question.",
                 "intent": intent["intent"] if intent else "unknown",
-                "scope": {"sections": scope["sections"], "subsections": scope["subsections"]} if scope else None,
+                "scope": {"sections": scope.get("sections", []), "subsections": scope.get("subsections", []), "departments": scope.get("departments", [])} if scope else None,
                 "query_status": "failed",
                 "conversation_id": conversation_id,
                 "data": None,

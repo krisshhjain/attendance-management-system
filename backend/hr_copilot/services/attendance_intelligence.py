@@ -48,7 +48,7 @@ class AttendanceIntelligence:
     """Typed, scope-aware attendance read tools."""
 
     @staticmethod
-    def _employees(scope, target_employee_id=None, target_date=None):
+    def _employees(user, scope, target_employee_id=None, target_date=None):
         employees = Employee.objects.select_related("user", "shift").filter(
             is_active=True,
             user__is_active=True,
@@ -57,10 +57,9 @@ class AttendanceIntelligence:
             employees = employees.filter(date_joined__lte=target_date)
         if target_employee_id:
             employees = employees.filter(pk=target_employee_id)
-        if not scope["unrestricted"]:
-            employees = employees.filter(section__in=scope["sections"])
-            if scope["subsections"]:
-                employees = employees.filter(subsection__in=scope["subsections"])
+        from accounts.scope_service import filter_employees_by_manager_scope
+        if user:
+            employees = filter_employees_by_manager_scope(user, employees)
         return employees.order_by("user__last_name", "user__first_name")
 
     @staticmethod
@@ -110,14 +109,14 @@ class AttendanceIntelligence:
             "rows": rows,
         }
 
-    def missing_checkins(self, *, scope, target_date, target_employee_id=None):
+    def missing_checkins(self, *, user, scope, target_date, target_employee_id=None):
         if not is_working_day(target_date):
             return self._base(
                 "missing_checkins", target_date, target_date,
                 ["Weekly holidays are excluded from missing-check-in detection."], [],
             )
         rows = []
-        for employee in self._employees(scope, target_employee_id, target_date):
+        for employee in self._employees(user, scope, target_employee_id, target_date):
             state = self._state(employee, target_date)
             if state["leave"] or state["status"] == "LEAVE":
                 continue
@@ -135,9 +134,9 @@ class AttendanceIntelligence:
             rows,
         )
 
-    def late_employees(self, *, scope, target_date, target_employee_id=None):
+    def late_employees(self, *, user, scope, target_date, target_employee_id=None):
         rows = []
-        for employee in self._employees(scope, target_employee_id, target_date):
+        for employee in self._employees(user, scope, target_employee_id, target_date):
             state = self._state(employee, target_date)
             attendance = state["attendance"]
             if not attendance or not attendance.check_in:
@@ -158,13 +157,13 @@ class AttendanceIntelligence:
             rows,
         )
 
-    def working_hours(self, *, scope, start, end, user, target_employee_id=None):
+    def working_hours(self, *, user, scope, start, end, target_employee_id=None):
         employee_id = target_employee_id
         if employee_id is None:
             employee_id = getattr(getattr(user, "employee", None), "id", None)
         if employee_id is None:
             raise CopilotError("employee_required", "Specify an employee or use an account linked to an employee profile.")
-        employees = list(self._employees(scope, employee_id))
+        employees = list(self._employees(user, scope, employee_id))
         if not employees:
             raise CopilotError("scope_denied", "You do not have access to that employee.", 403)
         employee = employees[0]
@@ -195,11 +194,11 @@ class AttendanceIntelligence:
             }],
         )
 
-    def incomplete_explanation(self, *, scope, target_date, user, target_employee_id=None):
+    def incomplete_explanation(self, *, user, scope, target_date, target_employee_id=None):
         employee_id = target_employee_id or getattr(getattr(user, "employee", None), "id", None)
         if employee_id is None:
             raise CopilotError("employee_required", "Specify an employee or use an account linked to an employee profile.")
-        employees = list(self._employees(scope, employee_id, target_date))
+        employees = list(self._employees(user, scope, employee_id, target_date))
         if not employees:
             raise CopilotError("scope_denied", "You do not have access to that employee.", 403)
         employee = employees[0]
@@ -235,9 +234,9 @@ class AttendanceIntelligence:
             current += timedelta(days=1)
         return values
 
-    def absence_streaks(self, *, scope, start, end, target_employee_id=None):
+    def absence_streaks(self, *, user, scope, start, end, target_employee_id=None):
         rows = []
-        for employee in self._employees(scope, target_employee_id, end):
+        for employee in self._employees(user, scope, target_employee_id, end):
             streak_start = None
             streak_dates = []
             for target_date in self._absence_dates(start, end):
@@ -273,11 +272,11 @@ class AttendanceIntelligence:
             rows,
         )
 
-    def summary(self, *, scope, start, end, target_employee_id=None):
+    def summary(self, *, user, scope, start, end, target_employee_id=None):
         rows = []
         for target_date in self._absence_dates(start, end):
             counts = {"PRESENT": 0, "INCOMPLETE": 0, "LEAVE": 0, "ABSENT": 0}
-            for employee in self._employees(scope, target_employee_id, target_date):
+            for employee in self._employees(user, scope, target_employee_id, target_date):
                 counts[self._state(employee, target_date)["status"]] += 1
             rows.append({"date": target_date.isoformat(), **{key.lower(): value for key, value in counts.items()}})
         return self._base(
@@ -286,13 +285,13 @@ class AttendanceIntelligence:
             rows,
         )
 
-    def period_comparison(self, *, scope, end_date, target_employee_id=None):
+    def period_comparison(self, *, user, scope, end_date, target_employee_id=None):
         current_start = end_date - timedelta(days=end_date.weekday())
         current_end = current_start + timedelta(days=6)
         previous_start = current_start - timedelta(days=7)
         previous_end = current_start - timedelta(days=1)
-        current = self.summary(scope=scope, start=current_start, end=min(current_end, timezone.localdate()), target_employee_id=target_employee_id)
-        previous = self.summary(scope=scope, start=previous_start, end=previous_end, target_employee_id=target_employee_id)
+        current = self.summary(user=user, scope=scope, start=current_start, end=min(current_end, timezone.localdate()), target_employee_id=target_employee_id)
+        previous = self.summary(user=user, scope=scope, start=previous_start, end=previous_end, target_employee_id=target_employee_id)
 
         def totals(payload):
             result = {"present": 0, "incomplete": 0, "leave": 0, "absent": 0}
@@ -318,18 +317,18 @@ class AttendanceIntelligence:
             target = _parse_range(filters.get("date_range", {"start": today.isoformat(), "end": today.isoformat()}))[0]
             if target != today:
                 raise CopilotError("invalid_date_range", "This attendance metric is available for today only.")
-            return getattr(self, metric)(scope=scope, target_date=target, target_employee_id=employee_id)
+            return getattr(self, metric)(user=user, scope=scope, target_date=target, target_employee_id=employee_id)
         if metric == "incomplete_explanation":
             start, _ = _parse_range(filters.get("date_range", {"start": today.isoformat(), "end": today.isoformat()}))
-            return self.incomplete_explanation(scope=scope, target_date=start, user=user, target_employee_id=employee_id)
+            return self.incomplete_explanation(user=user, scope=scope, target_date=start, target_employee_id=employee_id)
         if metric == "period_comparison":
-            return self.period_comparison(scope=scope, end_date=today, target_employee_id=employee_id)
+            return self.period_comparison(user=user, scope=scope, end_date=today, target_employee_id=employee_id)
         start, end = _parse_range(filters.get("date_range", {"start": today.isoformat(), "end": today.isoformat()}))
         if metric == "working_hours":
-            return self.working_hours(scope=scope, start=start, end=end, user=user, target_employee_id=employee_id)
+            return self.working_hours(user=user, scope=scope, start=start, end=end, target_employee_id=employee_id)
         if metric == "absence_streaks":
-            return self.absence_streaks(scope=scope, start=start, end=end, target_employee_id=employee_id)
-        return self.summary(scope=scope, start=start, end=end, target_employee_id=employee_id)
+            return self.absence_streaks(user=user, scope=scope, start=start, end=end, target_employee_id=employee_id)
+        return self.summary(user=user, scope=scope, start=start, end=end, target_employee_id=employee_id)
 
 
 attendance_intelligence = AttendanceIntelligence()

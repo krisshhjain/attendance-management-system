@@ -1,3 +1,4 @@
+from accounts.models import ManagerScope
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
 from decimal import Decimal
@@ -424,7 +425,7 @@ def test_empty_system_admin_scope_is_denied():
 
 
 def test_subsection_scope_derives_its_section():
-    user = SimpleNamespace(is_superuser=False, hr_copilot_sections=[], hr_copilot_subsections=["c2"])
+    user = SimpleNamespace(is_superuser=False, hr_copilot_sections=[], )
     assert derive_scope(user) == {
         "sections": ["C"], "subsections": ["C2"], "unrestricted": False
     }

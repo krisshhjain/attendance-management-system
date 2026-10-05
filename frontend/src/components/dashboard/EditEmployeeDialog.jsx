@@ -102,6 +102,7 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
           {/* Name row */}
           <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
             <TextField
+              required
               fullWidth
               label="First Name"
               name="first_name"
@@ -147,8 +148,8 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
             </TextField>
           </Box>
 
-          {/* Section + Subsection */}
-          <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
+          {/* Section + Subsection are organization fields for Interns only. */}
+          {formData.employment_type === "INTERN" && <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
             <TextField
               fullWidth
               label="Section"
@@ -165,7 +166,7 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
               onChange={handleChange}
               size="small"
             />
-          </Box>
+          </Box>}
 
           <TextField
             required

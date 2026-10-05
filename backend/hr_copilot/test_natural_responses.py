@@ -1,3 +1,4 @@
+from accounts.models import ManagerScope
 import json
 from types import SimpleNamespace
 
@@ -74,7 +75,7 @@ def test_6_unverified_factual_additions_are_rejected(monkeypatch):
 
 
 def test_7_existing_authorization_remains_enforced():
-    user = SimpleNamespace(is_superuser=False, is_system_admin=True, hr_copilot_sections=["A"], hr_copilot_subsections=None)
+    user = SimpleNamespace(is_superuser=False, is_system_admin=True,  hr_copilot_subsections=None)
     scope = derive_scope(user)
     intent = {"intent": "attendance_lookup", "source": "attendance", "entities": {"section": "C"}}
     with pytest.raises(CopilotError) as raised:

@@ -1,3 +1,4 @@
+from accounts.models import ManagerScope
 from types import SimpleNamespace
 
 import pytest

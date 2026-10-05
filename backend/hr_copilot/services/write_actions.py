@@ -97,8 +97,14 @@ class WriteActionPlanner:
             elif 'leave' in query_text or 'on leave' in query_text:
                 target_status = 'LEAVE'
         
-        if not target_status:
+        if not target_status and intent['intent'] != 'attendance_reset':
             raise CopilotError("missing_status", "Target attendance status is required. Please specify 'present', 'absent', or 'incomplete'.")
+            
+        if not scope.get('unrestricted'):
+            if target_date < timezone.localdate():
+                raise CopilotError("admin_only", "Only administrators can edit past attendance records.", 403)
+            if intent['intent'] == 'attendance_reset':
+                raise CopilotError("admin_only", "Only administrators can reset attendance records.", 403)
         
         # Normalize status values
         status_mapping = {
@@ -555,7 +561,7 @@ class WriteActionPlanner:
             if employee is None:
                 raise CopilotError("employee_not_found", "Employee not found")
         elif employee_name or employee_email:
-            resolution = employee_resolver.resolve_employee(name=employee_name, email=employee_email)
+            resolution = employee_resolver.resolve_employee(user=user, name=employee_name, email=employee_email)
             if resolution.status == 'not_found':
                 raise CopilotError("employee_not_found", "Employee not found")
             if resolution.status == 'ambiguous':
@@ -571,9 +577,8 @@ class WriteActionPlanner:
 
         # Verify every resolution path, including interpreter-resolved IDs, is scoped.
         if not scope['unrestricted']:
-            if employee.section not in scope['sections']:
-                raise CopilotError("scope_denied", "You don't have access to this employee", 403)
-            if scope['subsections'] and employee.subsection not in scope['subsections']:
+            from accounts.scope_service import employee_in_manager_scope
+            if not employee_in_manager_scope(user, employee):
                 raise CopilotError("scope_denied", "You don't have access to this employee", 403)
         
         return {

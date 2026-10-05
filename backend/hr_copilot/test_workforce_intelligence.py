@@ -1,3 +1,4 @@
+from accounts.models import ManagerScope
 from datetime import timedelta, time
 from unittest.mock import patch
 
@@ -20,8 +21,11 @@ class WorkforceIntelligenceTests(TestCase):
         User = get_user_model()
         self.admin = User.objects.create_user(
             email="workforce-admin@example.test", is_system_admin=True,
-            hr_copilot_sections=["C"], hr_copilot_subsections=["C1"],
+             
         )
+        ManagerScope.objects.create(manager=self.admin, scope_type='SECTION', value='C')
+        ManagerScope.objects.create(manager=self.admin, scope_type='DEPARTMENT', value='Engineering')
+
         self.user = User.objects.create_user(email="workforce-employee@example.test", first_name="Asha", last_name="Rao")
         self.employee = Employee.objects.create(
             user=self.user, department="Engineering", employment_type="PERMANENT",
