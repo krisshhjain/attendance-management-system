@@ -23,6 +23,6 @@ TEMPLATE """{{- if .Messages }}
 {{ end }}<|im_start|>assistant
 {{ end }}{{ .Response }}{{ if .Response }}<|im_end|>{{ end }}"""
 
-PARAMETER num_ctx 1024
+PARAMETER num_ctx 8192
 PARAMETER temperature 0
 PARAMETER stop "<|im_end|>"

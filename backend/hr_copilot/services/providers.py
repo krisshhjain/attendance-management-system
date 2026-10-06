@@ -53,6 +53,9 @@ class LocalOllamaQwenProvider:
         self.model = model or os.environ.get("HR_COPILOT_LLM_MODEL") or DEFAULT_MODEL
         self.timeout_seconds = int(timeout_seconds or os.environ.get("HR_COPILOT_LLM_TIMEOUT_SECONDS", "30"))
         self.temperature = float(temperature if temperature is not None else os.environ.get("HR_COPILOT_LLM_TEMPERATURE", "0"))
+        self.num_ctx = int(os.environ.get("HR_COPILOT_LLM_NUM_CTX", "8192"))
+        if self.num_ctx < 1:
+            raise LLMProviderConfigurationError("The local LLM context size must be positive.")
         self._validate_configuration()
 
     def _validate_configuration(self):
@@ -93,7 +96,7 @@ class LocalOllamaQwenProvider:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": self.temperature, **(options or {})},
+            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx, **(options or {})},
         }
         result = self._request("/api/generate", payload)
         if not isinstance(result.get("response"), str):
@@ -107,7 +110,7 @@ class LocalOllamaQwenProvider:
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": self.temperature, **(options or {})},
+            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx, **(options or {})},
         }
         if response_format:
             payload["format"] = response_format

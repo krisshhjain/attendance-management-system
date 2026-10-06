@@ -58,6 +58,19 @@ frontend/.env.*
 
 # Facial recognition
 facial-recognition/
+!facial-recognition/
+facial-recognition/*
+!facial-recognition/app.py
+!facial-recognition/face_utils.py
+!facial-recognition/liveness.py
+!facial-recognition/requirements.txt
+!facial-recognition/test_service.py
+!facial-recognition/MODEL_NOTICE.md
+!facial-recognition/models/
+facial-recognition/models/*
+!facial-recognition/models/mini_fas_best_model_quantized.onnx
+!facial-recognition/models/mini_fas_detector_quantized.onnx
+!facial-recognition/models/LICENSE
 
 # Locally transferred language model weights
 models/**/*.gguf

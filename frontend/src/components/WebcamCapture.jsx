@@ -9,9 +9,8 @@ export default function WebcamCapture({
   isLoading,
   purpose = "enrollment",
 }) {
-  const isAttendanceVerification = purpose === "attendance" && mode !== "burst";
+  const isAttendanceVerification = purpose === "attendance";
   const webcamRef = useRef(null);
-  const [capturedImages, setCapturedImages] = useState([]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [captureCount, setCaptureCount] = useState(0);
 
@@ -51,10 +50,36 @@ export default function WebcamCapture({
       if (count >= 3) {
         clearInterval(interval);
         setIsCapturing(false);
-        setCapturedImages(images);
         onCapture(images);
       }
     }, 1000); // 1000ms between shots to allow for slight pose variations
+  }, [isCapturing, isLoading, onCapture]);
+
+  const captureSequence = useCallback(async () => {
+    if (isCapturing || isLoading) return;
+
+    setIsCapturing(true);
+    setCaptureCount(0);
+    const images = [];
+    const capturedAtMs = [];
+    let firstCapturedAt = null;
+
+    for (let index = 0; index < 5; index += 1) {
+      if (index > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+      const image = webcamRef.current?.getScreenshot();
+      const now = performance.now();
+      if (image) {
+        if (firstCapturedAt === null) firstCapturedAt = now;
+        images.push(image);
+        capturedAtMs.push(Math.round(now - firstCapturedAt));
+      }
+      setCaptureCount(index + 1);
+    }
+
+    setIsCapturing(false);
+    onCapture(images, capturedAtMs);
   }, [isCapturing, isLoading, onCapture]);
 
   return (
@@ -71,7 +96,7 @@ export default function WebcamCapture({
         position: "relative", 
         width: "100%", 
         maxWidth: 640, 
-        height: 480, 
+        height: isAttendanceVerification ? { xs: "min(48vh, 360px)", sm: 480 } : 480,
         backgroundColor: "#000",
         borderRadius: 2,
         overflow: "hidden" 
@@ -80,12 +105,18 @@ export default function WebcamCapture({
           audio={false}
           ref={webcamRef}
           screenshotFormat="image/jpeg"
+          // CSS-only mirroring affects the visible video, not getScreenshot() pixels.
           videoConstraints={{
             width: 640,
             height: 480,
             facingMode: "user"
           }}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            transform: "scaleX(-1)",
+          }}
         />
         
         {/* Subtle Targeting Overlay */}
@@ -102,6 +133,32 @@ export default function WebcamCapture({
           boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.3)"
         }} />
 
+        {isAttendanceVerification && (
+          <Box sx={{
+            position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 2,
+            display: "flex", justifyContent: "center", gap: 1.5,
+            p: { xs: 1.5, sm: 2 }, pt: 5,
+            background: "linear-gradient(transparent, rgba(0,0,0,.78))",
+          }}>
+            <Button
+              variant="outlined"
+              onClick={onCancel}
+              disabled={isLoading || isCapturing}
+              sx={{ color: "white", borderColor: "rgba(255,255,255,.75)", minWidth: 96, "&:hover": { borderColor: "white", bgcolor: "rgba(255,255,255,.12)" } }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              onClick={captureSequence}
+              disabled={isLoading || isCapturing}
+              sx={{ minWidth: 150, boxShadow: 3 }}
+            >
+              {isCapturing ? `Capturing ${captureCount}/5…` : "Capture & Verify"}
+            </Button>
+          </Box>
+        )}
+
         {(isLoading || isCapturing) && (
           <Box sx={{
             position: "absolute",
@@ -117,7 +174,7 @@ export default function WebcamCapture({
             <CircularProgress color="inherit" size={48} sx={{ mb: 2 }} />
             <Typography variant="h5" sx={{ fontWeight: 600 }}>
               {isCapturing
-                ? `Capturing... ${captureCount}/3`
+                ? `Capturing... ${captureCount}/${isAttendanceVerification ? 5 : 3}`
                 : isAttendanceVerification
                   ? "Verifying your face…"
                   : "Processing Enrollment..."}
@@ -135,7 +192,7 @@ export default function WebcamCapture({
         )}
       </Box>
       
-      <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+      {!isAttendanceVerification && <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
         <Button 
           variant="outlined" 
           color="secondary" 
@@ -147,12 +204,12 @@ export default function WebcamCapture({
         <Button 
           variant="contained" 
           color="primary" 
-          onClick={mode === "burst" ? captureBurst : captureSingle}
+          onClick={isAttendanceVerification ? captureSequence : mode === "burst" ? captureBurst : captureSingle}
           disabled={isLoading || isCapturing}
         >
           {mode === "burst" ? "Start Capture" : "Capture & Verify"}
         </Button>
-      </Box>
+      </Box>}
     </Box>
   );
 }

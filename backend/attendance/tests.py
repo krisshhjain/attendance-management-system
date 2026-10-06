@@ -24,11 +24,19 @@ from attendance.geofence import (
     MAX_ACCURACY_METERS,
     calculate_haversine_distance,
 )
-from attendance.face_service import process_enrollment, find_closest_match, FaceExtractionError
+from attendance.face_service import process_enrollment, find_closest_match, FaceExtractionError, FaceLivenessError
 from attendance.models import RegularizationRequest
 from accounts.models import ManagerScope
 
 User = get_user_model()
+
+
+def camera_sequence_payload(**extra):
+    return {
+        "frames": [f"frame-{index}" for index in range(5)],
+        "captured_at_ms": [index * 250 for index in range(5)],
+        **extra,
+    }
 
 
 class ManagerEmployeeAttendanceScopeTests(APITestCase):
@@ -786,6 +794,24 @@ class FaceServiceIntegrationTests(TestCase):
         self.assertEqual(distance, 0.3)
 
     @patch('attendance.face_service.requests.post')
+    def test_attendance_sequence_is_forwarded_to_sequence_endpoint(self, mock_post):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            "status": "match", "employee_id": self.employee.id, "distance": 0.2,
+        }
+        mock_post.return_value = mock_response
+
+        find_closest_match(
+            ["frame-1", "frame-2", "frame-3", "frame-4", "frame-5"],
+            captured_at_ms=[0, 250, 500, 750, 1000],
+        )
+
+        args, kwargs = mock_post.call_args
+        self.assertTrue(args[0].endswith("/recognize-sequence"))
+        self.assertEqual(kwargs["json"]["frames"], ["frame-1", "frame-2", "frame-3", "frame-4", "frame-5"])
+        self.assertEqual(kwargs["json"]["captured_at_ms"], [0, 250, 500, 750, 1000])
+
+    @patch('attendance.face_service.requests.post')
     def test_find_closest_match_unknown(self, mock_post):
         mock_response = Mock()
         mock_response.status_code = 200
@@ -798,6 +824,28 @@ class FaceServiceIntegrationTests(TestCase):
         matched_emp, distance = find_closest_match(self.dummy_image)
         self.assertIsNone(matched_emp)
         self.assertEqual(distance, 0.8)
+
+    @patch('attendance.face_service.requests.post')
+    def test_recognition_liveness_failure_is_machine_readable_and_fail_closed(self, mock_post):
+        response = Mock(status_code=400)
+        response.json.return_value = {"status": "liveness_failed", "reason": "spoof-detected"}
+        mock_post.return_value = response
+
+        with self.assertRaises(FaceLivenessError) as context:
+            find_closest_match(self.dummy_image)
+        self.assertEqual(context.exception.status, "liveness_failed")
+        self.assertNotIn("spoof-detected", str(context.exception))
+
+    @patch('attendance.face_service.requests.post')
+    def test_recognition_liveness_error_is_fail_closed(self, mock_post):
+        response = Mock(status_code=503)
+        response.json.return_value = {"status": "liveness_error", "error": "internal model detail"}
+        mock_post.return_value = response
+
+        with self.assertRaises(FaceLivenessError) as context:
+            find_closest_match(self.dummy_image)
+        self.assertEqual(context.exception.status, "liveness_error")
+        self.assertNotIn("internal model detail", str(context.exception))
 
     @patch('attendance.face_service.requests.post')
     def test_find_closest_match_invalid_employee(self, mock_post):
@@ -1024,10 +1072,23 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["message"], "Check-in successful")
+        request_call = mock_post.call_args_list[0]
+        request_payload = request_call.kwargs["json"]
+        self.assertEqual(len(request_payload.get("frames", [])), 5, request_payload)
+        self.assertEqual(request_payload["captured_at_ms"], [0, 250, 500, 750, 1000])
+        self.assertTrue(request_call.args[0].endswith("/recognize-sequence"))
+
+    @patch('attendance.face_service.requests.post')
+    def test_single_image_direct_request_cannot_bypass_sequence_gate(self, mock_post):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(self.url, {"image": "one-frame", **self.valid_location}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AttendanceEvent.objects.filter(employee=self.employee).exists())
+        mock_post.assert_not_called()
 
     @patch('attendance.face_service.requests.post')
     def test_facial_check_in_mismatch(self, mock_post):
@@ -1039,7 +1100,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
 
         # But we are authenticated as employee2 (spoof attempt)
         self.client.force_authenticate(user=self.user2)
-        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 403)
         self.assertIn("does not match your authenticated account", response.data["error"])
@@ -1052,7 +1113,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 403)
         # verify_employee_face does 1:1 check — an unrecognised face returns the same mismatch message
@@ -1071,7 +1132,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "Already checked in today")
@@ -1090,7 +1151,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 400)
         self.assertIn("on approved leave", response.data["error"])
@@ -1104,7 +1165,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
             "accuracy": 10.0,
         }
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string", **outside_location})
+        response = self.client.post(self.url, camera_sequence_payload(**outside_location), format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("outside the allowed attendance area", response.data["error"])
         mock_post.assert_not_called()
@@ -1113,9 +1174,37 @@ class WebsiteFacialCheckInViewTests(APITestCase):
     def test_facial_check_in_service_unavailable(self, mock_post):
         mock_post.side_effect = requests.exceptions.ConnectionError("Refused")
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy_base64_string", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("unavailable", response.data["error"])
+
+    @patch('attendance.face_service.requests.post')
+    def test_liveness_failure_rejects_direct_request_without_event(self, mock_post):
+        response_from_fr = Mock(status_code=400)
+        response_from_fr.json.return_value = {"status": "liveness_failed", "reason": "spoof-detected"}
+        mock_post.return_value = response_from_fr
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(self.url, camera_sequence_payload(
+            liveness={"is_live": True}, is_live=True, **self.valid_location,
+        ), format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["status"], "liveness_failed")
+        self.assertFalse(AttendanceEvent.objects.filter(employee=self.employee).exists())
+
+    @patch('attendance.face_service.requests.post')
+    def test_liveness_service_error_rejects_without_event(self, mock_post):
+        response_from_fr = Mock(status_code=503)
+        response_from_fr.json.return_value = {"status": "liveness_error", "error": "model detail"}
+        mock_post.return_value = response_from_fr
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["status"], "liveness_error")
+        self.assertFalse(AttendanceEvent.objects.filter(employee=self.employee).exists())
 
 class WebsiteFacialCheckOutViewTests(APITestCase):
     def setUp(self):
@@ -1145,7 +1234,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], "Check-out successful")
@@ -1158,7 +1247,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "You have not checked in today")
@@ -1184,7 +1273,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_verify.return_value = (True, 0.3)
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy", **self.valid_location}, format="json")
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["message"], "Check-out successful")
@@ -1205,7 +1294,7 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "Already checked out today")
@@ -1227,10 +1316,103 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=user2)
-        response = self.client.post(self.url, {"image": "dummy", **self.valid_location})
+        response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
         
         self.assertEqual(response.status_code, 403)
         self.assertIn("does not match your authenticated account", response.data["error"])
+
+    @patch('attendance.face_service.requests.post')
+    def test_liveness_failure_and_error_never_create_checkout_event(self, mock_post):
+        from datetime import timedelta
+        check_in_time = timezone.now() - timedelta(minutes=10)
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=check_in_time, event_type="CHECK_IN", source="FACE_WEB")
+        Attendance.objects.create(employee=self.employee, date=timezone.localdate(), check_in=check_in_time, status="INCOMPLETE")
+        self.client.force_authenticate(user=self.user)
+
+        for code, status_name, expected_http in ((400, "liveness_failed", 400), (503, "liveness_error", 503)):
+            with self.subTest(status=status_name):
+                fr_response = Mock(status_code=code)
+                fr_response.json.return_value = {"status": status_name}
+                mock_post.return_value = fr_response
+                response = self.client.post(self.url, camera_sequence_payload(**self.valid_location), format="json")
+                self.assertEqual(response.status_code, expected_http)
+                self.assertEqual(response.data["status"], status_name)
+
+        self.assertEqual(AttendanceEvent.objects.filter(employee=self.employee, event_type="CHECK_OUT").count(), 0)
+
+
+class KioskLivenessAttendanceTests(APITestCase):
+    def setUp(self):
+        from attendance.models import Shift
+        self.user = User.objects.create_user(email="kiosk-face@example.com", password="password123", first_name="Kiosk")
+        self.shift = Shift.objects.create(
+            name="Kiosk shift", code="KIOSK-FACE", start_time=datetime_time(9, 0), end_time=datetime_time(17, 0),
+            employment_type="PERMANENT",
+        )
+        self.employee = Employee.objects.create(
+            user=self.user, department="Engineering", employment_type="PERMANENT",
+            date_joined="2023-01-01", shift=self.shift,
+        )
+        FaceProfile.objects.create(employee=self.employee, face_template=[0.5] * 512, status="ACTIVE")
+        self.check_in_url = reverse("kiosk-check-in")
+        self.check_out_url = reverse("kiosk-check-out")
+
+    def _fr_response(self, status_code, body):
+        response = Mock(status_code=status_code)
+        response.json.return_value = body
+        return response
+
+    @patch("attendance.face_service.requests.post")
+    def test_spoof_and_liveness_error_block_both_kiosk_actions_even_with_client_claim(self, mock_post):
+        today = timezone.localdate()
+        check_in_time = timezone.now() - timedelta(minutes=10)
+        Attendance.objects.create(employee=self.employee, date=today, check_in=check_in_time, status="INCOMPLETE")
+        AttendanceEvent.objects.create(employee=self.employee, timestamp=check_in_time, event_type="CHECK_IN", source="KIOSK")
+
+        cases = (
+            (self.check_in_url, "CHECK_IN", 400, "liveness_failed", 400),
+            (self.check_in_url, "CHECK_IN", 503, "liveness_error", 503),
+            (self.check_out_url, "CHECK_OUT", 400, "liveness_failed", 400),
+            (self.check_out_url, "CHECK_OUT", 503, "liveness_error", 503),
+        )
+        for url, event_type, fr_code, fr_status, expected_code in cases:
+            with self.subTest(url=url, status=fr_status):
+                mock_post.return_value = self._fr_response(fr_code, {"status": fr_status, "reason": "private detail"})
+                response = self.client.post(url, camera_sequence_payload(
+                    liveness={"is_live": True}, is_live=True,
+                ), format="json")
+                self.assertEqual(response.status_code, expected_code)
+                self.assertEqual(response.data["status"], fr_status)
+                self.assertEqual(AttendanceEvent.objects.filter(employee=self.employee, event_type=event_type).count(), 1 if event_type == "CHECK_IN" else 0)
+
+    @patch("attendance.face_service.requests.post")
+    def test_live_matching_recognition_keeps_kiosk_checkin_checkout_working(self, mock_post):
+        mock_post.return_value = self._fr_response(200, {
+            "status": "match", "employee_id": self.employee.id, "distance": 0.2,
+        })
+
+        check_in = self.client.post(self.check_in_url, camera_sequence_payload(), format="json")
+        self.assertEqual(check_in.status_code, 201)
+        self.assertTrue(AttendanceEvent.objects.filter(employee=self.employee, event_type="CHECK_IN").exists())
+
+        check_out = self.client.post(self.check_out_url, camera_sequence_payload(), format="json")
+        self.assertEqual(check_out.status_code, 200)
+        self.assertTrue(AttendanceEvent.objects.filter(employee=self.employee, event_type="CHECK_OUT").exists())
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_unknown_recognition_contract_is_unchanged(self, mock_post):
+        mock_post.return_value = self._fr_response(200, {"status": "unknown", "distance": 0.8})
+        response = self.client.post(self.check_in_url, camera_sequence_payload(), format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data["error"], "Face not recognized.")
+        self.assertFalse(AttendanceEvent.objects.filter(employee=self.employee).exists())
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_single_image_request_cannot_bypass_sequence_gate(self, mock_post):
+        response = self.client.post(self.check_in_url, {"image": "one-frame"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AttendanceEvent.objects.filter(employee=self.employee).exists())
+        mock_post.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -2212,7 +2394,7 @@ class EventBasedAttendanceTests(APITestCase):
         """Facial check-in creates AttendanceEvent with source FACE_WEB."""
         mock_verify.return_value = (True, 0.3)
 
-        response = self.client.post("/api/attendance/website-facial-check-in/", {"image": "dummy", **self.valid_location}, format="json")
+        response = self.client.post("/api/attendance/website-facial-check-in/", camera_sequence_payload(**self.valid_location), format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         events = AttendanceEvent.objects.filter(employee=self.employee, timestamp__date=timezone.localdate())
@@ -2239,7 +2421,7 @@ class EventBasedAttendanceTests(APITestCase):
 
         mock_verify.return_value = (True, 0.3)
 
-        response = self.client.post("/api/attendance/website-facial-check-out/", {"image": "dummy", **self.valid_location}, format="json")
+        response = self.client.post("/api/attendance/website-facial-check-out/", camera_sequence_payload(**self.valid_location), format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_geofence_protection_still_works(self):

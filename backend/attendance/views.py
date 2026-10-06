@@ -31,7 +31,7 @@ from .models import (
     OfficeLocation,
 )
 from .geofence import validate_attendance_geofence
-from .face_service import find_closest_match, verify_employee_face, FaceExtractionError
+from .face_service import find_closest_match, verify_employee_face, FaceExtractionError, FaceLivenessError
 from leave_management.models import LeaveRequest
 from notifications.services import (
     queue_manager_notifications_after_commit,
@@ -1058,9 +1058,10 @@ class WebsiteFacialCheckInView(APIView):
         employee = request.user.employee
         today = timezone.localdate()
 
-        image_data = request.data.get("image")
-        if not image_data:
-            return Response({"error": "No image provided"}, status=400)
+        frames = request.data.get("frames")
+        captured_at_ms = request.data.get("captured_at_ms")
+        if not frames:
+            return Response({"error": "No camera frames provided"}, status=400)
 
         # Geofence verification
         is_valid, error_msg, distance_geo, coords = validate_attendance_geofence(
@@ -1073,7 +1074,10 @@ class WebsiteFacialCheckInView(APIView):
 
         # 1. Verify face matches authenticated user
         try:
-            is_match, distance = verify_employee_face(employee, image_data)
+            is_match, distance = verify_employee_face(employee, frames, captured_at_ms=captured_at_ms)
+        except FaceLivenessError as e:
+            status_code = 503 if e.status == "liveness_error" else 400
+            return Response({"status": e.status, "error": str(e)}, status=status_code)
         except FaceExtractionError as e:
             return Response({"error": str(e)}, status=400)
         except Exception as e:
@@ -1162,9 +1166,10 @@ class WebsiteFacialCheckOutView(APIView):
         employee = request.user.employee
         today = timezone.localdate()
 
-        image_data = request.data.get("image")
-        if not image_data:
-            return Response({"error": "No image provided"}, status=400)
+        frames = request.data.get("frames")
+        captured_at_ms = request.data.get("captured_at_ms")
+        if not frames:
+            return Response({"error": "No camera frames provided"}, status=400)
 
         # Geofence verification
         is_valid, error_msg, distance_geo, coords = validate_attendance_geofence(
@@ -1177,7 +1182,10 @@ class WebsiteFacialCheckOutView(APIView):
 
         # 1. Verify face matches authenticated user
         try:
-            is_match, distance = verify_employee_face(employee, image_data)
+            is_match, distance = verify_employee_face(employee, frames, captured_at_ms=captured_at_ms)
+        except FaceLivenessError as e:
+            status_code = 503 if e.status == "liveness_error" else 400
+            return Response({"status": e.status, "error": str(e)}, status=status_code)
         except FaceExtractionError as e:
             return Response({"error": str(e)}, status=400)
         except Exception as e:
@@ -1260,12 +1268,21 @@ class KioskFaceCheckInView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        image_data = request.data.get("image")
-        if not image_data:
-            return Response({"error": "No image provided"}, status=400)
+        frames = request.data.get("frames")
+        captured_at_ms = request.data.get("captured_at_ms")
+        if not frames:
+            return Response({"error": "No camera frames provided"}, status=400)
 
         try:
-            employee, distance = find_closest_match(image_data)
+            employee, distance = find_closest_match(frames, captured_at_ms=captured_at_ms)
+        except FaceLivenessError as e:
+            AttendanceAuditLog.objects.create(
+                event_type="CHECK_IN",
+                status="FAILED_ERROR",
+                error_message=str(e),
+            )
+            status_code = 503 if e.status == "liveness_error" else 400
+            return Response({"status": e.status, "error": str(e)}, status=status_code)
         except FaceExtractionError as e:
             AttendanceAuditLog.objects.create(
                 event_type="CHECK_IN",
@@ -1367,12 +1384,21 @@ class KioskFaceCheckOutView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        image_data = request.data.get("image")
-        if not image_data:
-            return Response({"error": "No image provided"}, status=400)
+        frames = request.data.get("frames")
+        captured_at_ms = request.data.get("captured_at_ms")
+        if not frames:
+            return Response({"error": "No camera frames provided"}, status=400)
 
         try:
-            employee, distance = find_closest_match(image_data)
+            employee, distance = find_closest_match(frames, captured_at_ms=captured_at_ms)
+        except FaceLivenessError as e:
+            AttendanceAuditLog.objects.create(
+                event_type="CHECK_OUT",
+                status="FAILED_ERROR",
+                error_message=str(e),
+            )
+            status_code = 503 if e.status == "liveness_error" else 400
+            return Response({"status": e.status, "error": str(e)}, status=status_code)
         except FaceExtractionError as e:
             AttendanceAuditLog.objects.create(
                 event_type="CHECK_OUT",

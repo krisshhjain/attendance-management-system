@@ -150,9 +150,21 @@ def save_context(user, conversation_id, plan, data=None):
     except (AttributeError, TypeError):
         # Keep this helper usable with lightweight stores in unit tests.
         existing = {}
+    # Employee search/details results are also valid conversation referents.
+    # Some workforce queries intentionally leave plan['employee'] as
+    # ``not_required`` while returning one uniquely matched employee.
+    result_employee_id = None
+    result_employee_name = None
+    result_employee_email = None
+    if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+        row = data[0]
+        result_employee_id = row.get("employee_id")
+        result_employee_name = row.get("name") or row.get("employee_name")
+        result_employee_email = row.get("email") or row.get("employee_email")
+
     context = {
         **existing,
-        "current_employee_id": plan.get("employee", {}).get("employee_id") or existing.get("current_employee_id"),
+        "current_employee_id": plan.get("employee", {}).get("employee_id") or result_employee_id or existing.get("current_employee_id"),
         "current_section": plan.get("filters", {}).get("section") or existing.get("current_section"),
         "current_subsection": plan.get("filters", {}).get("subsection") or existing.get("current_subsection"),
         "current_date_context": plan.get("temporal_scope") or existing.get("current_date_context"),
@@ -171,6 +183,10 @@ def save_context(user, conversation_id, plan, data=None):
             # Lightweight context tests and non-database stores may not have
             # an Employee table; the employee ID remains safe to persist.
             pass
+    if result_employee_name and not context.get("current_employee_name"):
+        context["current_employee_name"] = result_employee_name
+    if result_employee_email and not context.get("current_employee_email"):
+        context["current_employee_email"] = result_employee_email
     if plan.get("filters", {}).get("date_range"):
         date_range = plan["filters"]["date_range"]
         context["current_date"] = date_range.get("start")

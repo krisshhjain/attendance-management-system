@@ -193,4 +193,5 @@ os.environ.setdefault('HR_COPILOT_LLM_URL', 'http://127.0.0.1:11434')
 os.environ.setdefault('HR_COPILOT_LLM_MODEL', 'qwen3-8b-q4km-local')
 os.environ.setdefault('HR_COPILOT_LLM_TIMEOUT_SECONDS', '120')  # Increased timeout for Qwen3-8B
 os.environ.setdefault('HR_COPILOT_LLM_TEMPERATURE', '0')  # Faster, deterministic responses
+os.environ.setdefault('HR_COPILOT_LLM_NUM_CTX', '8192')  # Ollama context window
 

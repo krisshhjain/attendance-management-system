@@ -14,6 +14,35 @@ class FaceExtractionError(Exception):
     pass
 
 
+class FaceLivenessError(FaceExtractionError):
+    """A safe, machine-readable rejection from the FR liveness gate."""
+
+    def __init__(self, status: str):
+        self.status = status
+        if status == "liveness_failed":
+            message = "Liveness check failed. Please use a live camera image and try again."
+        else:
+            self.status = "liveness_error"
+            message = "Liveness check is temporarily unavailable. Please try again."
+        super().__init__(message)
+
+
+def _raise_for_recognition_error(response):
+    try:
+        body = response.json()
+    except (ValueError, requests.RequestException):
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+
+    service_status = body.get("status")
+    if service_status in {"liveness_failed", "liveness_error"}:
+        raise FaceLivenessError(service_status)
+
+    error_msg = body.get("error", "Unknown FR service error")
+    raise FaceExtractionError(str(error_msg))
+
+
 def _to_base64_string(image_data: Union[str, bytes]) -> str:
     """Helper to ensure image data is a base64 encoded string for JSON transmission."""
     if isinstance(image_data, str):
@@ -25,6 +54,32 @@ def _to_base64_string(image_data: Union[str, bytes]) -> str:
         return base64.b64encode(image_data).decode('utf-8')
     else:
         raise FaceExtractionError("Unsupported image data type.")
+
+
+def _recognize_payload(image_data, candidates, threshold, captured_at_ms=None):
+    """Use the sequence gate for attendance captures; retain legacy single-image callers."""
+    if isinstance(image_data, (list, tuple)):
+        if not 3 <= len(image_data) <= 7:
+            raise FaceExtractionError("A facial attendance check requires 3 to 7 camera frames.")
+        if not isinstance(captured_at_ms, (list, tuple)) or len(captured_at_ms) != len(image_data):
+            raise FaceExtractionError("Camera frame timestamps are missing or invalid.")
+        payload = {
+            "frames": [_to_base64_string(frame) for frame in image_data],
+            "captured_at_ms": list(captured_at_ms),
+            "candidates": candidates,
+            "threshold": threshold,
+        }
+        endpoint = "/recognize-sequence"
+        timeout = 90
+    else:
+        payload = {
+            "image": _to_base64_string(image_data),
+            "candidates": candidates,
+            "threshold": threshold,
+        }
+        endpoint = "/recognize"
+        timeout = 60
+    return requests.post(f"{settings.FACE_SERVICE_URL}{endpoint}", json=payload, timeout=timeout)
 
 
 def process_enrollment(images: List[Union[str, bytes]]) -> List[float]:
@@ -50,13 +105,11 @@ def process_enrollment(images: List[Union[str, bytes]]) -> List[float]:
     return response.json().get("template")
 
 
-def find_closest_match(query_image_data: Union[str, bytes], threshold: float = 0.60) -> Tuple[Optional[Employee], float]:
+def find_closest_match(query_image_data, threshold: float = 0.60, captured_at_ms=None) -> Tuple[Optional[Employee], float]:
     """
     Finds the closest enrolled employee matching the query image using the local FR microservice.
     Returns (Employee, distance) or (None, best_distance) if no match under threshold.
     """
-    b64_image = _to_base64_string(query_image_data)
-    
     profiles = FaceProfile.objects.select_related('employee').filter(
         employee__is_active=True, 
         status="ACTIVE"
@@ -81,19 +134,13 @@ def find_closest_match(query_image_data: Union[str, bytes], threshold: float = 0
         return None, float('inf')
     
     try:
-        payload = {
-            "image": b64_image,
-            "candidates": candidates,
-            "threshold": threshold
-        }
-        response = requests.post(f"{settings.FACE_SERVICE_URL}/recognize", json=payload, timeout=60)
+        response = _recognize_payload(query_image_data, candidates, threshold, captured_at_ms)
     except requests.RequestException as e:
         logger.error(f"FR Service connection error: {e}")
         raise FaceExtractionError("Facial Recognition service is currently unavailable.")
         
     if response.status_code != 200:
-        error_msg = response.json().get("error", "Unknown FR service error")
-        raise FaceExtractionError(error_msg)
+        _raise_for_recognition_error(response)
         
     result = response.json()
     status = result.get("status")
@@ -108,7 +155,7 @@ def find_closest_match(query_image_data: Union[str, bytes], threshold: float = 0
         return None, distance
 
 
-def verify_employee_face(employee: Employee, query_image_data: Union[str, bytes], threshold: float = 0.60) -> Tuple[bool, float]:
+def verify_employee_face(employee: Employee, query_image_data, threshold: float = 0.60, captured_at_ms=None) -> Tuple[bool, float]:
     """
     Verifies if the face in the query image matches the specified employee (1:1 verification).
     Returns (True, distance) if it matches, or (False, distance) if it doesn't.
@@ -121,23 +168,16 @@ def verify_employee_face(employee: Employee, query_image_data: Union[str, bytes]
     if not profile.face_template:
         return False, float('inf')
 
-    b64_image = _to_base64_string(query_image_data)
     candidates = [{"id": employee.id, "template": profile.face_template}]
 
     try:
-        payload = {
-            "image": b64_image,
-            "candidates": candidates,
-            "threshold": threshold
-        }
-        response = requests.post(f"{settings.FACE_SERVICE_URL}/recognize", json=payload, timeout=60)
+        response = _recognize_payload(query_image_data, candidates, threshold, captured_at_ms)
     except requests.RequestException as e:
         logger.error(f"FR Service connection error: {e}")
         raise FaceExtractionError("Facial Recognition service is currently unavailable.")
         
     if response.status_code != 200:
-        error_msg = response.json().get("error", "Unknown FR service error")
-        raise FaceExtractionError(error_msg)
+        _raise_for_recognition_error(response)
         
     result = response.json()
     status = result.get("status")
