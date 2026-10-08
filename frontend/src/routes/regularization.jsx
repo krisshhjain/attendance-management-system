@@ -27,6 +27,21 @@ function localDateString(date = new Date()) {
 function requestCountLabel(count) {
   return `${count} ${count === 1 ? "request" : "requests"}`;
 }
+function normalizeTimeInput(value) {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  const match = input.match(/^(\d{1,2}):(\d{2})(?:\s*([ap])\.?m\.?)?$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const meridiem = match[3]?.toUpperCase();
+  if (minute > 59) return null;
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (meridiem === "P" ? 12 : 0);
+  } else if (hour > 23) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
 function shiftDate(value, offset) {
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date(year, month - 1, day + offset, 12);
@@ -180,9 +195,14 @@ function RegularizationPage() {
     if (!selectedDays.length) { setFormError("Choose at least one attendance date and enter a correction."); return; }
     for (const date of selectedDays) {
       const day = days[date];
+      const checkIn = normalizeTimeInput(day.requested_check_in);
+      const checkOut = normalizeTimeInput(day.requested_check_out);
+      if ((day.requested_check_in && !checkIn) || (day.requested_check_out && !checkOut)) {
+        setFormError(`${dateLabel(date)}: enter a valid time, such as 9:30 AM or 21:30.`); return;
+      }
       if (!day.reason.trim()) { setFormError(`${dateLabel(date)}: add a reason.`); return; }
       if (!day.requested_check_in && !day.requested_check_out) { setFormError(`${dateLabel(date)}: enter a corrected check-in or check-out.`); return; }
-      if (day.requested_check_in && day.requested_check_out && day.requested_check_out <= day.requested_check_in) { setFormError(`${dateLabel(date)}: check-out must be later than check-in.`); return; }
+      if (checkIn && checkOut && checkOut <= checkIn) { setFormError(`${dateLabel(date)}: check-out must be later than check-in.`); return; }
     }
     setSubmitting(true);
     try {
@@ -201,8 +221,8 @@ function RegularizationPage() {
         return {
           attendance_date: date,
           request_type: day.request_type,
-          requested_check_in: day.requested_check_in ? `${date}T${day.requested_check_in}:00` : null,
-          requested_check_out: day.requested_check_out ? `${date}T${day.requested_check_out}:00` : null,
+          requested_check_in: normalizeTimeInput(day.requested_check_in) ? `${date}T${normalizeTimeInput(day.requested_check_in)}:00` : null,
+          requested_check_out: normalizeTimeInput(day.requested_check_out) ? `${date}T${normalizeTimeInput(day.requested_check_out)}:00` : null,
           reason: day.reason.trim(),
           description: day.description.trim(),
         };
@@ -308,8 +328,8 @@ function RegularizationPage() {
                 <TextField select label="Request type" value={day.request_type || "INCORRECT_ATTENDANCE"} disabled={!eligible} onChange={(event) => setDayField(date, "request_type", event.target.value)}>
                   {REQUEST_TYPES.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}
                 </TextField>
-                <TextField label="Corrected check-in" type="time" value={day.requested_check_in || ""} disabled={!eligible} onChange={(event) => setDayField(date, "requested_check_in", event.target.value)} InputLabelProps={{ shrink: true }} />
-                <TextField label="Corrected check-out" type="time" value={day.requested_check_out || ""} disabled={!eligible} onChange={(event) => setDayField(date, "requested_check_out", event.target.value)} InputLabelProps={{ shrink: true }} />
+                <TextField label="Corrected check-in" placeholder="9:30 AM or 21:30" value={day.requested_check_in || ""} disabled={!eligible} onChange={(event) => setDayField(date, "requested_check_in", event.target.value)} />
+                <TextField label="Corrected check-out" placeholder="5:30 PM or 17:30" value={day.requested_check_out || ""} disabled={!eligible} onChange={(event) => setDayField(date, "requested_check_out", event.target.value)} />
                 <TextField label="Reason" value={day.reason || ""} disabled={!eligible} onChange={(event) => setDayField(date, "reason", event.target.value)} />
               </Box>
               {eligible && <TextField fullWidth label="Additional details (optional)" value={day.description || ""} onChange={(event) => setDayField(date, "description", event.target.value)} sx={{ mt: 1.5 }} />}
