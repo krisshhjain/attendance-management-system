@@ -900,16 +900,31 @@ function RegularizationDetailsPage({ navigate }: { navigate: (page: Page) => voi
 
 // ─── Upcoming Holidays ────────────────────────────────────────────────────────
 
-const HOLIDAY_MAP: Record<string, string> = {};
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
 function UpcomingHolidays() {
   const today = new Date();
+  const [holidayMap, setHolidayMap] = useState<Record<string, string>>({});
+  const [holidayLoading, setHolidayLoading] = useState(true);
+  const [holidayError, setHolidayError] = useState(false);
   const [calOpen, setCalOpen] = useState(false);
   const [calYear, setCalYear] = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const calRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const apiBase = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "http://127.0.0.1:8000/api" : "/api");
+    const token = window.localStorage.getItem("sa_access_token");
+    fetch(`${apiBase.replace(/\/$/, "")}/holidays/`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((response) => {
+        if (!response.ok) throw new Error("Holiday API request failed");
+        return response.json();
+      })
+      .then((holidays: { date: string; name: string; is_active?: boolean }[]) => setHolidayMap(Object.fromEntries(holidays.filter((holiday) => holiday.is_active !== false).map((holiday) => [holiday.date, holiday.name]))))
+      .catch(() => { setHolidayMap({}); setHolidayError(true); })
+      .finally(() => setHolidayLoading(false));
+  }, []);
 
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
@@ -935,7 +950,7 @@ function UpcomingHolidays() {
 
   const years = Array.from({ length: 10 }, (_, i) => today.getFullYear() - 1 + i);
 
-  const holidaysThisMonth = Object.entries(HOLIDAY_MAP).filter(([k]) => {
+  const holidaysThisMonth = Object.entries(holidayMap).filter(([k]) => {
     const [y, m] = k.split("-").map(Number);
     return y === calYear && m - 1 === calMonth;
   });
@@ -980,10 +995,10 @@ function UpcomingHolidays() {
                 {cells.map((day, idx) => {
                   if (!day) return <div key={idx} />;
                   const key = `${calYear}-${pad(calMonth + 1)}-${pad(day)}`;
-                  const isHoliday = Boolean(HOLIDAY_MAP[key]);
+                  const isHoliday = Boolean(holidayMap[key]);
                   const isToday = today.getFullYear() === calYear && today.getMonth() === calMonth && today.getDate() === day;
                   return (
-                    <div key={idx} className="relative flex flex-col items-center py-0.5" title={isHoliday ? HOLIDAY_MAP[key] : undefined}>
+                    <div key={idx} className="relative flex flex-col items-center py-0.5" title={isHoliday ? holidayMap[key] : undefined}>
                       <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-medium ${isHoliday ? "bg-indigo-500 font-bold text-white" : isToday ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"}`}>
                         {day}
                       </span>
@@ -1007,7 +1022,17 @@ function UpcomingHolidays() {
           )}
         </div>
       </div>
-      <EmptyState icon="calendar" title="No holidays configured" description="Holidays will appear here once added." />
+      <div className="flex flex-col gap-2">
+        {holidayLoading && <p className="text-xs text-slate-400">Loading holidays...</p>}
+        {holidayError && <p role="alert" className="text-xs text-rose-600">Could not load holidays.</p>}
+        {Object.entries(holidayMap).sort(([left], [right]) => left.localeCompare(right)).filter(([key]) => key >= `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`).slice(0, 4).map(([key, name]) => (
+          <div key={key} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
+            <span className="text-xs font-semibold text-slate-700">{name}</span>
+            <span className="text-[10px] text-slate-500">{key}</span>
+          </div>
+        ))}
+        {!holidayLoading && !holidayError && Object.keys(holidayMap).length === 0 && <EmptyState icon="calendar" title="No holidays configured" description="Holidays will appear here once added." />}
+      </div>
     </Card>
   );
 }

@@ -5,7 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from attendance.models import Attendance
-from config.business_rules import is_working_day
+from holidays.services import is_working_day
 from .models import LeavePolicy, LeaveRequest, LeaveType
 
 
@@ -195,6 +195,29 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
     if req.status != "PENDING":
         raise ValidationError(f"Cannot approve leave request with status '{req.status}'. Only PENDING requests can be approved.")
 
+    # Re-evaluate pending requests against current active holidays. This covers
+    # holidays added after submission; already-approved requests retain their
+    # approval-time duration as a historical balance snapshot.
+    prior_duration = req.duration_days
+    current_duration = calculate_working_days(req.start_date, req.end_date, req.day_type)
+    if current_duration <= Decimal("0.0"):
+        raise ValidationError("This leave request now contains no working days because its dates are non-working days.")
+    if current_duration != prior_duration:
+        policy = get_active_policy(req.employee, req.leave_type, target_date=req.start_date)
+        max_consecutive = policy.max_consecutive_days if policy else 10
+        if current_duration > max_consecutive:
+            raise ValidationError(f"Maximum consecutive days allowed for {req.leave_type.name} is {max_consecutive} days.")
+        if req.leave_type.is_paid:
+            balances = calculate_employee_leave_balances(req.employee, year=req.start_date.year)
+            leave_balance = next((row for row in balances if row["leave_type_id"] == req.leave_type_id), None)
+            available = Decimal(str(leave_balance["available"])) if leave_balance else Decimal("0.0")
+            if current_duration > available:
+                raise ValidationError(
+                    f"Insufficient leave balance for {req.leave_type.name}. "
+                    f"Requested: {current_duration} days, Available: {available} days."
+                )
+    req.duration_days = current_duration
+
     req.status = "APPROVED"
     req.reviewed_at = timezone.now()
     req.reviewed_by = reviewer_user
@@ -218,7 +241,9 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
         ),
     )
 
-    # Integrate with Attendance records
+    # The approved request's stored duration is a snapshot of its approval-time
+    # rules. Later holiday edits do not silently rewrite historical balances.
+    # Attendance rows are only created for dates currently requiring attendance.
     curr = req.start_date
     while curr <= req.end_date:
         if is_working_day(curr):

@@ -1,12 +1,12 @@
 import { Box, Paper, Typography, Divider, useTheme } from "@mui/material";
 import EventNoteIcon from '@mui/icons-material/EventNote';
 import CelebrationIcon from '@mui/icons-material/Celebration';
-import { getUpcomingHolidays } from "../../data/holidayCalendar.js";
+import { formatHolidayDate, useUpcomingHolidays } from "../../data/holidayCalendar.js";
 
 export function UpcomingLeaves() {
   const theme = useTheme();
 
-  const futureLeaves = getUpcomingHolidays();
+  const { holidays: futureLeaves, isLoading, isError } = useUpcomingHolidays();
 
   return (
     <Paper
@@ -43,7 +43,11 @@ export function UpcomingLeaves() {
       </Box>
       
       <Box sx={{ flexGrow: 1, overflowY: "auto", pr: 1, mt: 1 }}>
-        {futureLeaves.length === 0 ? (
+        {isLoading ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><Typography sx={{ color: "#94a3b8", fontSize: 14 }}>Loading holidays...</Typography></Box>
+        ) : isError ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><Typography sx={{ color: "#b91c1c", fontSize: 14 }}>Could not load holidays.</Typography></Box>
+        ) : futureLeaves.length === 0 ? (
           <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
              <Typography sx={{ color: "#94a3b8", fontSize: "14px" }}>No upcoming holidays for this year.</Typography>
           </Box>
@@ -70,7 +74,7 @@ export function UpcomingLeaves() {
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <EventNoteIcon sx={{ fontSize: 14, color: "#94a3b8" }} />
                   <Typography sx={{ fontSize: "13px", color: "#64748b", fontWeight: 500 }}>
-                    {leave.date}
+                    {formatHolidayDate(leave.date)}
                   </Typography>
                 </Box>
               </Box>

@@ -10,6 +10,7 @@ import { createRegularizationRequest, fetchMyRegularizationQuota, fetchMyRegular
 import { getHistory } from "../lib/attendance.js";
 import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 import { getErrorMessage } from "../feedback/errorMessage.js";
+import { useActiveHolidays } from "../data/holidayCalendar.js";
 
 const REQUEST_TYPES = [
   { value: "FORGOT_CHECK_IN", label: "Forgot Check-In" },
@@ -93,6 +94,8 @@ export const Route = createFileRoute("/regularization")({
 
 function RegularizationPage() {
   const { success, notifyError } = useFeedback();
+  const { data: activeHolidays = [], isError: holidaysError } = useActiveHolidays();
+  const holidayByDate = useMemo(() => new Map(activeHolidays.map((holiday) => [holiday.date, holiday])), [activeHolidays]);
   const [requests, setRequests] = useState([]);
   const [quota, setQuota] = useState(null);
   const [history, setHistory] = useState([]);
@@ -152,7 +155,7 @@ function RegularizationPage() {
     () => generatedDates.filter(isWorkingDay),
     [generatedDates],
   );
-  const submissionDates = generatedPeriodDates.filter((date) => date >= cutoffString);
+  const submissionDates = generatedPeriodDates.filter((date) => date >= cutoffString && !holidayByDate.has(date));
   const normalizeDate = (value) => String(value ?? "").slice(0, 10);
   const attendanceByDate = useMemo(() => Object.fromEntries(
     history.map((row) => [normalizeDate(row.date), row]),
@@ -169,6 +172,7 @@ function RegularizationPage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault(); setFormError("");
+    if (holidaysError) { setFormError("Holiday dates could not be verified. Reload the page before submitting."); return; }
     const selectedDays = submissionDates.filter((date) => {
       const day = days[date];
       return day && (day.requested_check_in || day.requested_check_out || day.reason.trim() || day.description.trim());
@@ -264,6 +268,7 @@ function RegularizationPage() {
         <DialogTitle>Request attendance correction</DialogTitle>
         <DialogContent sx={{ display: "grid", gap: 2, pt: "8px !important" }}>
           {formError && <Alert severity="error">{formError}</Alert>}
+          {holidaysError && <Alert severity="warning">Company holiday dates could not be loaded. Holiday eligibility is unavailable; reload before submitting.</Alert>}
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
             <TextField select label="Period" value={periodType} onChange={(event) => { setPeriodType(event.target.value); setDays({}); }}>
               <MenuItem value="DAY">Single day</MenuItem><MenuItem value="WEEK">Week</MenuItem><MenuItem value="MONTH">Month</MenuItem>
@@ -276,7 +281,7 @@ function RegularizationPage() {
               </TextField>}
           </Box>
           <Alert severity={quotaExhausted ? "warning" : "info"}>
-            You can submit up to {requestCountLabel(quota?.weekly_limit ?? 1)} per calendar week and {requestCountLabel(quota?.monthly_limit ?? 4)} per calendar month. Each request may include multiple attendance dates. Attendance corrections remain subject to the existing 48-hour window. Weekends are excluded; company holidays are not configured in the current calendar.
+            You can submit up to {requestCountLabel(quota?.weekly_limit ?? 1)} per calendar week and {requestCountLabel(quota?.monthly_limit ?? 4)} per calendar month. Each request may include multiple attendance dates. Attendance corrections remain subject to the existing 48-hour window. Weekends and registered company holidays are not eligible attendance dates.
           </Alert>
           {weeklyQuotaExhausted && <Alert severity="error">You have reached this week’s allowance of {requestCountLabel(quota.weekly_limit)}.</Alert>}
           {monthlyQuotaExhausted && <Alert severity="error">You have reached this month’s allowance of {requestCountLabel(quota.monthly_limit)}.</Alert>}
@@ -287,13 +292,15 @@ function RegularizationPage() {
           ) : generatedPeriodDates.map((date) => {
             const day = days[date] || {};
             const attendance = attendanceByDate[date];
+            const holiday = holidayByDate.get(date);
             const isMultiDay = periodType === "WEEK" || periodType === "MONTH";
             const dateEligible = isMultiDay ? date >= currentWeekStart : date >= cutoffString;
-            const eligible = dateEligible && !pendingDates.has(date);
+            const eligible = dateEligible && !pendingDates.has(date) && !holiday && !holidaysError;
             return <Paper key={date} data-attendance-date={date} variant="outlined" sx={{ p: 2, minWidth: 0 }}>
               <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1, alignItems: "center", mb: 1 }}>
                 <Typography fontWeight={700}>{dateLabel(date)}</Typography>
-                {!eligible && <Chip size="small" color="warning" label={pendingDates.has(date) ? "Pending request" : "Outside allowed window"} />}
+                {holiday && <Chip size="small" color="warning" label={`Holiday${holiday.name ? `: ${holiday.name}` : ""}`} />}
+                {!eligible && !holiday && <Chip size="small" color="warning" label={pendingDates.has(date) ? "Pending request" : holidaysError ? "Holiday data unavailable" : "Outside allowed window"} />}
                 <Chip size="small" variant="outlined" label={attendance ? attendance.status : "No attendance row"} />
               </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Current: {formatTime(attendance?.check_in)} – {formatTime(attendance?.check_out)}</Typography>
@@ -316,7 +323,7 @@ function RegularizationPage() {
           </Typography>
           <Box sx={{ display: "flex", gap: 1 }}>
             <Button onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
-            <Button type="submit" variant="contained" disabled={submitting || quotaExhausted}>{submitting ? "Submitting…" : "Submit request"}</Button>
+            <Button type="submit" variant="contained" disabled={submitting || quotaExhausted || holidaysError}>{submitting ? "Submitting…" : "Submit request"}</Button>
           </Box>
         </DialogActions>
       </Box>

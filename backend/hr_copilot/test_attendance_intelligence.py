@@ -1,6 +1,6 @@
 from datetime import time as datetime_time
 from accounts.models import ManagerScope
-from datetime import datetime, timedelta, time as datetime_time
+from datetime import date, datetime, timedelta, time as datetime_time
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -10,7 +10,8 @@ from django.utils import timezone
 from attendance.models import Attendance, AttendanceEvent, Shift
 from employees.models import Employee
 from hr_copilot.services.attendance_intelligence import attendance_intelligence
-from hr_copilot.services.pipeline import analyze_question
+from hr_copilot.services.pipeline import analyze_question, build_sql
+from holidays.models import Holiday
 
 
 class AttendanceIntelligenceTests(TestCase):
@@ -110,6 +111,58 @@ class AttendanceIntelligenceTests(TestCase):
         comparison = attendance_intelligence.period_comparison(user=self.admin, scope=self.scope, end_date=self.today)
         self.assertIn("current", comparison["date_range"])
         self.assertIn("delta", comparison["rows"][0])
+
+    def test_company_holiday_is_not_missing_late_or_absent_and_is_named_in_summary(self):
+        holiday_date = date(2026, 10, 5)
+        Holiday.objects.create(date=holiday_date, name="Company Day")
+        missing = attendance_intelligence.missing_checkins(user=self.admin, scope=self.scope, target_date=holiday_date)
+        late = attendance_intelligence.late_employees(user=self.admin, scope=self.scope, target_date=holiday_date)
+        self.assertEqual(missing["rows"], [])
+        self.assertEqual(late["rows"], [])
+
+        streaks = attendance_intelligence.absence_streaks(
+            user=self.admin, scope=self.scope, start=holiday_date, end=holiday_date,
+        )
+        self.assertEqual(streaks["rows"], [])
+        summary = attendance_intelligence.summary(
+            user=self.admin, scope=self.scope, start=holiday_date, end=holiday_date,
+        )
+        self.assertEqual(summary["rows"], [{
+            "date": holiday_date.isoformat(), "day_type": "HOLIDAY", "holiday_name": "Company Day",
+            "present": 0, "incomplete": 0, "leave": 0, "absent": 0,
+        }])
+
+    def test_inactive_holiday_does_not_change_absence_summary(self):
+        target = date(2026, 10, 5)
+        Holiday.objects.create(date=target, name="Inactive", is_active=False)
+        summary = attendance_intelligence.summary(user=self.admin, scope=self.scope, start=target, end=target)
+        self.assertEqual(summary["rows"][0]["absent"], 1)
+        self.assertEqual(summary["rows"][0]["day_type"], "WORKING_DAY")
+
+    def test_raw_sql_absence_lookup_suppresses_holiday_date(self):
+        target = date(2026, 10, 5)
+        Holiday.objects.create(date=target, name="Company Day")
+        sql, params = build_sql({
+            "source": "employee",
+            "intent": "absence_lookup",
+            "filters": {"date_range": {"start": target.isoformat(), "end": target.isoformat()}},
+            "scope": {"sections": [], "subsections": []},
+            "limit": 100,
+        })
+        self.assertIn("1 = 0", sql)
+
+    def test_raw_sql_attendance_summary_omits_nonworking_absence_rows(self):
+        target = date(2026, 10, 5)
+        Holiday.objects.create(date=target, name="Company Day")
+        sql, params = build_sql({
+            "source": "attendance",
+            "intent": "attendance_summary",
+            "filters": {"date_range": {"start": target.isoformat(), "end": target.isoformat()}},
+            "scope": {"sections": [], "subsections": []},
+            "limit": 100,
+        })
+        self.assertIn("a.status <> 'ABSENT' OR a.date NOT IN", sql)
+        self.assertIn(target, params)
 
     def test_semantic_layer_uses_one_metric_intent_for_natural_variation(self):
         with patch("hr_copilot.services.semantic_interpreter.get_structured_intent", return_value={

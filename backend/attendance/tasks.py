@@ -6,7 +6,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from attendance.models import Attendance, AttendanceEvent
-from config.business_rules import is_working_day
+from holidays.services import is_working_day
 from employees.models import Employee
 from leave_management.models import LeaveRequest
 from notifications.services import (

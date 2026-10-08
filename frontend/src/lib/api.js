@@ -1,6 +1,6 @@
 export const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? 
-  (import.meta.env.DEV ? "http://127.0.0.1:8000/api" : "/api")
+  import.meta.env?.VITE_API_BASE_URL ??
+  (import.meta.env?.DEV ? "http://127.0.0.1:8000/api" : "/api")
 ).replace(/\/$/, "");
 
 const ACCESS_KEY = "sa_access_token";
@@ -371,6 +371,22 @@ export async function updateOfficeLocation(id, data) {
 
 export async function deleteOfficeLocation(id) {
   return apiRequest(`/attendance/locations/${id}/`, { method: "DELETE" });
+}
+
+export async function fetchActiveHolidays() {
+  return apiRequest("/holidays/");
+}
+
+export async function fetchAdminHolidays() {
+  return apiRequest("/holidays/admin/");
+}
+
+export async function createHoliday(data) {
+  return apiRequest("/holidays/admin/", { method: "POST", body: data });
+}
+
+export async function updateHoliday(id, data) {
+  return apiRequest(`/holidays/admin/${id}/`, { method: "PATCH", body: data });
 }
 
 export async function fetchSystemLogs(params = {}) {

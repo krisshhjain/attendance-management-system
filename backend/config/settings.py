@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "leave_management",
     "hr_copilot",
     "system_logs",
+    "holidays",
     "rest_framework",
     "corsheaders",
     "django.contrib.admin",

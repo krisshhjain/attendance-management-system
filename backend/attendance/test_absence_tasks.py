@@ -10,6 +10,7 @@ from attendance.tasks import check_consecutive_absences
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 from notifications.models import Notification
+from holidays.models import Holiday
 
 
 User = get_user_model()
@@ -91,6 +92,13 @@ class ConsecutiveAbsenceTaskTests(TestCase):
         self.assertTrue(
             Notification.objects.filter(notification_type="ABSENCE_ALERT").exists()
         )
+
+    def test_active_holiday_is_skipped_when_selecting_recent_required_dates(self):
+        Holiday.objects.create(date=date(2026, 10, 5), name="Monday holiday")
+        result = self.run_task(date(2026, 10, 6))
+        self.assertEqual(result["first_absence_date"], "2026-10-01")
+        self.assertEqual(result["second_absence_date"], "2026-10-02")
+        self.assertTrue(Notification.objects.filter(notification_type="ABSENCE_ALERT").exists())
 
     def test_friday_and_tuesday_absence_with_monday_attendance_does_not_alert(self):
         # Evaluation on Wednesday selects Tuesday and Monday; Friday is outside

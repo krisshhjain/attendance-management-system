@@ -39,6 +39,7 @@ from notifications.services import (
 )
 from system_logs.services import record_event
 from accounts.scope_service import employee_in_manager_scope, filter_employees_by_manager_scope
+from holidays.services import attendance_required, get_day_classification, get_day_classifications, is_company_holiday, is_working_day
 
 
 def _regularization_created_message(request_obj):
@@ -202,7 +203,7 @@ class CheckInView(APIView):
         attendance, created = Attendance.get_or_create_for_date(employee, today)
         before_state = _attendance_log_state(attendance)
 
-        if attendance.status in {"LEAVE", "ABSENT"}:
+        if attendance.status == "LEAVE" or (attendance.status == "ABSENT" and is_working_day(today)):
             return Response(
                 {"error": "You cannot check in because your attendance is marked as " + attendance.status.lower() + " today."},
                 status=400,
@@ -383,7 +384,8 @@ class TodayAttendanceView(APIView):
             })
         employee = request.user.employee
         today = timezone.localdate()
-        working_day = is_working_day(today)
+        day_classification = get_day_classification(today)
+        working_day = day_classification["is_working_day"]
         previous_incomplete = _get_previous_incomplete_attendance(employee, today)
 
         try:
@@ -394,11 +396,14 @@ class TodayAttendanceView(APIView):
         except Attendance.DoesNotExist:
             # Always return NOT_CHECKED_IN - weekends should allow attendance if employee comes to office
             return Response({
-                "status": "NOT_CHECKED_IN",
+                "status": day_classification["day_type"] if not working_day else "NOT_CHECKED_IN",
                 "check_in": None,
                 "check_out": None,
                 "working_duration": None,
                 "is_working_day": working_day,
+                "attendance_required": day_classification["attendance_required"],
+                "day_type": day_classification["day_type"],
+                "holiday_name": day_classification["holiday_name"],
                 "previous_incomplete_attendance": previous_incomplete,
             })
 
@@ -411,11 +416,12 @@ class TodayAttendanceView(APIView):
         active_check_in = events[-1].timestamp if events and events[-1].event_type == "CHECK_IN" else None
         state, last_event = _get_last_event_state(employee, today)
 
-        if attendance.status in {"LEAVE", "ABSENT"}:
-            status = attendance.status
+        if attendance.status == "LEAVE":
+            status = "LEAVE"
         elif state == "NOT_CHECKED_IN":
-            # Always allow check-in, even on weekends
-            status = "NOT_CHECKED_IN"
+            status = day_classification["day_type"] if not working_day else (
+                "ABSENT" if attendance.status == "ABSENT" else "NOT_CHECKED_IN"
+            )
         elif state == "CHECKED_OUT":
             status = "COMPLETED"
         else:
@@ -429,6 +435,9 @@ class TodayAttendanceView(APIView):
             "completed_working_duration": completed_working_duration,
             "active_check_in": active_check_in,
             "is_working_day": working_day,
+            "attendance_required": day_classification["attendance_required"],
+            "day_type": day_classification["day_type"],
+            "holiday_name": day_classification["holiday_name"],
             "previous_incomplete_attendance": previous_incomplete,
         })
 
@@ -445,6 +454,7 @@ class MyTeamView(APIView):
       - CHECKED_IN    : has a today Attendance record with check_in set
                         (includes both still-checked-in and already-checked-out)
       - WEEKEND       : today is Saturday/Sunday and employee has no attendance
+      - HOLIDAY       : today is an active company holiday and employee has no attendance
       - YET_TO_CHECK_IN : active team member with no check_in today and not on leave
     """
     permission_classes = [IsEmployee]
@@ -517,7 +527,7 @@ class MyTeamView(APIView):
         on_leave_count = 0
         
         # Check if today is a weekend (Saturday=5, Sunday=6)
-        is_weekend = today.weekday() in [5, 6]
+        day_classification = get_day_classification(today)
 
         for emp in teammates:
             att = attendance_map.get(emp.id)
@@ -529,9 +539,9 @@ class MyTeamView(APIView):
             elif att is not None and att.check_in is not None:
                 member_status = "CHECKED_IN"
                 checked_in_count += 1
-            elif is_weekend:
-                # Weekend with no attendance → not counted as yet-to-check-in
-                member_status = "WEEKEND"
+            elif day_classification["day_type"] in {"WEEKEND", "HOLIDAY"}:
+                # Non-required dates are represented distinctly and excluded from missing counts.
+                member_status = day_classification["day_type"]
             else:
                 member_status = "YET_TO_CHECK_IN"
                 yet_to_check_in_count += 1
@@ -542,6 +552,9 @@ class MyTeamView(APIView):
                 "department": emp.department,
                 "subsection": emp.subsection,
                 "status": member_status,
+                "day_type": day_classification["day_type"],
+                "holiday_name": day_classification["holiday_name"],
+                "attendance_required": day_classification["attendance_required"],
                 "check_in_time": att.check_in.isoformat() if att and att.check_in else None,
                 "check_out_time": att.check_out.isoformat() if att and att.check_out else None,
             }
@@ -623,11 +636,19 @@ class AttendanceHistoryView(APIView):
             ).order_by("-date")
 
         data = []
+        day_classifications = get_day_classifications(attendance_records.values_list("date", flat=True).distinct())
         for attendance in attendance_records:
             events = get_effective_attendance_events(attendance.employee, attendance.date)
+            day_classification = day_classifications[attendance.date]
+            displayed_status = attendance.status
+            if attendance.status != "LEAVE" and not attendance.check_in and not day_classification["attendance_required"]:
+                displayed_status = day_classification["day_type"]
             record = {
                 "date": attendance.date,
-                "status": attendance.status,
+                "status": displayed_status,
+                "day_type": day_classification["day_type"],
+                "holiday_name": day_classification["holiday_name"],
+                "attendance_required": day_classification["attendance_required"],
                 "check_in": attendance.check_in,
                 "check_out": attendance.check_out,
                 "working_duration": calculate_working_duration(
@@ -668,6 +689,7 @@ class AdminAttendanceView(APIView):
             employees = filter_employees_by_manager_scope(request.user, employees)
         attendance_records = Attendance.objects.filter(date=filter_date).select_related("employee")
         attendance_map = {att.employee_id: att for att in attendance_records}
+        day_classification = get_day_classification(filter_date)
 
         data = []
         for emp in employees:
@@ -676,14 +698,18 @@ class AdminAttendanceView(APIView):
             
             # Determine actual display status
             if att:
-                if att.status in {"LEAVE", "ABSENT"}:
+                if att.status == "LEAVE":
+                    status_display = att.status
+                elif not att.check_in and day_classification["day_type"] != "WORKING_DAY":
+                    status_display = day_classification["day_type"]
+                elif att.status == "ABSENT":
                     status_display = att.status
                 elif att.check_in is None:
                     status_display = "ABSENT"
                 else:
                     status_display = att.status # PRESENT or INCOMPLETE
             else:
-                status_display = "ABSENT"
+                status_display = day_classification["day_type"] if day_classification["day_type"] != "WORKING_DAY" else "ABSENT"
                 
             data.append({
                 "employee": emp.user.email,
@@ -692,6 +718,9 @@ class AdminAttendanceView(APIView):
                 "subsection": emp.subsection,
                 "date": filter_date,
                 "status": status_display,
+                "day_type": day_classification["day_type"],
+                "holiday_name": day_classification["holiday_name"],
+                "attendance_required": day_classification["attendance_required"],
                 "check_in": att.check_in if att else None,
                 "check_out": att.check_out if att else None,
                 "working_duration": str(calculate_working_duration(
@@ -709,14 +738,13 @@ class AdminAttendanceView(APIView):
         return Response(data)
 
 
-from config.business_rules import is_working_day
-
 class AdminDashboardView(APIView):
     """Manager and Admin can view dashboard."""
     permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         today = timezone.localdate()
+        day_classification = get_day_classification(today)
 
         scoped = request.user.is_system_admin and not request.user.is_superuser
         employees = Employee.objects.all()
@@ -748,6 +776,9 @@ class AdminDashboardView(APIView):
         attendance_data = []
         for attendance in attendance_records:
             events = get_effective_attendance_events(attendance.employee, today)
+            displayed_status = attendance.status
+            if attendance.status != "LEAVE" and not attendance.check_in and not day_classification["attendance_required"]:
+                displayed_status = day_classification["day_type"]
             working_duration = calculate_working_duration(
                 events,
                 end_at=attendance_day_end(today),
@@ -757,7 +788,7 @@ class AdminDashboardView(APIView):
                 "section": attendance.employee.section,
                 "subsection": attendance.employee.subsection,
                 "date": attendance.date,
-                "status": attendance.status,
+                "status": displayed_status,
                 "check_in": attendance.check_in,
                 "check_out": attendance.check_out,
                 "working_duration": str(working_duration) if working_duration is not None else None,
@@ -770,7 +801,10 @@ class AdminDashboardView(APIView):
             "checked_in_today": checked_in_today,
             "completed_today": completed_today,
             "attendance": attendance_data,
-            "is_working_day": is_working_day(today),
+            "is_working_day": day_classification["is_working_day"],
+            "attendance_required": day_classification["attendance_required"],
+            "day_type": day_classification["day_type"],
+            "holiday_name": day_classification["holiday_name"],
         })
 
 class AdminResetAttendanceView(APIView):
@@ -860,6 +894,10 @@ class AdminEditAttendanceView(APIView):
             target_date = date.fromisoformat(date_str)
         except ValueError:
             return Response({"error": "Invalid date format. Use YYYY-MM-DD"}, status=400)
+
+        if str(status).upper() == "ABSENT" and not attendance_required(target_date):
+            day = get_day_classification(target_date)
+            return Response({"error": f"Cannot mark an employee absent on a {day['day_type'].lower()} date."}, status=400)
             
         if target_date > timezone.localdate():
             return Response({"error": "Cannot edit future attendance."}, status=400)
@@ -1090,7 +1128,7 @@ class WebsiteFacialCheckInView(APIView):
         attendance, created = Attendance.get_or_create_for_date(employee, today)
         before_state = _attendance_log_state(attendance)
 
-        if attendance.status in {"LEAVE", "ABSENT"}:
+        if attendance.status == "LEAVE" or (attendance.status == "ABSENT" and is_working_day(today)):
             return Response(
                 {"error": "You cannot check in because your attendance is marked as " + attendance.status.lower() + " today."},
                 status=400,
@@ -2206,8 +2244,6 @@ class RegularizationRequestCreateView(APIView):
         import datetime as datetime_module
         from datetime import date as date_type
         from django.utils import timezone
-        from config.business_rules import is_working_day
-
         try:
             payload = request.data.get("days")
             if isinstance(payload, str):
@@ -2234,7 +2270,10 @@ class RegularizationRequestCreateView(APIView):
                     if day_date < earliest:
                         raise ValueError(f"{day_date}: date must be within the past 48 hours.")
                         
-                if not is_working_day(day_date): raise ValueError(f"{day_date}: weekends are not eligible.")
+                if not is_working_day(day_date):
+                    day = get_day_classification(day_date)
+                    reason = "weekends" if day["day_type"] == "WEEKEND" else "company holidays"
+                    raise ValueError(f"{day_date}: {reason} are not eligible for regularization.")
                 if kind not in valid_types or not reason: raise ValueError(f"{day_date}: request type and reason are required.")
                 def parse_time(value, field):
                     if not value: return None
@@ -2475,6 +2514,8 @@ class RegularizationRequestApproveView(APIView):
                     by_id = {int(item["id"]): item for item in payload if item.get("id") is not None}
                     final = []
                     for row in rows:
+                        if is_company_holiday(row.attendance_date):
+                            raise ValueError(f"Cannot approve regularization for company holiday {row.attendance_date}.")
                         item = by_id.get(row.id, {})
                         def parse(field, fallback):
                             value = item.get(field, fallback)
@@ -2528,6 +2569,8 @@ class RegularizationRequestApproveView(APIView):
                     if timezone.is_naive(parsed): parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
                     if timezone.localtime(parsed).date() != req.attendance_date: raise ValueError(f"Final {field} must be on the attendance date.")
                     return parsed
+                if is_company_holiday(req.attendance_date):
+                    return Response({"error": f"Cannot approve regularization for company holiday {req.attendance_date}."}, status=400)
                 check_in = parse_legacy("check_in", req.requested_check_in or req.existing_check_in)
                 check_out = parse_legacy("check_out", req.requested_check_out or req.existing_check_out)
                 if not check_in and not check_out: return Response({"error": "At least one final check-in or check-out time is required."}, status=400)

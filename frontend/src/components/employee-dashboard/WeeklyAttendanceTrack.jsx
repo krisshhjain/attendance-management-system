@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Box, Button, ButtonGroup, Skeleton, Paper, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, ButtonGroup, Skeleton, Paper, Tooltip, Typography } from "@mui/material";
 import { ChevronLeft, ChevronRight, AccessTime } from "@mui/icons-material";
 import { fetchMyShift } from "../../lib/api.js";
 import { getHistory } from "../../lib/attendance.js";
+import { useActiveHolidays } from "../../data/holidayCalendar.js";
 
 /* ---------- tokens ---------- */
 const C = {
@@ -27,6 +28,7 @@ const STATUS_META = {
   ABSENT: { label: "Absent", color: "#e11d48", bg: "#ffe9ee" },
   LEAVE: { label: "Leave", color: "#b7791f", bg: "#fff5dc" },
   WEEKEND: { label: "Weekend", color: "#7b8aa0", bg: "#eef2f7" },
+  HOLIDAY: { label: "Holiday", color: "#b7791f", bg: "#fff5dc" },
   PENDING: { label: "Not recorded", color: "#7b8aa0", bg: "#eef2f7" },
 };
 const LIVE_META = { label: "In progress", color: "#226db4", bg: "#e8f1fb" };
@@ -96,7 +98,10 @@ function getDayLabel(date) {
   return date.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
 }
 
-function getStatus(record, day, todayKey) {
+function getStatus(record, day, todayKey, holiday) {
+  const hasActualAttendance = PRESENT_SET.has(record?.status) || record?.status === "LEAVE";
+  if (!hasActualAttendance && (day.getDay() === 0 || day.getDay() === 6)) return "WEEKEND";
+  if (holiday && !hasActualAttendance) return "HOLIDAY";
   if (record?.status) return record.status;
   if (day.getDay() === 0 || day.getDay() === 6) return "WEEKEND";
   return dateKey(day) < todayKey ? "ABSENT" : "PENDING";
@@ -148,6 +153,8 @@ export function WeeklyAttendanceTrack({ todayData }) {
     queryKey: ["myShift"],
     queryFn: fetchMyShift,
   });
+  const { data: activeHolidays = [], isLoading: holidaysLoading, isError: holidaysError } = useActiveHolidays();
+  const holidayByDate = useMemo(() => new Map(activeHolidays.map((holiday) => [holiday.date, holiday])), [activeHolidays]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -173,11 +180,13 @@ export function WeeklyAttendanceTrack({ todayData }) {
       const day = new Date(weekStart);
       day.setDate(weekStart.getDate() + index);
       const key = dateKey(day);
-      return { day, dayName, key, record: records.get(key), status: getStatus(records.get(key), day, todayKey) };
+      const record = records.get(key);
+      const holiday = holidayByDate.get(key);
+      return { day, dayName, key, record, holiday, status: getStatus(record, day, todayKey, holiday) };
     });
-  }, [records, todayKey, weekStart]);
+  }, [holidayByDate, records, todayKey, weekStart]);
 
-  if (historyLoading || shiftLoading) {
+  if (historyLoading || shiftLoading || holidaysLoading) {
     return (
       <Paper sx={{ ...cardSx, p: 3 }}>
         <Skeleton variant="text" width={160} height={26} />
@@ -186,6 +195,7 @@ export function WeeklyAttendanceTrack({ todayData }) {
       </Paper>
     );
   }
+  if (holidaysError) return <Paper sx={{ ...cardSx, p: 2 }}><Alert severity="warning">Holiday data could not be loaded. Attendance statuses are hidden until it is available.</Alert></Paper>;
 
   if (!shift) {
     return (
@@ -288,7 +298,7 @@ export function WeeklyAttendanceTrack({ todayData }) {
           <Box component="span" sx={{ textAlign: "right" }}>Hours</Box>
         </Box>
 
-        {rows.map(({ day, dayName, key, record, status, isToday, checkIn, checkOut, isLive, startPosition, endPosition, hasBar, duration, meta }) => {
+        {rows.map(({ day, dayName, key, record, status, holiday, isToday, checkIn, checkOut, isLive, startPosition, endPosition, hasBar, duration, meta }) => {
           const isWeekend = day.getDay() === 0 || day.getDay() === 6;
           const isAbsent = status === "ABSENT";
           const barColor = isLive ? C.brand : meta.color;
@@ -325,6 +335,7 @@ export function WeeklyAttendanceTrack({ todayData }) {
                   <Typography sx={{ fontSize: 11.5, color: C.sub }}>{getDayLabel(day)}</Typography>
                 </Box>
                 <StatusPill meta={meta} live={isLive} />
+                {holiday && <Typography title={holiday.name} sx={{ mt: 0.25, fontSize: 10, color: C.sub }}>{holiday.name}</Typography>}
               </Box>
 
               {/* check in (desktop) */}

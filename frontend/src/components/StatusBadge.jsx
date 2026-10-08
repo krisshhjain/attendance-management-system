@@ -9,6 +9,7 @@ const LABELS = {
   HALF_DAY: "Half Day",
   LEAVE: "On Leave",
   HOLIDAY: "Holiday",
+  WEEKEND: "Weekend",
   INCOMPLETE: "Incomplete",
   OFF: "Off (Weekend)",
 };
@@ -22,6 +23,7 @@ const TONES = {
   HALF_DAY: { bgcolor: "#fff3e0", color: "#ed6c02", borderColor: "#ffcc80" },
   LEAVE: { bgcolor: "#f3e5f5", color: "#7b1fa2", borderColor: "#ce93d8" },
   HOLIDAY: { bgcolor: "#fff8e1", color: "#f57f17", borderColor: "#ffe082" },
+  WEEKEND: { bgcolor: "action.hover", color: "text.secondary", borderColor: "divider" },
   INCOMPLETE: { bgcolor: "#fff3e0", color: "#ed6c02", borderColor: "#ffcc80" },
   OFF: { bgcolor: "action.hover", color: "text.secondary", borderColor: "divider" },
 };

@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/notifications/", include("notifications.urls")),
     path("api/hr-copilot/", include("hr_copilot.urls")),
     path("api/system-logs/", include("system_logs.urls")),
+    path("api/holidays/", include("holidays.urls")),
 ]
 
 if settings.DEBUG:

@@ -1,15 +1,17 @@
+"""Backward-compatible imports for the centralized holiday date resolver."""
+
 import datetime
 
+from holidays.services import is_company_holiday
+
 def is_working_day(date_obj: datetime.date) -> bool:
-    """
-    CENTRAL BUSINESS RULE:
-    Saturday (5) and Sunday (6) are official weekly holidays.
-    Returns True if the given date is a working day, False if it is a weekend/holiday.
-    """
-    return date_obj.weekday() not in (5, 6)
+    """Return whether attendance is required on the date."""
+    from holidays.services import is_working_day as resolve_working_day
+    return resolve_working_day(date_obj)
 
 def is_holiday(date_obj: datetime.date) -> bool:
+    """Return whether this date is an active named company holiday.
+
+    Weekends are weekly non-working days and are intentionally not company holidays.
     """
-    Returns True if the date is an official holiday (weekend).
-    """
-    return not is_working_day(date_obj)
+    return is_company_holiday(date_obj)

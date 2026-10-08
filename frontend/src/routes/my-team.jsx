@@ -10,6 +10,7 @@ import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import BeachAccessRoundedIcon from "@mui/icons-material/BeachAccessRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import InboxRoundedIcon from "@mui/icons-material/InboxRounded";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,14 @@ const COLUMNS = [
     icon: BeachAccessRoundedIcon,
     solid: "#2e90fa",
     soft: "#eff8ff",
+  },
+  {
+    key: "HOLIDAY",
+    label: "Holiday",
+    countKey: "holiday_count",
+    icon: CalendarMonthRoundedIcon,
+    solid: "#b7791f",
+    soft: "#fff5dc",
   },
 ];
 
@@ -190,6 +199,15 @@ function MemberRow({ member, currentUserId, isLast }) {
               {member.subsection && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
               <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}>
                 Weekend
+              </Typography>
+            </>
+          )}
+
+          {member.status === "HOLIDAY" && (
+            <>
+              {(member.subsection || member.holiday_name) && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
+              <Typography title={member.holiday_name || "Holiday"} sx={{ fontFamily: FONT, fontSize: "0.72rem", color: "#b7791f", fontWeight: 600 }}>
+                {member.holiday_name || "Holiday"}
               </Typography>
             </>
           )}
@@ -350,6 +368,7 @@ function MyTeamPage() {
     CHECKED_IN: data?.members?.filter((m) => m.status === "CHECKED_IN") ?? [],
     YET_TO_CHECK_IN: data?.members?.filter((m) => m.status === "YET_TO_CHECK_IN" || m.status === "WEEKEND") ?? [],
     ON_LEAVE: data?.members?.filter((m) => m.status === "ON_LEAVE") ?? [],
+    HOLIDAY: data?.members?.filter((m) => m.status === "HOLIDAY") ?? [],
   };
 
   return (
@@ -447,7 +466,7 @@ function MyTeamPage() {
                     </Box>
                     <Box>
                       <Typography sx={{ fontFamily: FONT, fontSize: "0.95rem", fontWeight: 800, color: INK, lineHeight: 1.1 }}>
-                        {data[col.countKey] ?? 0}
+                        {col.key === "HOLIDAY" ? grouped.HOLIDAY.length : data[col.countKey] ?? 0}
                       </Typography>
                       <Typography sx={{ fontFamily: FONT, fontSize: "0.68rem", color: TEXT_3, fontWeight: 600, whiteSpace: "nowrap" }}>
                         {col.label}
@@ -484,7 +503,7 @@ function MyTeamPage() {
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" },
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(4, 1fr)" },
             gap: 2,
             alignItems: "start",
           }}

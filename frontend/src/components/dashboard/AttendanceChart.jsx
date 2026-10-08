@@ -5,6 +5,7 @@ export function AttendanceChart({ data }) {
   const theme = useTheme();
 
   const isWorkingDay = data?.is_working_day ?? true;
+  const offDayLabel = data?.day_type === "WEEKEND" ? "Weekend" : data?.day_type === "HOLIDAY" ? "Holiday" : "Non-working day";
 
   // Calculate missing people safely (ensure we don't go negative)
   // If it's a holiday, nobody is expected, so missing is 0.
@@ -13,7 +14,7 @@ export function AttendanceChart({ data }) {
   const chartData = [
     { name: "Completed", value: data?.completed_today || 0, color: "#4caf50" }, // Green
     { name: "Currently In", value: data?.checked_in_today || 0, color: theme.palette.primary.main }, // Purple
-    { name: isWorkingDay ? "Not Arrived" : "Holiday", value: isWorkingDay ? notArrived : data?.active_employees || 0, color: "#e0e0e0" }, // Grey
+    { name: isWorkingDay ? "Not Arrived" : offDayLabel, value: isWorkingDay ? notArrived : data?.active_employees || 0, color: "#e0e0e0" }, // Grey
   ];
 
   return (
@@ -37,7 +38,7 @@ export function AttendanceChart({ data }) {
             Attendance Overview
           </Typography>
           <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5, fontSize: "12px" }}>
-            Today's attendance status
+            {data?.day_type === "HOLIDAY" ? `Holiday${data.holiday_name ? ` · ${data.holiday_name}` : ""}` : data?.day_type === "WEEKEND" ? "Weekend" : "Today's attendance status"}
           </Typography>
         </Box>
       </Box>

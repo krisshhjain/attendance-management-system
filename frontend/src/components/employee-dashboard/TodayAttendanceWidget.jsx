@@ -165,12 +165,14 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8, mt: 0.5 }}>
             <Box sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: canCheckOut ? "#22c55e" : "#cbd5e1" }} />
             <Typography sx={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
-              {status === "LEAVE" ? "On Leave" : canCheckOut ? "Checked In" : status === "COMPLETED" ? "Checked Out" : "Not Checked In"}
+              {status === "HOLIDAY" ? "Holiday" : status === "WEEKEND" ? "Weekend" : status === "LEAVE" ? "On Leave" : canCheckOut ? "Checked In" : status === "COMPLETED" ? "Checked Out" : "Not Checked In"}
             </Typography>
           </Box>
         </Box>
         <StatusBadge status={status} />
       </Box>
+
+      {status === "HOLIDAY" && data.holiday_name && <Typography sx={{ px: 2.5, pt: 1.5, color: "#64748b", fontSize: 13 }}>{data.holiday_name}</Typography>}
 
       {shift && (
         <Box sx={{ mx: 2.5, mt: 2, display: "flex", alignItems: "center", gap: 1, color: "text.secondary" }}>

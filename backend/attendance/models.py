@@ -114,7 +114,8 @@ class Attendance(models.Model):
         Check if the attendance date is a weekend (Saturday=5 or Sunday=6).
         Returns: True if weekend, False otherwise.
         """
-        return self.date.weekday() in [5, 6]  # Saturday=5, Sunday=6
+        from holidays.services import is_weekend
+        return is_weekend(self.date)
 
     def recompute_from_events(self):
         """
@@ -182,6 +183,9 @@ class Attendance(models.Model):
         This is a derived status separate from the core Attendance.status.
         """
         # If no shift assigned, return None
+        from holidays.services import attendance_required
+        if not attendance_required(self.date):
+            return None
         effective_shift = self.employee.get_effective_shift()
         if not effective_shift or not effective_shift.is_active:
             return None

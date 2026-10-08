@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { ShiftConfigurationPanel } from "../components/ShiftConfigurationPanel.jsx";
 import { ManagerManagement } from "../components/ManagerManagement.jsx";
+import { HolidayManagementPanel } from "../components/HolidayManagementPanel.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import {
   Box,
@@ -656,6 +657,7 @@ function Administration() {
             {isSuperUser && <Tab label="Manager Management" value={5} />}
             {isStaff && loginType !== "systemadmin" && <Tab label="Configure Shifts" value={6} sx={{ fontWeight: 600, textTransform: "none" }} />}
             {isSuperUser && <Tab label="Office Locations" value={7} sx={{ fontWeight: 600, textTransform: "none" }} />}
+            {isSuperUser && <Tab label="Holidays" value={8} sx={{ fontWeight: 600, textTransform: "none" }} />}
           </Tabs>
 
           {/* TAB 0: LEAVE REQUESTS */}
@@ -1209,6 +1211,7 @@ function Administration() {
               )}
             </Box>
           )}
+          {isSuperUser && currentTab === 8 && <HolidayManagementPanel />}
         </Paper>
 
         <Dialog open={locationModal.open} onClose={() => setLocationModal({ open: false, location: null })} maxWidth="xs" fullWidth>

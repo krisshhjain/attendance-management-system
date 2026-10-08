@@ -391,6 +391,13 @@ def build_sql(plan):
             params.append(filters["leave_status"])
     if is_absence_query:
         absence_date = filters["date_range"]["start"]
+        from holidays.services import is_working_day
+        try:
+            required_date = date.fromisoformat(absence_date)
+        except (TypeError, ValueError):
+            raise CopilotError("invalid_date_range", "Please provide a valid attendance date.")
+        if not is_working_day(required_date):
+            where.append("1 = 0")
         where.extend([
             "e.is_active = TRUE",
             "e.date_joined <= %s",
@@ -401,6 +408,19 @@ def build_sql(plan):
             "AND approved_leave.start_date <= %s AND approved_leave.end_date >= %s)",
         ])
         params.extend([absence_date, absence_date, absence_date, absence_date])
+
+    if source == "attendance" and filters.get("date_range"):
+        from holidays.services import get_non_working_dates
+        range_start = date.fromisoformat(filters["date_range"]["start"])
+        range_end = date.fromisoformat(filters["date_range"]["end"])
+        non_working_dates = get_non_working_dates(range_start, range_end)
+        if non_working_dates:
+            placeholders = ", ".join(["%s"] * len(non_working_dates))
+            if filters.get("attendance_status") == "ABSENT":
+                where.append(f"a.date NOT IN ({placeholders})")
+            else:
+                where.append(f"(a.status <> 'ABSENT' OR a.date NOT IN ({placeholders}))")
+            params.extend(non_working_dates)
 
     if filters.get("date_range") and not is_absence_query:
         where.extend([date_field + " >= %s", date_field + " <= %s"])

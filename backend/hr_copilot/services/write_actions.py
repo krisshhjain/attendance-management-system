@@ -127,6 +127,15 @@ class WriteActionPlanner:
         valid_statuses = ['PRESENT', 'INCOMPLETE', 'ABSENT', 'LEAVE']
         if target_status not in valid_statuses:
             raise CopilotError("invalid_status", f"Status must be one of: {', '.join(valid_statuses)}")
+
+        if target_status == "ABSENT":
+            from holidays.services import attendance_required, get_day_classification
+            if not attendance_required(target_date):
+                day = get_day_classification(target_date)
+                raise CopilotError(
+                    "attendance_not_required",
+                    f"Cannot mark an employee absent on a {day['day_type'].lower()} date.",
+                )
         
         # Get current state
         current_attendance = Attendance.objects.filter(
@@ -333,7 +342,7 @@ class WriteActionPlanner:
         recent_leaves = LeaveRequest.objects.filter(
             employee_id=employee_id,
             status__in=['PENDING', 'APPROVED'],
-            start_date__gte=timezone.now().date()
+            start_date__gte=timezone.localdate()
         ).order_by('-submitted_at')[:5]
 
         if entities.get('request_id'):
@@ -681,7 +690,7 @@ class WriteActionPlanner:
         # Check temporal expression
         temporal_expr = entities.get('temporal_expression', 'today').lower()
         
-        today = timezone.now().date()
+        today = timezone.localdate()
         
         if temporal_expr in ['today', 'now']:
             return today

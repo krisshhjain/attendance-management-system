@@ -279,14 +279,26 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertEqual(quota.data["weekly_remaining"], 1)
 
     def test_employee_can_submit_grouped_days_and_admin_approve_them(self):
-        self.request.delete()
-        anchor = date(2026, 9, 30)
-        second_date = date(2026, 9, 29)
+        RegularizationRequest.objects.filter(employee=self.employee).delete()
+        today = timezone.localdate()
+        week_start = today - timedelta(days=today.weekday())
+        # Simulate a date at least one day into the current business week so
+        # the grouped request always contains two past weekdays, including
+        # when this test happens to run on a Monday or weekend.
+        anchor = week_start + timedelta(days=min(max(today.weekday(), 1), 4))
+        second_date = anchor - timedelta(days=1)
+        effective_now = timezone.make_aware(
+            datetime.combine(anchor, datetime_time(12, 0)),
+            timezone.get_current_timezone(),
+        )
+        self.employee.date_joined = anchor - timedelta(days=30)
+        self.employee.save(update_fields=["date_joined"])
         self.attendance_date = anchor
         self.check_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(9, 0)))
         self.check_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(17, 0)))
         self.client.force_authenticate(user=self.employee_user)
-        with patch("attendance.views.timezone.localdate", return_value=anchor):
+        with patch("attendance.views.timezone.localdate", return_value=anchor), \
+             patch("django.utils.timezone.now", return_value=effective_now):
             response = self.client.post("/api/attendance/regularization/", {
                 "period_type": "WEEK",
                 "days": [
@@ -308,12 +320,14 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         request_id = response.data["request_id"]
         self.assertEqual(RegularizationRequest.objects.get(id=request_id).days.count(), 2)
-        quota = self.client.get("/api/attendance/regularization/quota/")
+        with patch("attendance.views.timezone.localdate", return_value=anchor):
+            quota = self.client.get("/api/attendance/regularization/quota/")
         self.assertEqual(quota.data["monthly_used"], 1)
         self.assertEqual(quota.data["weekly_used"], 1)
 
         self.client.force_authenticate(user=self.admin_user)
-        with patch("attendance.views.timezone.localdate", return_value=anchor):
+        with patch("attendance.views.timezone.localdate", return_value=anchor), \
+             patch("django.utils.timezone.now", return_value=effective_now):
             review = self.client.get(f"/api/attendance/admin/regularization/{request_id}/")
             self.assertEqual(review.status_code, status.HTTP_200_OK, review.data)
             approve = self.client.post(f"/api/attendance/admin/regularization/{request_id}/approve/", {
@@ -522,6 +536,9 @@ class RegularizationWorkflowTests(APITestCase):
     def test_phase1_current_week_allowed_and_previous_week_blocked(self, mock_localdate):
         # Anchor to a Thursday
         mock_localdate.return_value = date(2026, 10, 8) # Thursday
+        # The shared fixture creates a request to exercise quota behavior in
+        # other tests. Start with an empty quota state for this eligibility test.
+        RegularizationRequest.objects.filter(employee=self.employee).delete()
         self.client.force_authenticate(user=self.employee_user)
         # Monday is 2026-10-05
         # Attempt to submit previous Friday (2026-10-02) -> blocked
@@ -531,6 +548,10 @@ class RegularizationWorkflowTests(APITestCase):
         }, format="json")
         self.assertEqual(res_prev.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("current calendar week", str(res_prev.data))
+
+        quota = self.client.get("/api/attendance/regularization/quota/")
+        self.assertEqual(quota.data["weekly_used"], 0)
+        self.assertEqual(quota.data["monthly_used"], 0)
 
         # Attempt to submit current Monday (2026-10-05) -> allowed even if > 48 hours
         # First ensure employee was joined before that date

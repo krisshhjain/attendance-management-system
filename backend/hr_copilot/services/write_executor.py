@@ -99,6 +99,13 @@ class WriteActionExecutor:
         employee_id = target_data['employee_id']
         target_date = datetime.fromisoformat(target_data['date']).date()
         target_status = proposed_changes['status']
+        if target_status == 'ABSENT':
+            from holidays.services import attendance_required
+            if not attendance_required(target_date):
+                raise CopilotError(
+                    'attendance_not_required',
+                    'The approved action cannot mark an employee absent on a non-working date.',
+                )
         
         # Snapshot summary and source events before applying the explicit correction.
         events = list(AttendanceEvent.objects.filter(employee_id=employee_id, timestamp__date=target_date).order_by('timestamp'))

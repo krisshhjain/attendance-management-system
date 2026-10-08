@@ -11,7 +11,7 @@ from attendance.models import (
     calculate_completed_working_duration,
     get_effective_attendance_events,
 )
-from config.business_rules import is_working_day
+from holidays.services import get_day_classification, get_day_classifications, is_working_day
 from employees.models import Employee
 from leave_management.models import LeaveRequest
 
@@ -83,6 +83,7 @@ class AttendanceIntelligence:
         events = self._events(employee, target_date)
         attendance = Attendance.objects.filter(employee=employee, date=target_date).first()
         leave = self._approved_leave(employee, target_date)
+        day_classification = get_day_classification(target_date)
         last_event = events[-1] if events else None
         if leave or (attendance and attendance.status == "LEAVE"):
             status = "LEAVE"
@@ -90,6 +91,8 @@ class AttendanceIntelligence:
             status = "INCOMPLETE"
         elif last_event and last_event.event_type == "CHECK_OUT":
             status = "PRESENT"
+        elif not day_classification["attendance_required"]:
+            status = day_classification["day_type"]
         elif attendance and attendance.status in {"ABSENT", "INCOMPLETE", "PRESENT"}:
             status = attendance.status
         else:
@@ -111,9 +114,10 @@ class AttendanceIntelligence:
 
     def missing_checkins(self, *, user, scope, target_date, target_employee_id=None):
         if not is_working_day(target_date):
+            day = get_day_classification(target_date)
             return self._base(
                 "missing_checkins", target_date, target_date,
-                ["Weekly holidays are excluded from missing-check-in detection."], [],
+                [f"{day['day_type'].title()} dates are excluded from missing-check-in detection."], [],
             )
         rows = []
         for employee in self._employees(user, scope, target_employee_id, target_date):
@@ -135,6 +139,11 @@ class AttendanceIntelligence:
         )
 
     def late_employees(self, *, user, scope, target_date, target_employee_id=None):
+        if not is_working_day(target_date):
+            return self._base(
+                "late_employees", target_date, target_date,
+                ["Attendance is not required on weekends or active company holidays."], [],
+            )
         rows = []
         for employee in self._employees(user, scope, target_employee_id, target_date):
             state = self._state(employee, target_date)
@@ -227,12 +236,12 @@ class AttendanceIntelligence:
 
     def _absence_dates(self, start, end):
         current = start
-        values = []
+        dates = []
         while current <= end:
-            if is_working_day(current):
-                values.append(current)
+            dates.append(current)
             current += timedelta(days=1)
-        return values
+        classifications = get_day_classifications(dates)
+        return [target for target in dates if classifications[target]["attendance_required"]]
 
     def absence_streaks(self, *, user, scope, start, end, target_employee_id=None):
         rows = []
@@ -274,14 +283,36 @@ class AttendanceIntelligence:
 
     def summary(self, *, user, scope, start, end, target_employee_id=None):
         rows = []
-        for target_date in self._absence_dates(start, end):
+        dates = []
+        current = start
+        while current <= end:
+            dates.append(current)
+            current += timedelta(days=1)
+        classifications = get_day_classifications(dates)
+        for current in dates:
+            day = classifications[current]
+            if day["day_type"] == "WEEKEND":
+                continue
+            if day["day_type"] == "HOLIDAY":
+                counts = {"PRESENT": 0, "INCOMPLETE": 0, "LEAVE": 0, "ABSENT": 0}
+                for employee in self._employees(user, scope, target_employee_id, current):
+                    status = self._state(employee, current)["status"]
+                    if status in {"PRESENT", "INCOMPLETE", "LEAVE"}:
+                        counts[status] += 1
+                rows.append({
+                    "date": current.isoformat(),
+                    "day_type": "HOLIDAY",
+                    "holiday_name": day["holiday_name"],
+                    **{key.lower(): value for key, value in counts.items()},
+                })
+                continue
             counts = {"PRESENT": 0, "INCOMPLETE": 0, "LEAVE": 0, "ABSENT": 0}
-            for employee in self._employees(user, scope, target_employee_id, target_date):
-                counts[self._state(employee, target_date)["status"]] += 1
-            rows.append({"date": target_date.isoformat(), **{key.lower(): value for key, value in counts.items()}})
+            for employee in self._employees(user, scope, target_employee_id, current):
+                counts[self._state(employee, current)["status"]] += 1
+            rows.append({"date": current.isoformat(), "day_type": "WORKING_DAY", **{key.lower(): value for key, value in counts.items()}})
         return self._base(
             "summary", start, end,
-            ["Counts cover active employees who had joined by each working date.", "Weekends are omitted from daily rows.", "Absence is inferred from no effective check-in and no approved leave."],
+            ["Counts cover active employees who had joined by each working date.", "Weekends are omitted; company holidays appear as zero-count rows.", "Absence is inferred from no effective check-in and no approved leave."],
             rows,
         )
 
