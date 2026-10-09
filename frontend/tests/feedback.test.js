@@ -33,3 +33,10 @@ test("normalizes safe API errors and hides unsafe details", () => {
   assert.equal(getErrorMessage({ message: "<html>secret</html>" }), "Something went wrong. Please try again.");
   assert.equal(getErrorMessage({ message: "Bearer token: abc" }), "Something went wrong. Please try again.");
 });
+
+test("unsafe error message checks remain safe on very long input", () => {
+  const longMessage = "<".repeat(30000);
+  const started = performance.now();
+  assert.equal(getErrorMessage({ message: longMessage }), "Something went wrong. Please try again.");
+  assert.ok(performance.now() - started < 1000);
+});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { ShiftConfigurationPanel } from "../components/ShiftConfigurationPanel.jsx";
@@ -147,7 +147,11 @@ function Administration() {
   };
 
   useEffect(() => {
-    if (isSuperUser && currentTab === 7) loadOfficeLocations();
+    if (isSuperUser && currentTab === 7) {
+      loadOfficeLocations().catch((loadError) => {
+        setError(getErrorMessage(loadError, "Failed to load office locations."));
+      });
+    }
   }, [currentTab, isSuperUser]);
 
   const handleOpenLocationModal = (location = null) => {
@@ -239,7 +243,7 @@ function Administration() {
     return getFileExtension(url) === 'pdf';
   };
 
-  const loadLeaveRequests = async () => {
+  const loadLeaveRequests = useCallback(async () => {
     setLoadingRequests(true);
     try {
       const params = statusFilter !== "ALL" ? { status: statusFilter } : {};
@@ -250,13 +254,15 @@ function Administration() {
     } finally {
       setLoadingRequests(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
     if (isStaff && currentTab === 0) {
-      loadLeaveRequests();
+      loadLeaveRequests().catch((loadError) => {
+        setError(getErrorMessage(loadError, "Failed to load leave requests."));
+      });
     }
-  }, [currentTab, statusFilter, isStaff]);
+  }, [currentTab, statusFilter, isStaff, loadLeaveRequests]);
 
   const handleOpenAction = (req, type) => {
     setActionError(null);
@@ -341,7 +347,9 @@ function Administration() {
 
   useEffect(() => {
     if ((canManagePolicies || isSystemAdmin) && currentTab === 1) {
-      loadPoliciesAndTypes();
+      loadPoliciesAndTypes().catch((loadError) => {
+        setError(getErrorMessage(loadError, "Failed to load policy configurations."));
+      });
     }
   }, [currentTab, canManagePolicies, isSystemAdmin]);
 
@@ -432,7 +440,9 @@ function Administration() {
 
   useEffect(() => {
     if (canViewLeaveTypes && currentTab === 2) {
-      loadPoliciesAndTypes();
+      loadPoliciesAndTypes().catch((loadError) => {
+        setError(getErrorMessage(loadError, "Failed to load policy configurations."));
+      });
     }
   }, [currentTab, canViewLeaveTypes]);
 
@@ -553,7 +563,9 @@ function Administration() {
 
   useEffect(() => {
     if (isStaff && currentTab === 3) {
-      loadAdminBalances();
+      loadAdminBalances().catch((loadError) => {
+        setError(getErrorMessage(loadError, "Failed to load employee balances."));
+      });
     }
   }, [currentTab, isStaff]);
 
@@ -1324,7 +1336,7 @@ function Administration() {
                     step="0.5"
                     label="Annual Entitlement (days per year)"
                     value={polEntitlement}
-                    onChange={(e) => setPolEntitlement(parseFloat(e.target.value))}
+                    onChange={(e) => setPolEntitlement(Number.parseFloat(e.target.value))}
                     required
                   />
                 </Grid2>
@@ -1348,7 +1360,7 @@ function Administration() {
                     type="number"
                     label="Max Consecutive Days"
                     value={polMaxConsecutive}
-                    onChange={(e) => setPolMaxConsecutive(parseInt(e.target.value))}
+                    onChange={(e) => setPolMaxConsecutive(Number.parseInt(e.target.value, 10))}
                   />
                 </Grid2>
                 <Grid2 size={{ xs: 6 }}>
@@ -1357,7 +1369,7 @@ function Administration() {
                     type="number"
                     label="Min Notice Days"
                     value={polMinNotice}
-                    onChange={(e) => setPolMinNotice(parseInt(e.target.value))}
+                    onChange={(e) => setPolMinNotice(Number.parseInt(e.target.value, 10))}
                   />
                 </Grid2>
               </Grid2>
@@ -1375,7 +1387,7 @@ function Administration() {
                     step="0.5"
                     label="Max Carry Forward Days"
                     value={polMaxCarryForward}
-                    onChange={(e) => setPolMaxCarryForward(parseFloat(e.target.value))}
+                    onChange={(e) => setPolMaxCarryForward(Number.parseFloat(e.target.value))}
                     sx={{ mt: 1 }}
                   />
                 )}

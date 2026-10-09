@@ -188,6 +188,26 @@ class WorkforceIntelligenceTests(TestCase):
         locations = workforce_intelligence.execute(metric="office_locations", scope=self.scope, user=self.admin, filters={})
         self.assertEqual(locations["rows"][0]["id"], location.id)
 
+    def test_manager_info_counts_team_within_both_scopes(self):
+        manager = get_user_model().objects.create_user(
+            email="workforce-team-manager@example.test",
+            is_system_admin=True,
+            hr_copilot_sections=["C"],
+        )
+        ManagerScope.objects.create(
+            manager=manager, scope_type="SECTION", value="C",
+        )
+        ManagerScope.objects.create(
+            manager=manager, scope_type="DEPARTMENT", value="Engineering",
+        )
+
+        result = workforce_intelligence.execute(
+            metric="manager_info", scope=self.scope, user=self.admin, filters={},
+        )
+
+        row = next(row for row in result["rows"] if row["manager_id"] == manager.id)
+        self.assertEqual(row["team_employee_count"], 1)
+
     def test_ambiguous_employee_is_rejected_by_semantic_pipeline(self):
         duplicate_user = get_user_model().objects.create_user(email="duplicate@example.test", first_name="Asha", last_name="Rao")
         Employee.objects.create(

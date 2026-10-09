@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -67,7 +67,7 @@ function RegularizationReviewPage() {
   const [rejectionReason, setRejectionReason] = useState("");
   const { success, notifyError } = useFeedback();
 
-  const loadRequest = async () => {
+  const loadRequest = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -84,11 +84,13 @@ function RegularizationReviewPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    loadRequest();
-  }, [id]);
+    loadRequest().catch((loadError) => {
+      setError(loadError.message || "Could not load this regularization request.");
+    });
+  }, [id, loadRequest]);
 
   const handleApprove = async () => {
     if (!request) return;

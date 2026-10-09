@@ -47,7 +47,13 @@ export function AuthProvider({ children }) {
       }
       setReady(true);
     };
-    init();
+    init().catch(() => {
+      tokenStore.clear();
+      clearStoredLoginType();
+      setLoginType("employee");
+      setIsAuthenticated(false);
+      setReady(true);
+    });
   }, [fetchUser]);
 
   const login = useCallback(async (email, password, type = "employee") => {

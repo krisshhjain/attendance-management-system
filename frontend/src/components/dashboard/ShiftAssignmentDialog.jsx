@@ -47,7 +47,7 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
     setError(null);
     
     try {
-      const shiftId = selectedShiftId === "" ? null : parseInt(selectedShiftId);
+      const shiftId = selectedShiftId === "" ? null : Number.parseInt(selectedShiftId, 10);
       
       await apiRequest("/attendance/admin/shift/assign/", {
         method: "POST",

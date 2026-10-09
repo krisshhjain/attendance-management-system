@@ -1,9 +1,12 @@
 import { useEffect } from "react";
 import { Box, FormControl, InputLabel, MenuItem, Select } from "@mui/material";
 import { getOrganizationScope, useOrganizationScope } from "../../lib/organizationScope.jsx";
+import { sortOrganizationScopeValues } from "./organizationScopeSort.js";
 
 function uniqueValues(employees, field) {
-  return [...new Set((employees || []).map((employee) => employee[field]).filter(Boolean))].sort();
+  return sortOrganizationScopeValues(
+    new Set((employees || []).map((employee) => employee[field]).filter(Boolean)),
+  );
 }
 
 export function OrganizationScopeFilters({ user, employees = [] }) {

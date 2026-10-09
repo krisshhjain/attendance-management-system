@@ -69,7 +69,7 @@ export function SuperAdminLayout({ children, title }) {
           minWidth: 0,
           display: "flex",
           flexDirection: "column",
-          marginLeft: isMobile ? 0 : 0, // sidebar is position:sticky so no margin needed
+          marginLeft: 0, // sidebar is position:sticky so no margin needed
         }}
       >
         {/* ── Sticky Header ─────────────────────────────────────────────── */}

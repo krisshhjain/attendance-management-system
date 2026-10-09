@@ -44,7 +44,6 @@ class Command(BaseCommand):
                 with transaction.atomic():
                     user = User.objects.create_user(
                         email=email,
-                        password=f"{first_name}@123",
                         first_name=first_name,
                         last_name=last_name,
                     )
@@ -67,6 +66,11 @@ class Command(BaseCommand):
         self.stdout.write(f"Total supplied students: {len(STUDENTS)}")
         self.stdout.write(f"Already existed / skipped: {len(skipped)}")
         self.stdout.write(f"Newly added: {len(added)}")
+        if added:
+            self.stdout.write(
+                "New accounts have no usable password; an administrator must "
+                "assign initial passwords before users can sign in."
+            )
         self.stdout.write(f"Failed: {len(failed)}")
 
         if skipped:

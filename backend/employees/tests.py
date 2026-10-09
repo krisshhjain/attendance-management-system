@@ -1,6 +1,9 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from django.core.management import call_command, CommandError
+from io import StringIO
+from unittest.mock import patch
 from employees.models import Employee, FaceProfile
 
 User = get_user_model()
@@ -72,3 +75,49 @@ class FaceProfileModelTests(TestCase):
         self.assertEqual(profile.pk, profile2.pk)
         self.assertEqual(profile2.face_template, new_template)
         self.assertEqual(profile2.version, "1.1")
+
+
+class CredentialBootstrapCommandTests(TestCase):
+    """Reference-data commands must never assign predictable passwords."""
+
+    def _assert_account_has_no_password(self, email):
+        user = User.objects.get(email=email)
+        self.assertFalse(user.has_usable_password())
+        self.assertFalse(user.check_password("Security@123"))
+        self.assertTrue(user.employee.must_change_password)
+
+    @patch(
+        "employees.management.commands.import_reference_students.STUDENTS",
+        [("Security Test", "A", "A1")],
+    )
+    def test_import_command_creates_account_without_usable_password(self):
+        call_command("import_reference_students", stdout=StringIO())
+        self._assert_account_has_no_password("security.test@dailoqa.com")
+
+    @patch(
+        "employees.management.commands.restore_checkpoint_students.STUDENTS",
+        [("Security Test", "A", "A1")],
+    )
+    def test_restore_command_creates_account_without_usable_password(self):
+        call_command("restore_checkpoint_students", stdout=StringIO())
+        self._assert_account_has_no_password("security.test@dailoqa.com")
+
+    def test_bulk_reset_requires_confirmation_and_disables_passwords(self):
+        user = User.objects.create_user(
+            email="bulk-reset@example.com", password="ExistingPassword123!", first_name=""
+        )
+        Employee.objects.create(
+            user=user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined="2023-01-01",
+            must_change_password=False,
+        )
+
+        with self.assertRaises(CommandError):
+            call_command("reset_all_passwords", stdout=StringIO())
+
+        call_command("reset_all_passwords", confirm=True, stdout=StringIO())
+        user.refresh_from_db()
+        self.assertFalse(user.has_usable_password())
+        self.assertTrue(user.employee.must_change_password)

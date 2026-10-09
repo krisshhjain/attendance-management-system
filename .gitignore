@@ -65,6 +65,7 @@ facial-recognition/*
 !facial-recognition/liveness.py
 !facial-recognition/requirements.txt
 !facial-recognition/test_service.py
+!facial-recognition/README.md
 !facial-recognition/MODEL_NOTICE.md
 !facial-recognition/models/
 facial-recognition/models/*

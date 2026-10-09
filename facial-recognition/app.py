@@ -2,6 +2,8 @@ import os
 import io
 import base64
 import hashlib
+import hmac
+import ipaddress
 import math
 import numpy as np
 import time
@@ -16,6 +18,46 @@ app = Flask(__name__)
 app.config["LIVENESS_DIAGNOSTICS_ENABLED"] = os.environ.get(
     "FR_LIVENESS_DIAGNOSTICS", "0"
 ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _configured_bind_host():
+    """Use loopback by default; require service auth for non-loopback binds."""
+    host = os.environ.get("FR_BIND_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = host.casefold() == "localhost"
+    if not is_loopback and not os.environ.get("FACE_SERVICE_TOKEN", "").strip():
+        raise RuntimeError(
+            "FACE_SERVICE_TOKEN is required when FR_BIND_HOST is not loopback."
+        )
+    return host
+
+
+@app.before_request
+def _authenticate_non_health_requests():
+    """Protect the internal API when a shared service token is configured.
+
+    These JSON endpoints have no browser session or cookie authentication, so
+    CSRF tokens do not apply. Non-loopback deployments require bearer auth.
+    """
+    if request.endpoint == "health":
+        return None
+    token = os.environ.get("FACE_SERVICE_TOKEN", "").strip()
+    remote_addr = request.remote_addr or ""
+    try:
+        remote_is_loopback = ipaddress.ip_address(remote_addr).is_loopback
+    except ValueError:
+        remote_is_loopback = False
+    if not token and remote_is_loopback:
+        return None
+    if not token:
+        return jsonify({"error": "Unauthorized"}), 401
+    expected = f"Bearer {token}"
+    supplied = request.headers.get("Authorization", "")
+    if not hmac.compare_digest(supplied, expected):
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
 
 SEQUENCE_MIN_FRAMES = 3
 SEQUENCE_MAX_FRAMES = 7
@@ -324,4 +366,4 @@ def recognize_sequence():
 
 if __name__ == '__main__':
     # Start the Flask app on port 8001
-    app.run(host='0.0.0.0', port=8001)
+    app.run(host=_configured_bind_host(), port=8001)

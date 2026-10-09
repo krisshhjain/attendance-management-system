@@ -390,16 +390,20 @@ export function Sidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
       {isMobile && (
         <>
           {mobileOpen && (
-            <div
+            <button
+              type="button"
               onClick={handleDrawerToggle}
+              aria-label="Close menu"
               style={{
                 position: "fixed",
                 inset: 0,
                 zIndex: 1200,
                 backgroundColor: "rgba(15,23,42,0.3)",
                 backdropFilter: "blur(2px)",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
               }}
-              aria-label="Close menu"
             />
           )}
           <div

@@ -173,6 +173,10 @@ export function NotificationBell() {
   const isBusy = markReadMutation.isPending || deleteNotificationMutation.isPending;
 
   const handleNotificationClick = (notification) => {
+    if (["LEAVE", "REGULARIZATION"].includes(notificationType(notification))) {
+      markReadMutation.mutate(notification.id);
+      return;
+    }
     deleteNotificationMutation.mutate(notification);
   };
 

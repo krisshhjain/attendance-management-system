@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+from django.contrib.auth import password_validation
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser, BasePermission
@@ -296,13 +298,14 @@ class AdminEmployeePasswordChangeView(APIView):
             return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
 
         new_password = request.data.get("new_password")
-        if not new_password:
+        if not isinstance(new_password, str) or not new_password:
             return Response({"error": "new_password is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if len(new_password) < 8:
-            return Response({"error": "Password must be at least 8 characters long."}, status=status.HTTP_400_BAD_REQUEST)
-
         user = employee.user
+        try:
+            password_validation.validate_password(new_password, user)
+        except DjangoValidationError as error:
+            return Response({"error": list(error.messages)}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(new_password)
         user.save()
 
@@ -666,11 +669,13 @@ class ManagerPasswordChangeView(APIView):
             return Response({"error": "Manager not found"}, status=404)
         
         new_password = request.data.get("new_password")
-        if not new_password:
+        if not isinstance(new_password, str) or not new_password:
             return Response({"error": "new_password is required"}, status=400)
-        if len(new_password) < 8:
-            return Response({"error": "Password must be at least 8 characters"}, status=400)
-        
+        try:
+            password_validation.validate_password(new_password, manager)
+        except DjangoValidationError as error:
+            return Response({"error": list(error.messages)}, status=400)
+
         manager.set_password(new_password)
         manager.save()
         record_event(

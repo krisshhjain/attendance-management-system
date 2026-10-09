@@ -3,7 +3,7 @@ from datetime import date, datetime, time as datetime_time, timedelta
 from unittest.mock import patch, Mock
 import requests
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -776,6 +776,20 @@ class FaceServiceIntegrationTests(TestCase):
         template = process_enrollment(["img1", "img2", "img3"])
         self.assertEqual(template, [0.1] * 512)
         mock_post.assert_called_once()
+
+    @override_settings(FACE_SERVICE_TOKEN="face-service-test-token")
+    @patch('attendance.face_service.requests.post')
+    def test_enrollment_sends_service_token_when_configured(self, mock_post):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {"template": [0.1] * 512}
+        mock_post.return_value = mock_response
+
+        process_enrollment(["img1", "img2", "img3"])
+
+        self.assertEqual(
+            mock_post.call_args.kwargs["headers"],
+            {"Authorization": "Bearer face-service-test-token"},
+        )
 
     @patch('attendance.face_service.requests.post')
     def test_process_enrollment_multiple_faces(self, mock_post):
@@ -3369,6 +3383,20 @@ class ShiftAdherenceTests(APITestCase):
         
         adherence = attendance.get_shift_adherence()
         self.assertIsNone(adherence)
+
+    def test_get_shift_adherence_does_not_save_attendance(self):
+        """Shift adherence is derived and must not persist unrelated fields."""
+        from datetime import datetime
+
+        today = timezone.localdate()
+        attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=today,
+            check_in=timezone.make_aware(datetime.combine(today, datetime_time(9, 0))),
+        )
+        with patch.object(attendance, "save") as save:
+            self.assertEqual(attendance.get_shift_adherence(), "ON_TIME")
+        save.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

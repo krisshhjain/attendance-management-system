@@ -282,13 +282,20 @@ function Leave() {
   };
 
   useEffect(() => {
-    loadData();
+    loadData().catch((loadError) => {
+      setError(getErrorMessage(loadError, "Failed to load leave data."));
+    });
   }, []);
 
   useEffect(() => {
     if (loginType !== "systemadmin") return;
-    apiRequest("/admin/employees/list/").then((data) => setEmployees(Array.isArray(data) ? data : [])).catch(() => setEmployees([]));
-  }, [loginType]);
+    apiRequest("/admin/employees/list/")
+      .then((data) => setEmployees(Array.isArray(data) ? data : []))
+      .catch((loadError) => {
+        setEmployees([]);
+        notifyError(loadError, { title: "Employee list unavailable", fallback: "Could not load employees for scope filtering." });
+      });
+  }, [loginType, notifyError]);
 
   // Recalculate duration when dates/dayType change
   useEffect(() => {
@@ -304,7 +311,10 @@ function Leave() {
           setEstimating(false);
         }
       };
-      calc();
+      calc().catch(() => {
+        setEstimatedDuration(null);
+        setEstimating(false);
+      });
     } else {
       setEstimatedDuration(null);
     }
@@ -412,7 +422,7 @@ function Leave() {
     }
   };
 
-  const handleCancelRequest = async (id, status) => {
+  const handleCancelRequest = (id, status) => {
     setCancelModal({ open: true, id, status });
   };
 

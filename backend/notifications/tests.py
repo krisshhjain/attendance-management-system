@@ -112,6 +112,22 @@ class NotificationAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
 
+    def test_regularization_notification_cannot_be_deleted(self):
+        notification = Notification.objects.create(
+            user=self.user,
+            title="Regularization",
+            message="Regularization update",
+            notification_type="REGULARIZATION",
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.delete(
+            reverse("notification-delete", args=[notification.pk])
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
+
     def test_persistent_notification_remains_after_read(self):
         notification = Notification.objects.create(
             user=self.user,

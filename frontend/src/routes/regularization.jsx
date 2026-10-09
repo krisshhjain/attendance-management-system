@@ -81,10 +81,7 @@ function weekLabel(monday) {
   const [endYear, endMonth, endDay] = sunday.split("-").map(Number);
   const start = new Date(startYear, startMonth - 1, startDay, 12);
   const end = new Date(endYear, endMonth - 1, endDay, 12);
-  const sameMonth = start.getMonth() === end.getMonth();
-  return sameMonth
-    ? `${start.toLocaleString([], { month: "short" })} ${start.getDate()} – ${end.toLocaleString([], { month: "short" })} ${end.getDate()}, ${end.getFullYear()}`
-    : `${start.toLocaleString([], { month: "short" })} ${start.getDate()} – ${end.toLocaleString([], { month: "short" })} ${end.getDate()}, ${end.getFullYear()}`;
+  return `${start.toLocaleString([], { month: "short" })} ${start.getDate()} – ${end.toLocaleString([], { month: "short" })} ${end.getDate()}, ${end.getFullYear()}`;
 }
 function monthLabel(value) {
   const [year, month] = value.split("-").map(Number);
@@ -145,7 +142,11 @@ function RegularizationPage() {
       setLoading(false);
     }
   }, []);
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData().catch((error) => {
+      setPageError(getErrorMessage(error, "Failed to load regularization information."));
+    });
+  }, [loadData]);
 
   const summary = useMemo(() => ({
     PENDING: requests.filter((item) => item.status === "PENDING").length,
@@ -218,11 +219,13 @@ function RegularizationPage() {
       }
       const payloadDays = selectedDays.map((date) => {
         const day = days[date];
+        const checkIn = normalizeTimeInput(day.requested_check_in);
+        const checkOut = normalizeTimeInput(day.requested_check_out);
         return {
           attendance_date: date,
           request_type: day.request_type,
-          requested_check_in: normalizeTimeInput(day.requested_check_in) ? `${date}T${normalizeTimeInput(day.requested_check_in)}:00` : null,
-          requested_check_out: normalizeTimeInput(day.requested_check_out) ? `${date}T${normalizeTimeInput(day.requested_check_out)}:00` : null,
+          requested_check_in: checkIn ? `${date}T${checkIn}:00` : null,
+          requested_check_out: checkOut ? `${date}T${checkOut}:00` : null,
           reason: day.reason.trim(),
           description: day.description.trim(),
         };

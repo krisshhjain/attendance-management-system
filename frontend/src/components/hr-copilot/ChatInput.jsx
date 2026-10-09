@@ -8,6 +8,7 @@ import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutl
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
+import { createClientId } from "../../lib/clientId.js";
 
 const ACCEPTED_FILE_TYPES = [
   ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg",
@@ -16,7 +17,7 @@ const ACCEPTED_FILE_TYPES_ATTRIBUTE = ACCEPTED_FILE_TYPES.join(",");
 
 function createAttachment(file) {
   return {
-    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+    id: createClientId(),
     name: file.name,
     type: file.type,
     size: file.size,

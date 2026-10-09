@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import io
 import json
+import os
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -48,6 +49,36 @@ class FRServiceTests(unittest.TestCase):
         response = self.app.get('/health')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json, {"status": "ok"})
+
+    def test_non_loopback_api_requests_require_service_token(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("FACE_SERVICE_TOKEN", None)
+            response = self.app.post(
+                "/extract", json={}, environ_base={"REMOTE_ADDR": "192.0.2.10"}
+            )
+        self.assertEqual(response.status_code, 401)
+
+    def test_configured_service_token_protects_api_but_not_health(self):
+        with patch.dict(os.environ, {"FACE_SERVICE_TOKEN": "test-only-token"}):
+            missing_token = self.app.post("/extract", json={})
+            valid_token = self.app.post(
+                "/extract", json={}, headers={"Authorization": "Bearer test-only-token"}
+            )
+            health = self.app.get("/health")
+        self.assertEqual(missing_token.status_code, 401)
+        self.assertEqual(valid_token.status_code, 400)
+        self.assertEqual(health.status_code, 200)
+
+    def test_server_defaults_to_loopback_and_guards_non_loopback_bind(self):
+        from app import _configured_bind_host
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_configured_bind_host(), "127.0.0.1")
+            os.environ["FR_BIND_HOST"] = "0.0.0.0"
+            with self.assertRaisesRegex(RuntimeError, "FACE_SERVICE_TOKEN"):
+                _configured_bind_host()
+            os.environ["FACE_SERVICE_TOKEN"] = "test-only-token"
+            self.assertEqual(_configured_bind_host(), "0.0.0.0")
 
     def test_recognize_missing_fields(self):
         response = self.app.post('/recognize', json={"image": "dummy"})

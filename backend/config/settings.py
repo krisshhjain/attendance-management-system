@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 from celery.schedules import crontab
+from config.security import required_secret, validate_production_configuration
 
 load_dotenv()
 
@@ -24,13 +25,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-kq4_#owmid(ueiyneg$10t_xxw!@-7x#!rz!ls_hots#xwi(%-'
+# Keep a stable per-environment key outside source control. Fail in every
+# environment rather than silently using a weak or per-startup-generated key.
+SECRET_KEY = required_secret(os.environ, "DJANGO_SECRET_KEY")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
+# Production is opt-in for local development, but its unsafe settings are
+# rejected below instead of silently inheriting development credentials.
+DJANGO_ENV = os.environ.get("DJANGO_ENV", "development").strip().lower()
+DEBUG = os.environ.get("DJANGO_DEBUG", "false").strip().lower() == "true"
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
 
 
 # Application definition
@@ -98,12 +105,26 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "attendance_password")
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672//")
+
+validate_production_configuration(
+    DJANGO_ENV,
+    DEBUG,
+    ALLOWED_HOSTS,
+    POSTGRES_PASSWORD,
+    CELERY_BROKER_URL,
+    os.environ.get("HR_COPILOT_LLM_PROVIDER", "local_ollama_qwen"),
+    os.environ.get("HR_COPILOT_LLM_URL", "http://127.0.0.1:11434"),
+    os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"),
+)
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.environ.get("POSTGRES_DB", "attendance_db"),
         "USER": os.environ.get("POSTGRES_USER", "attendance_user"),
-        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "attendance_password"),
+        "PASSWORD": POSTGRES_PASSWORD,
         "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
         "PORT": os.environ.get("POSTGRES_PORT", "5434"),
     }
@@ -155,7 +176,6 @@ EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "false").lower() == "true"
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "webmaster@localhost")
 
 # Celery Configuration
-CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672//")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND") or None
 CELERY_TIMEZONE = os.environ.get("CELERY_TIMEZONE", "Asia/Kolkata")
 CELERY_WORKER_ENABLE_REMOTE_CONTROL = os.environ.get("CELERY_WORKER_ENABLE_REMOTE_CONTROL", "false").lower() == "true"
@@ -185,7 +205,8 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Facial Recognition Service
-FACE_SERVICE_URL = os.environ.get('FACE_SERVICE_URL', 'http://host.docker.internal:8001')
+FACE_SERVICE_URL = os.environ.get('FACE_SERVICE_URL', 'http://127.0.0.1:8001')
+FACE_SERVICE_TOKEN = os.environ.get("FACE_SERVICE_TOKEN", "")
 
 # HR Copilot LLM Configuration
 # Force enable local Qwen3-8B model for natural language processing

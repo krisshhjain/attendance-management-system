@@ -19,6 +19,16 @@ def _name(employee):
 
 
 class WorkforceIntelligence:
+    @staticmethod
+    def _manager_team_count(manager, requester):
+        """Count employees visible to both the requester and this manager."""
+        from accounts.scope_service import filter_employees_by_manager_scope
+
+        employees = Employee.objects.all()
+        employees = filter_employees_by_manager_scope(manager, employees)
+        employees = filter_employees_by_manager_scope(requester, employees)
+        return employees.count()
+
     def _employees(self, user, scope, employee_id=None, filters=None):
         filters = filters or {}
         qs = Employee.objects.select_related("user", "shift").prefetch_related("face_profile")
@@ -88,16 +98,12 @@ class WorkforceIntelligence:
             managers = User.objects.filter(is_system_admin=True, is_superuser=False, is_active=True)
             managers = [manager for manager in managers if scope["unrestricted"] or set(manager.hr_copilot_sections or []).intersection(scope["sections"])]
             rows = [{
-                "manager_id": manager.id, "name": manager.get_full_name().strip() or manager.email,
-                "email": manager.email, "sections": manager.hr_copilot_sections,
+                "manager_id": manager.id,
+                "name": manager.get_full_name().strip() or manager.email,
+                "email": manager.email,
+                "sections": manager.hr_copilot_sections,
                 "subsections": manager.hr_copilot_subsections,
-                "team_employee_count": self._employees(
-                    scope if scope["unrestricted"] else {
-                        **scope,
-                        "sections": sorted(set(manager.hr_copilot_sections or []).intersection(scope["sections"])),
-                        "subsections": sorted(set(manager.hr_copilot_subsections or []).intersection(scope["subsections"] if scope["subsections"] else set(manager.hr_copilot_subsections or []))) or None,
-                    }
-                ).count(),
+                "team_employee_count": self._manager_team_count(manager, user),
             } for manager in sorted(managers, key=lambda manager: (manager.last_name, manager.first_name, manager.id))]
             return self._result(metric, rows, "Manager information is limited to active Copilot managers whose configured scope overlaps the requester's scope.")
         if metric == "shift_assignments" and employee_id:

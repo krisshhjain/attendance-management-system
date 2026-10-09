@@ -6,7 +6,7 @@ from employees.models import Employee
 
 
 class Command(BaseCommand):
-    help = "Set each user's password to {first_name}@123 and require a password change."
+    help = "Disable all user passwords and require administrators to assign new ones."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -31,14 +31,8 @@ class Command(BaseCommand):
         }
 
         updated = 0
-        skipped = []
         for user in users:
-            first_name = user.first_name.strip()
-            if not first_name:
-                skipped.append(user.email)
-                continue
-
-            user.set_password(f"{first_name}@123")
+            user.set_unusable_password()
             user.save(update_fields=["password"])
 
             employee = employees.get(user.pk)
@@ -48,10 +42,8 @@ class Command(BaseCommand):
             updated += 1
 
         self.stdout.write(self.style.SUCCESS(f"Passwords updated: {updated}"))
-        if skipped:
+        if updated:
             self.stdout.write(
-                self.style.WARNING(
-                    f"Skipped accounts without a first name ({len(skipped)}): "
-                    + ", ".join(skipped)
-                )
+                "All affected accounts now have unusable passwords. An "
+                "administrator must assign new passwords before sign-in."
             )

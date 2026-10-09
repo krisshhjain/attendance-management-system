@@ -43,7 +43,9 @@ export function ShiftConfigurationPanel() {
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
-    loadConfiguration();
+    loadConfiguration().catch((loadError) => {
+      setError(getErrorMessage(loadError, "Failed to load shift configuration."));
+    });
   }, []);
 
   const loadConfiguration = async () => {
@@ -126,7 +128,7 @@ export function ShiftConfigurationPanel() {
 
     setLoading(true);
     try {
-      const result = await configureEmploymentTypeShifts(
+      await configureEmploymentTypeShifts(
         selectedType,
         editingShifts
       );

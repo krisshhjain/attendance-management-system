@@ -9,6 +9,7 @@ from employees.models import Employee
 
 from .llm import get_structured_intent
 from .pipeline import CopilotError
+from .regex_safety import has_ordered_regex_matches
 
 
 class SemanticInterpreter:
@@ -89,11 +90,19 @@ class SemanticInterpreter:
         lower = question.strip().casefold()
         
         # Check for code generation requests
-        if re.search(r"\b(?:write|generate|create|debug)\b.*\b(?:python|java|javascript|react|django|api|sql|code)\b", lower):
+        if has_ordered_regex_matches(
+            lower,
+            r"\b(?:write|generate|create|debug)\b",
+            r"\b(?:python|java|javascript|react|django|api|sql|code)\b",
+        ):
             raise CopilotError("outside_hr_domain", "I'm the HR Copilot. I can help with authorized employee, attendance, and leave information.")
         
         # Check for system access attempts
-        if re.search(r"\b(?:show|give|generate)\b.*\b(?:sql|system prompt|password|api key|secret)\b", lower):
+        if has_ordered_regex_matches(
+            lower,
+            r"\b(?:show|give|generate)\b",
+            r"\b(?:sql|system prompt|password|api key|secret)\b",
+        ):
             raise CopilotError("outside_hr_domain", "I'm the HR Copilot. I can help with authorized employee, attendance, and leave information.")
         
         # Check for unsupported entities

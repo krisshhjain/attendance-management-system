@@ -12,6 +12,7 @@ import { useAuth } from "../lib/auth.jsx";
 import { useOrganizationScope } from "../lib/organizationScope.jsx";
 import { fetchConversation, respondToAction, sendMessage } from "../services/hrCopilotService.js";
 import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { createClientId } from "../lib/clientId.js";
 
 const suggestions = [
   "Show me today's attendance summary",
@@ -77,10 +78,10 @@ function HRCopilotPage() {
       return;
     }
     setError(null);
-    const activeConversationId = conversationRef.current.id || globalThis.crypto?.randomUUID?.() || `conversation-${Date.now()}`;
+    const activeConversationId = conversationRef.current.id || createClientId();
     if (user?.id) globalThis.sessionStorage?.setItem(`hr-copilot-current-${user.id}`, activeConversationId);
     const userMessage = {
-      id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      id: createClientId(),
       role: "user",
       content,
       attachments,
@@ -103,7 +104,7 @@ function HRCopilotPage() {
       if (response.conversation_id && user?.id) globalThis.sessionStorage?.setItem(`hr-copilot-current-${user.id}`, response.conversation_id);
       if (conversationRef.current.id !== activeConversationId) return;
       const assistantMessage = {
-        id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-assistant`,
+        id: createClientId(),
         role: "assistant",
         content: response.answer || "I couldn't complete that request.",
         data: response.data,

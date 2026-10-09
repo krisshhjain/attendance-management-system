@@ -28,6 +28,7 @@ from notifications.tasks import send_notification_email
 from hr_copilot.models import CopilotPendingAction
 from hr_copilot.services.pipeline import CopilotError
 from hr_copilot.services.write_executor import pending_action_manager, write_action_executor
+from hr_copilot.views import copilot_action_session_id
 from .middleware import RequestContextMiddleware
 from .models import SystemLog
 from .services import SYSTEM_ACTOR, record_event
@@ -309,6 +310,19 @@ class EmployeeAccountEventTests(TestCase):
         log = SystemLog.objects.get(event_type="EMPLOYEE_PASSWORD_CHANGED")
         self.assertNotIn("replacement-secret-123", repr(log))
         self.assertEqual(log.after_state, {"must_change_password": "[REDACTED]"})
+
+    def test_admin_password_reset_rejects_passwords_that_fail_django_validation(self):
+        employee = self.create_employee()
+        old_password_hash = employee.user.password
+        response = self.client.post(
+            f"/api/admin/employees/{employee.pk}/change-password/",
+            {"new_password": "password"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        employee.user.refresh_from_db()
+        self.assertEqual(employee.user.password, old_password_hash)
+        self.assertFalse(SystemLog.objects.filter(event_type="EMPLOYEE_PASSWORD_CHANGED").exists())
 
     @patch("employees.views.process_enrollment", return_value=[0.1, 0.2])
     def test_face_enrollment_logs_without_biometric_data(self, process_enrollment):
@@ -832,7 +846,7 @@ class HRCopilotLoggingTests(TestCase):
     def pending_action(self, **overrides):
         values = {
             "action_id": uuid4(),
-            "session_id": f"hr-copilot-user-{self.user.id}",
+            "session_id": copilot_action_session_id(self.user.id, "phase7-conversation"),
             "user": self.user,
             "conversation_id": "phase7-conversation",
             "action_type": "attendance_update",
@@ -874,7 +888,11 @@ class HRCopilotLoggingTests(TestCase):
         action = self.pending_action()
         cancelled = self.client.post(
             "/api/hr-copilot/actions/approve/",
-            {"action_id": str(action.action_id), "action": "cancel"},
+            {
+                "action_id": str(action.action_id),
+                "action": "cancel",
+                "conversation_id": "phase7-conversation",
+            },
             format="json",
         )
         self.assertEqual(cancelled.status_code, 200)

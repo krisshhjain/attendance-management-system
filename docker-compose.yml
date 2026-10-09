@@ -47,6 +47,7 @@ services:
       POSTGRES_PORT: 5432
       CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
       HR_COPILOT_LLM_URL: http://host.docker.internal:11434
+      FACE_SERVICE_URL: http://host.docker.internal:8001
     depends_on:
       db:
         condition: service_healthy
@@ -68,6 +69,7 @@ services:
       POSTGRES_PORT: 5432
       CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
       HR_COPILOT_LLM_URL: http://host.docker.internal:11434
+      FACE_SERVICE_URL: http://host.docker.internal:8001
     depends_on:
       db:
         condition: service_healthy
@@ -88,6 +90,7 @@ services:
       POSTGRES_PORT: 5432
       CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
       HR_COPILOT_LLM_URL: http://host.docker.internal:11434
+      FACE_SERVICE_URL: http://host.docker.internal:8001
     depends_on:
       db:
         condition: service_healthy

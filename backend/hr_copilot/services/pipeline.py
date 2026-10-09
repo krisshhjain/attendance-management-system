@@ -181,7 +181,12 @@ def _apply_deterministic_entities(question, source, entities):
             section = re.search(r"\bsection\s+([a-z])\b", lower)
             if section:
                 entities["section"] = section.group(1).upper()
-    if (source == "employee" or re.search(r"\b(?:employee|attendance|present|absent|check.?in|check.?out|by\s+(?:name|email)|who|about|profile)\b", lower)) and not re.search(r"\bsection\s+[a-z]\b", lower):
+    has_employee_context = source == "employee" or bool(re.search(
+        r"\b(?:employee|attendance|present|absent|check.?in|check.?out|by\s+(?:name|email)|who|about|profile)\b",
+        lower,
+    ))
+    has_section_reference = bool(re.search(r"\bsection\s+[a-z]\b", lower))
+    if has_employee_context and not has_section_reference:
         email_match = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", question, re.IGNORECASE)
         if email_match:
             entities["employee_email"] = email_match.group(0).casefold()
@@ -520,8 +525,7 @@ def generate_answer(intent, data):
     if intent.get("source") == "employee" and len(data) == 1 and "name" in data[0]:
         employee = data[0]
         status = "active" if employee["is_active"] else "inactive"
-        article = "an" if status == "active" else "an"
-        return f"{employee['name']} is {article} {status} {employee['employment_type'].lower()} employee in {employee['department']}, Section {employee['section']}, Subsection {employee['subsection']}."
+        return f"{employee['name']} is an {status} {employee['employment_type'].lower()} employee in {employee['department']}, Section {employee['section']}, Subsection {employee['subsection']}."
     if intent.get("source") == "attendance" and len(data) == 1 and (
         intent.get("entities", {}).get("employee_id") or intent.get("entities", {}).get("employee_name") or intent.get("entities", {}).get("employee_email")
     ):

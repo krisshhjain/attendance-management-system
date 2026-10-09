@@ -2,7 +2,8 @@ const SAFE_FALLBACK = "Something went wrong. Please try again.";
 
 function cleanMessage(value) {
   if (typeof value !== "string") return null;
-  if (/<[^>]*>/.test(value)) return null;
+  const openingBracket = value.indexOf("<");
+  if (openingBracket !== -1 && value.indexOf(">", openingBracket + 1) !== -1) return null;
 
   const withoutMarkup = value.replace(/\s+/g, " ").trim();
   if (!withoutMarkup || withoutMarkup.length > 260) return null;

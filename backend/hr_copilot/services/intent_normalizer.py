@@ -8,6 +8,7 @@ import re
 from datetime import date, timedelta
 from typing import Dict, Any
 from .pipeline import CopilotError
+from .regex_safety import find_ordered_capture, has_ordered_regex_matches
 
 
 class IntentNormalizer:
@@ -261,15 +262,24 @@ class IntentNormalizer:
             return "attendance_intelligence", {"attendance_metric": "missing_checkins"}
         if re.search(r"\blate\b|after\s+(?:the\s+)?shift\s+start", text):
             return "attendance_intelligence", {"attendance_metric": "late_employees"}
-        if re.search(r"\bhow many hours\b|\bhours did .* work\b|\bworking hours\b", text):
+        if (
+            re.search(r"\bhow many hours\b|\bworking hours\b", text)
+            or has_ordered_regex_matches(text, r"\bhours did ", r"\bwork\b")
+        ):
             return "attendance_intelligence", {"attendance_metric": "working_hours"}
         if re.search(r"\bincomplete\b|forgot(?:ten)?\s+to\s+check\s*[- ]?out", text):
             return "attendance_intelligence", {"attendance_metric": "incomplete_explanation"}
         if re.search(r"\bconsecutive absences?\b|absence streak", text):
             return "attendance_intelligence", {"attendance_metric": "absence_streaks"}
-        if re.search(r"\bcompare\b.*\b(?:week|month)\b|\bweek\s+(?:over\s+)?week\b", text):
+        if (
+            has_ordered_regex_matches(text, r"\bcompare\b", r"\b(?:week|month)\b")
+            or re.search(r"\bweek\s+(?:over\s+)?week\b", text)
+        ):
             return "attendance_intelligence", {"attendance_metric": "period_comparison"}
-        if re.search(r"\bleave\s+balance\b|\bcasual leaves? .*left\b|\bremaining leave\b", text):
+        if (
+            re.search(r"\bleave\s+balance\b|\bremaining leave\b", text)
+            or has_ordered_regex_matches(text, r"\bcasual leaves? ", r"\bleft\b")
+        ):
             return "leave_regularization_intelligence", {"intelligence_metric": "leave_balance"}
         if re.search(r"\bpending\s+leave\b", text):
             return "leave_regularization_intelligence", {"intelligence_metric": "leave_requests"}
@@ -279,14 +289,19 @@ class IntentNormalizer:
             return "leave_regularization_intelligence", {"intelligence_metric": "regularization_history"}
         if re.search(r"\bemployee\s+details?\b|\bfind\s+[\w .'-]+$", text):
             return "workforce_intelligence", {"workforce_metric": "employee_details" if "details" in text else "employee_search"}
-        if re.search(r"\bshift\b.*\bassigned\b|\bassigned\s+shift\b|\bassigned\s+to\b.*\bshift\b|\bwhich\s+shift\b.*\bwork\s+in\b", text):
+        if (
+            has_ordered_regex_matches(text, r"\bshift\b", r"\bassigned\b")
+            or re.search(r"\bassigned\s+shift\b", text)
+            or has_ordered_regex_matches(text, r"\bassigned\s+to\b", r"\bshift\b")
+            or has_ordered_regex_matches(text, r"\bwhich\s+shift\b", r"\bwork\s+in\b")
+        ):
             entities = {"workforce_metric": "shift_assignments"}
             identity = IntentNormalizer._extract_workforce_employee_identity(query)
             if identity:
                 entities.update(identity)
-            assigned_shift = re.search(r"\bassigned\s+to\s+(?P<shift>[A-Za-z][A-Za-z .'-]*?)\s+shift\b", text, re.IGNORECASE)
-            if assigned_shift:
-                entities["shift_name"] = assigned_shift.group("shift").strip()
+            assigned_shift = find_ordered_capture(text, r"\bassigned\s+to\s+", r"\s+shift\b")
+            if assigned_shift and re.fullmatch(r"[A-Za-z][A-Za-z .'-]*", assigned_shift):
+                entities["shift_name"] = assigned_shift.strip()
             return "workforce_intelligence", entities
         if re.search(r"\bface\s+enrollment\b|\benrolled\s+(?:their\s+)?face\b", text):
             return "workforce_intelligence", {"workforce_metric": "face_enrollment"}
@@ -387,20 +402,19 @@ class IntentNormalizer:
     @staticmethod
     def _extract_attendance_employee_name(query: str) -> str | None:
         patterns = (
-            r"\b(?:please\s+)?(?:mark|make|set|change|update|correct|add)\s+(?P<name>.+?)\s+(?:['’]s\s+)?(?:as\s+)?(?:present|absent|leave|incomplete|attendance|check[ -]?in|check[ -]?out)\b",
-            r"\b(?:attendance|check[ -]?in|check[ -]?out)\s+(?:for|of)\s+(?P<name>.+?)(?=\s+(?:on|for|as|to|with)\b|[,.!?]|$)",
-            r"\b(?:add|record)\s+attendance\s+for\s+(?P<name>.+?)(?=\s+(?:on|for|as)\b|[,.!?]|$)",
+            (r"\b(?:please\s+)?(?:mark|make|set|change|update|correct|add)\s+", r"\s+(?:['’]s\s+)?(?:as\s+)?(?:present|absent|leave|incomplete|attendance|check[ -]?in|check[ -]?out)\b"),
+            (r"\b(?:attendance|check[ -]?in|check[ -]?out)\s+(?:for|of)\s+", r"\s+(?:on|for|as|to|with)\b|[,.!?]|$"),
+            (r"\b(?:add|record)\s+attendance\s+for\s+", r"\s+(?:on|for|as)\b|[,.!?]|$"),
         )
-        for pattern in patterns:
-            match = re.search(pattern, query, re.IGNORECASE)
-            if not match:
+        for start_pattern, end_pattern in patterns:
+            captured_name = find_ordered_capture(query, start_pattern, end_pattern)
+            if captured_name is None:
                 continue
-            name = match.group('name').strip(" \t\r\n,.'’\"")
+            name = captured_name.strip(" \t\r\n,.'’\"")
             name = re.sub(r"['’]s$", "", name).strip()
             if name and not re.search(r"\d", name):
                 return name
         return None
-    
     @staticmethod
     def _extract_attendance_date(query: str) -> str | None:
         from datetime import datetime

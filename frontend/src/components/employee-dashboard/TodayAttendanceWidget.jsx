@@ -68,7 +68,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
   };
 
   useEffect(() => {
-    const activeCheckIn = data?.active_check_in ? new Date(data.active_check_in).getTime() : NaN;
+    const activeCheckIn = data?.active_check_in ? new Date(data.active_check_in).getTime() : Number.NaN;
     if (status !== "CHECKED_IN" || !Number.isFinite(activeCheckIn)) {
       setLiveWorkingSeconds(null);
       return;
@@ -228,7 +228,9 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         onClose={() => setFaceModalOpen(false)}
         onSuccess={() => {
           setFaceModalOpen(false);
-          reloadData();
+          reloadData().catch((error) => {
+            notifyError(error, { title: "Attendance refresh failed", fallback: "Attendance was saved, but the latest status could not be loaded." });
+          });
         }}
       />
     </Paper>

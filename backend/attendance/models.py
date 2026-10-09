@@ -217,15 +217,6 @@ class Attendance(models.Model):
         else:
             return "LATE"
 
-        self.save(update_fields=[
-            "check_in", "check_out", "status", "working_duration",
-            "check_in_latitude", "check_in_longitude", "check_in_accuracy",
-            "check_in_distance", "check_out_latitude", "check_out_longitude",
-            "check_out_accuracy", "check_out_distance", "updated_at"
-        ])
-
-        return self
-
     @classmethod
     def get_or_create_for_date(cls, employee, date):
         """Atomically get or create attendance record for employee/date."""

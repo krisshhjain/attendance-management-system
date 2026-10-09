@@ -410,10 +410,15 @@ DB_USER=attendance_user
 DB_PASSWORD=your_local_password
 DB_HOST=db
 DB_PORT=5432
-DJANGO_SECRET_KEY=your_local_secret_key
+DJANGO_SECRET_KEY=<generate once and keep stable for this environment>
 ```
 
 Each developer may use their own local password and Django secret key.
+The application defaults to `DEBUG=False` and localhost-only `ALLOWED_HOSTS`.
+Set `DJANGO_ENV=production` in production; startup rejects wildcard hosts,
+debug mode, local LLM/console email settings, and known development database or
+broker credentials. Supply explicit production values through the deployment's
+secret manager.
 
 ### Docker networking
 

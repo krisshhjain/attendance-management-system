@@ -24,9 +24,17 @@ QUICK START (All-in-One)
 
 3. SET UP ENVIRONMENT FILES
 
-   Root .env (for Django):
+   Root .env:
      Copy-Item .env.example .env       (Windows PowerShell)
      cp .env.example .env              (Linux / Mac / Git Bash)
+
+   Backend .env (used by Docker Compose):
+     Copy-Item backend\.env.example backend\.env
+
+   Set DJANGO_SECRET_KEY to a unique, persistent value in backend\.env before
+   starting Django or Docker. Generate it once with:
+     python -c "import secrets; print(secrets.token_urlsafe(50))"
+   Store it in the ignored .env file; do not commit or regenerate it at startup.
 
    Frontend .env:
      Copy-Item frontend\.env.example frontend\.env   (Windows PowerShell)

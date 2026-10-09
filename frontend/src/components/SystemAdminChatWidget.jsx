@@ -7,6 +7,7 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { ChatInput } from "./hr-copilot/ChatInput.jsx";
 import { ChatMessage } from "./hr-copilot/ChatMessage.jsx";
 import { useOrganizationScope } from "../lib/organizationScope.jsx";
+import { createClientId } from "../lib/clientId.js";
 
 export function SystemAdminChatWidget() {
   const [open, setOpen] = useState(false);
@@ -20,7 +21,7 @@ export function SystemAdminChatWidget() {
     const content = message.trim();
     if (!content && !attachments.length) return;
     setMessages((current) => [...current, {
-      id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      id: createClientId(),
       role: "user",
       content,
       attachments,

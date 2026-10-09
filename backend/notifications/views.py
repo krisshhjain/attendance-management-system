@@ -7,6 +7,8 @@ from .models import Notification
 from .serializers import NotificationSerializer
 from system_logs.services import record_event
 
+PERSISTENT_NOTIFICATION_TYPES = frozenset({"LEAVE", "REGULARIZATION"})
+
 
 class NotificationListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -68,6 +70,11 @@ class NotificationDeleteView(APIView):
             pk=pk,
             user=request.user,
         )
+        if notification.notification_type.upper() in PERSISTENT_NOTIFICATION_TYPES:
+            return Response(
+                {"detail": "This notification cannot be deleted."},
+                status=400,
+            )
 
         before_state = {
             "notification_type": notification.notification_type,
