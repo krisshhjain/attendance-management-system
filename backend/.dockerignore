@@ -33,6 +33,12 @@
 **/*.pfx
 **/credentials*
 **/secrets/**
+requirements-dev.lock
+requirements-dev.txt
+requirements.txt
+hr_architecture_diagram.py
+hr_copilot_flow_documentation.py
+hr_flow_simple.py
 .Python
 .DS_Store
 .git

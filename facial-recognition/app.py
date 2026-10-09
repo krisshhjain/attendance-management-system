@@ -39,18 +39,12 @@ def _authenticate_non_health_requests():
     """Protect the internal API when a shared service token is configured.
 
     These JSON endpoints have no browser session or cookie authentication, so
-    CSRF tokens do not apply. Non-loopback deployments require bearer auth.
+    CSRF tokens do not apply. Every non-health request requires explicit
+    bearer authentication, including requests arriving over loopback.
     """
     if request.endpoint == "health":
         return None
     token = os.environ.get("FACE_SERVICE_TOKEN", "").strip()
-    remote_addr = request.remote_addr or ""
-    try:
-        remote_is_loopback = ipaddress.ip_address(remote_addr).is_loopback
-    except ValueError:
-        remote_is_loopback = False
-    if not token and remote_is_loopback:
-        return None
     if not token:
         return jsonify({"error": "Unauthorized"}), 401
     expected = f"Bearer {token}"

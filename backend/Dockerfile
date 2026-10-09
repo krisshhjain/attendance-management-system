@@ -14,6 +14,11 @@ RUN python -m pip install --require-hashes -r requirements.lock
 COPY . .
 
 COPY entrypoint.sh /entrypoint.sh
-RUN sed -i 's/\r$//' /entrypoint.sh && chmod 0755 /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh \
+    && chmod 0755 /entrypoint.sh \
+    && mkdir -p /app/media \
+    && chown nobody:nogroup /app/media
+
+USER nobody:nogroup
 
 ENTRYPOINT ["/entrypoint.sh"]
