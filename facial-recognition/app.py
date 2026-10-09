@@ -14,6 +14,11 @@ from flask import Flask, request, jsonify
 from face_utils import extract_primary_face_embedding, FaceExtractionError
 from liveness import assess_liveness, LivenessInputError
 
+# CSRF protection is intentionally not configured: this JSON API does not use
+# browser sessions or cookies, and every non-health endpoint requires an
+# explicit Authorization: Bearer token. Browsers do not attach this token
+# automatically, so cross-site requests cannot authenticate through ambient
+# credentials. Reassess this if cookie/session authentication is introduced.
 app = Flask(__name__)
 app.config["LIVENESS_DIAGNOSTICS_ENABLED"] = os.environ.get(
     "FR_LIVENESS_DIAGNOSTICS", "0"
