@@ -1,6 +1,5 @@
-# Resolved Python 3.10 runtime dependency lock.
-# All resolved packages have binary distributions; Docker/CI install with
-# --only-binary=:all: to prevent implicit source builds.
+# Pinned runtime inputs for requirements.lock. Install from requirements.lock
+# with --require-hashes; see DEPENDENCIES.md for lock regeneration.
 amqp==5.4.0
 asgiref==3.12.1
 billiard==4.3.0

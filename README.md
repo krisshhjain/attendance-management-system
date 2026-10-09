@@ -66,7 +66,7 @@ QUICK START (All-in-One)
      Linux / Mac:         source venv/bin/activate
 
    Install dependencies:
-     pip install -r requirements.txt
+     python -m pip install --require-hashes -r requirements-dev.lock
 
 6. RUN DATABASE MIGRATIONS
 

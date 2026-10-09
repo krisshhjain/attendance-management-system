@@ -1,4 +1,5 @@
-# Development/test dependencies, pinned to work with requirements.txt.
+# Development/test inputs for requirements-dev.lock. Install from the hashed
+# lock file; see DEPENDENCIES.md for lock regeneration.
 -r requirements.txt
 iniconfig==2.3.0
 colorama==0.4.6; sys_platform == "win32"

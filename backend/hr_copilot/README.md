@@ -4,7 +4,7 @@ This feature answers a bounded set of questions about structured employee, atten
 
 ## Tests
 
-Install development dependencies with `python -m pip install -r backend/requirements-dev.txt`, then run `pytest` from the repository root. The Copilot suite mocks database access and does not need PostgreSQL.
+Install development dependencies with `python -m pip install --require-hashes -r backend/requirements-dev.lock`, then run `pytest` from the repository root. The Copilot suite mocks database access and does not need PostgreSQL.
 
 The database integration cases use Django's isolated test database. Run them from `backend/` with `python manage.py test hr_copilot.test_database_operations` to verify scoped employee, attendance, and leave reads plus approved attendance and leave changes. They do not modify the development database.
 
