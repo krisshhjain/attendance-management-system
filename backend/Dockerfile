@@ -11,7 +11,16 @@ WORKDIR /app
 COPY requirements.lock .
 RUN python -m pip install --require-hashes -r requirements.lock
 
-COPY . .
+COPY manage.py ./manage.py
+COPY accounts/ ./accounts/
+COPY attendance/ ./attendance/
+COPY config/ ./config/
+COPY employees/ ./employees/
+COPY holidays/ ./holidays/
+COPY hr_copilot/ ./hr_copilot/
+COPY leave_management/ ./leave_management/
+COPY notifications/ ./notifications/
+COPY system_logs/ ./system_logs/
 
 COPY entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh \
