@@ -7,6 +7,7 @@ creates an isolated test database; these tests never write to development data.
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase
@@ -602,8 +603,14 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         attendance.refresh_from_db()
         self.assertEqual(attendance.working_duration, timedelta(hours=8))
 
-    def test_absent_approval_clears_times_and_writes_before_after_audits(self):
-        target_date = date.today()
+    @patch(
+        "hr_copilot.services.write_actions.timezone.localdate",
+        return_value=date(2026, 10, 12),
+    )
+    def test_absent_approval_clears_times_and_writes_before_after_audits(self, _today):
+        # Freeze the planner's current date to Monday so this scenario is
+        # independent of when the suite runs and remains a current-day edit.
+        target_date = date(2026, 10, 12)
         existing = Attendance.objects.create(
             employee=self.employee, date=target_date, status="PRESENT",
             check_in=timezone.make_aware(datetime.combine(target_date, datetime.min.time()).replace(hour=9)),

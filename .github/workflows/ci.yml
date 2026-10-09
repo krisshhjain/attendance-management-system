@@ -23,11 +23,13 @@ jobs:
           backend/requirements-dev.txt
           backend/requirements.lock
           backend/requirements-dev.lock
+          backend/pip-bootstrap.lock
 
     - name: Install dependencies
       env:
         PIP_ONLY_BINARY: ":all:"
       run: |
+        python -m pip install --no-cache-dir --require-hashes -r backend/pip-bootstrap.lock
         python -m pip install --require-hashes -r backend/requirements-dev.lock
         python -m pip check
     
@@ -61,3 +63,27 @@ jobs:
       run: |
         cd frontend
         npm run build
+
+  facial-recognition-checks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: facial-recognition/requirements.lock
+
+    - name: Install dependencies
+      working-directory: facial-recognition
+      env:
+        PIP_ONLY_BINARY: ":all:"
+      run: |
+        python -m pip install --require-hashes -r requirements.lock
+        python -m pip check
+
+    - name: Run facial-recognition service tests
+      working-directory: facial-recognition
+      run: python -m unittest test_service

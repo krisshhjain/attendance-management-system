@@ -1,5 +1,13 @@
 # Facial recognition service security configuration
 
+The current pinned Keras release requires Python 3.11 or newer. Use Python
+3.11+ for this service; the backend remains compatible with Python 3.10.
+Install the committed, hash-verified Linux x86_64 dependency set with
+`python -m pip install --require-hashes -r requirements.lock` from Linux,
+WSL, or a Linux container. This repository does not define a facial-service
+Docker image; deployments outside CI must install this lock in their service
+environment.
+
 The Flask API is an internal service called by Django. It does not use browser
 sessions or cookies, so CSRF tokens do not apply. Its `/health` endpoint only
 reports service availability. Every enrollment, extraction, and recognition

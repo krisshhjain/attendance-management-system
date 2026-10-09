@@ -29,6 +29,7 @@ from attendance.models import RegularizationRequest
 from accounts.models import ManagerScope
 
 User = get_user_model()
+ATTENDANCE_TEST_WORKDAY = date(2026, 10, 12)  # Monday
 
 
 def camera_sequence_payload(**extra):
@@ -2243,7 +2244,10 @@ class EventBasedAttendanceTests(APITestCase):
     def test_second_checkout(self):
         """Second checkout updates last check-out to latest event."""
         # Create all events manually to avoid cooldown issues
-        now = timezone.now()
+        now = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(12, 0)),
+            timezone.get_current_timezone(),
+        )
         
         # First check-in (2 hours ago)
         AttendanceEvent.objects.create(
@@ -2275,11 +2279,13 @@ class EventBasedAttendanceTests(APITestCase):
         )
         
         # Recompute attendance
-        attendance = Attendance.objects.create(employee=self.employee, date=timezone.localdate())
+        attendance = Attendance.objects.create(employee=self.employee, date=ATTENDANCE_TEST_WORKDAY)
         attendance.recompute_from_events()
 
         # Should have 4 events
-        events = AttendanceEvent.objects.filter(employee=self.employee, timestamp__date=timezone.localdate()).order_by("timestamp")
+        events = AttendanceEvent.objects.filter(
+            employee=self.employee, timestamp__date=ATTENDANCE_TEST_WORKDAY
+        ).order_by("timestamp")
         self.assertEqual(events.count(), 4)
 
         # Attendance should show first check-in and last check-out
@@ -2594,9 +2600,14 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(attendance.working_duration, expected_duration)
         self.assertEqual(attendance.status, "PRESENT")
 
-    def test_single_checkin_no_checkout_accumulates_open_interval(self):
+    @patch("django.utils.timezone.now")
+    def test_single_checkin_no_checkout_accumulates_open_interval(self, mock_now):
         """An open interval contributes through the current time."""
-        check_in = timezone.now() - timedelta(hours=2)
+        check_in = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(12, 0)),
+            timezone.get_current_timezone(),
+        )
+        mock_now.return_value = check_in + timedelta(hours=2)
         AttendanceEvent.objects.create(
             employee=self.employee,
             timestamp=check_in,
@@ -2604,7 +2615,7 @@ class EventBasedAttendanceTests(APITestCase):
             source="MOBILE",
         )
         
-        attendance = Attendance.objects.create(employee=self.employee, date=timezone.localdate())
+        attendance = Attendance.objects.create(employee=self.employee, date=ATTENDANCE_TEST_WORKDAY)
         attendance.recompute_from_events()
         
         self.assertAlmostEqual(
@@ -3225,7 +3236,7 @@ class ShiftAdherenceTests(APITestCase):
         from django.utils import timezone
         from datetime import datetime, time
         
-        today = timezone.localdate()
+        today = ATTENDANCE_TEST_WORKDAY
         # Create check-in at 8:55 AM (5 min before 9 AM shift start)
         check_in_time = timezone.make_aware(datetime.combine(today, time(8, 55)))
         
@@ -3247,7 +3258,7 @@ class ShiftAdherenceTests(APITestCase):
         from django.utils import timezone
         from datetime import datetime, time
         
-        today = timezone.localdate()
+        today = ATTENDANCE_TEST_WORKDAY
         # Create check-in at exactly 9:00 AM
         check_in_time = timezone.make_aware(datetime.combine(today, time(9, 0)))
         
@@ -3269,7 +3280,7 @@ class ShiftAdherenceTests(APITestCase):
         from django.utils import timezone
         from datetime import datetime, time
         
-        today = timezone.localdate()
+        today = ATTENDANCE_TEST_WORKDAY
         # Create check-in at 9:04 AM (4 min after 9 AM shift start, within grace)
         check_in_time = timezone.make_aware(datetime.combine(today, time(9, 4)))
         
@@ -3291,7 +3302,7 @@ class ShiftAdherenceTests(APITestCase):
         from django.utils import timezone
         from datetime import datetime, time
         
-        today = timezone.localdate()
+        today = ATTENDANCE_TEST_WORKDAY
         # Create check-in at exactly 9:05 AM
         check_in_time = timezone.make_aware(datetime.combine(today, time(9, 5)))
         
@@ -3313,7 +3324,7 @@ class ShiftAdherenceTests(APITestCase):
         from django.utils import timezone
         from datetime import datetime, time
         
-        today = timezone.localdate()
+        today = ATTENDANCE_TEST_WORKDAY
         # Create check-in at 9:06 AM (6 min after 9 AM shift start, beyond grace)
         check_in_time = timezone.make_aware(datetime.combine(today, time(9, 6)))
         
@@ -3335,7 +3346,7 @@ class ShiftAdherenceTests(APITestCase):
         from django.utils import timezone
         from datetime import datetime, time
         
-        today = timezone.localdate()
+        today = ATTENDANCE_TEST_WORKDAY
         # Create check-in at 9:30 AM (30 min late)
         check_in_time = timezone.make_aware(datetime.combine(today, time(9, 30)))
         
@@ -3388,7 +3399,7 @@ class ShiftAdherenceTests(APITestCase):
         """Shift adherence is derived and must not persist unrelated fields."""
         from datetime import datetime
 
-        today = timezone.localdate()
+        today = ATTENDANCE_TEST_WORKDAY
         attendance = Attendance.objects.create(
             employee=self.employee,
             date=today,

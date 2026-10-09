@@ -8,8 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.lock .
-RUN python -m pip install --require-hashes -r requirements.lock
+COPY pip-bootstrap.lock requirements.lock ./
+RUN python -m pip install --no-cache-dir --require-hashes -r pip-bootstrap.lock \
+    && python -m pip install --require-hashes -r requirements.lock
 
 COPY manage.py ./manage.py
 COPY accounts/ ./accounts/

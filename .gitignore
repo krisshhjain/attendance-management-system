@@ -60,6 +60,7 @@ frontend/.env.*
 facial-recognition/
 !facial-recognition/
 facial-recognition/*
+!facial-recognition/requirements.lock
 !facial-recognition/app.py
 !facial-recognition/face_utils.py
 !facial-recognition/liveness.py
