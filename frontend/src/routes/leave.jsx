@@ -935,10 +935,17 @@ function Leave() {
                 <IconButton 
                   size="small" 
                   color="primary"
-                  onClick={() => {
+                  onClick={async () => {
                     const elem = document.querySelector('[data-document-preview]');
                     if (elem && elem.requestFullscreen) {
-                      elem.requestFullscreen();
+                      try {
+                        await elem.requestFullscreen();
+                      } catch (fullscreenError) {
+                        notifyError(fullscreenError, {
+                          title: "Fullscreen unavailable",
+                          fallback: "Could not open the document preview in fullscreen.",
+                        });
+                      }
                     }
                   }}
                 >

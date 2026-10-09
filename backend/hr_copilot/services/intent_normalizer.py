@@ -8,7 +8,30 @@ import re
 from datetime import date, timedelta
 from typing import Dict, Any
 from .pipeline import CopilotError
-from .regex_safety import find_ordered_capture, has_ordered_regex_matches
+from .regex_safety import (
+    find_email_address,
+    find_ordered_capture,
+    has_ordered_regex_matches,
+)
+
+
+def _is_find_employee_query(text: str) -> bool:
+    """Match a trailing ``find <name>`` query with a linear suffix scan."""
+    end = len(text) - 1 if text.endswith("\n") else len(text)
+    suffix_start = end
+    while suffix_start > 0:
+        character = text[suffix_start - 1]
+        if character.isalnum() or character == "_" or character in " .'-":
+            suffix_start -= 1
+        else:
+            break
+
+    suffix = text[suffix_start:end]
+    match = re.search(r"\bfind\s+", suffix)
+    if not match:
+        return False
+    name = suffix[match.end():]
+    return bool(name and any(not character.isspace() for character in name))
 
 
 class IntentNormalizer:
@@ -287,7 +310,10 @@ class IntentNormalizer:
             return "leave_regularization_intelligence", {"intelligence_metric": "regularization_pending"}
         if re.search(r"\bregulari[sz]ation\s+history\b|\battendance\s+(?:was\s+)?corrected\b", text):
             return "leave_regularization_intelligence", {"intelligence_metric": "regularization_history"}
-        if re.search(r"\bemployee\s+details?\b|\bfind\s+[\w .'-]+$", text):
+        if (
+            re.search(r"\bemployee\s+details?\b", text)
+            or _is_find_employee_query(text)
+        ):
             return "workforce_intelligence", {"workforce_metric": "employee_details" if "details" in text else "employee_search"}
         if (
             has_ordered_regex_matches(text, r"\bshift\b", r"\bassigned\b")
@@ -317,9 +343,9 @@ class IntentNormalizer:
     def _extract_workforce_employee_identity(query: str) -> Dict[str, Any]:
         """Preserve an explicit workforce target when Qwen omits it."""
         text = query or ""
-        email = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", text, re.IGNORECASE)
+        email = find_email_address(text)
         if email:
-            return {"employee_email": email.group(0)}
+            return {"employee_email": email}
 
         patterns = (
             r"\bshift\s+is\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+assigned\b",

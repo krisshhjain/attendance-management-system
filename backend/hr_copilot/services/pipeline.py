@@ -9,6 +9,7 @@ from accounts.models import ManagerScope
 from accounts.scope_service import get_manager_scope
 
 from .employee_resolver import employee_resolver
+from .regex_safety import find_email_address
 
 MAX_ROWS = 100
 ALLOWED_TABLES = {
@@ -187,9 +188,9 @@ def _apply_deterministic_entities(question, source, entities):
     ))
     has_section_reference = bool(re.search(r"\bsection\s+[a-z]\b", lower))
     if has_employee_context and not has_section_reference:
-        email_match = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", question, re.IGNORECASE)
+        email_match = find_email_address(question)
         if email_match:
-            entities["employee_email"] = email_match.group(0).casefold()
+            entities["employee_email"] = email_match.casefold()
         else:
             identity = re.search(
                 r"\b(?:employee named|named|for employee|employee|attendance for|for|about|who is|who's|tell me about|profile of|profile for)\s+([A-Z][A-Z .'-]{1,60}?)(?=\s+(?:present|absent|in|from|on|during|with|whose|today|yesterday|for the last|last 7 days)\b|[?.!,]|$)",

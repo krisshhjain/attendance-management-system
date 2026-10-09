@@ -4,15 +4,67 @@ import time
 
 from django.test import SimpleTestCase
 
+from hr_copilot.services.intent_normalizer import (
+    IntentNormalizer,
+    _is_find_employee_query,
+)
 from hr_copilot.services.conversation import apply_context
-from hr_copilot.services.intent_normalizer import IntentNormalizer
-from hr_copilot.services.pipeline import _apply_deterministic_entities
-from hr_copilot.services.regex_safety import has_ordered_regex_matches
+from hr_copilot.services.pipeline import CopilotError, _apply_deterministic_entities
+from hr_copilot.services.regex_safety import (
+    find_email_address,
+    has_ordered_regex_matches,
+)
 from hr_copilot.services.semantic_interpreter import SemanticInterpreter
-from hr_copilot.services.pipeline import CopilotError
 
 
 class OrderedRegexMatchingTests(SimpleTestCase):
+    def test_email_extraction_preserves_supported_address_shapes(self):
+        self.assertEqual(
+            find_email_address("Please check Ananya.Jain+hr@example.co.in today"),
+            "Ananya.Jain+hr@example.co.in",
+        )
+        self.assertIsNone(find_email_address("no email address here"))
+
+        identity = IntentNormalizer._extract_workforce_employee_identity(
+            "Which shift is assigned to ananya.jain@example.com?"
+        )
+        self.assertEqual(identity, {"employee_email": "ananya.jain@example.com"})
+
+        entities = {}
+        _apply_deterministic_entities(
+            "attendance for ananya.jain@example.com", "employee", entities
+        )
+        self.assertEqual(entities["employee_email"], "ananya.jain@example.com")
+
+        follow_up = apply_context(
+            "attendance for new.employee@example.com",
+            {"entities": {}},
+            {"current_employee_id": 7},
+        )
+        self.assertNotIn("employee_id", follow_up["entities"])
+
+    def test_email_parser_is_linear_for_long_malformed_addresses(self):
+        adversarial = "x@" + ("." * 50_000) + "!"
+        started = time.perf_counter()
+        self.assertIsNone(find_email_address(adversarial))
+        self.assertLess(time.perf_counter() - started, 1.0)
+
+    def test_find_employee_query_preserves_phrase_and_scales_linearly(self):
+        self.assertTrue(_is_find_employee_query("find Ananya Jain"))
+        self.assertTrue(_is_find_employee_query("Please find Ananya Jain\n"))
+        self.assertFalse(_is_find_employee_query("find "))
+        self.assertFalse(_is_find_employee_query("find Alice!"))
+        inferred = IntentNormalizer._infer_read_intelligence("Find Ananya Jain")
+        self.assertEqual(
+            inferred,
+            ("workforce_intelligence", {"workforce_metric": "employee_search"}),
+        )
+
+        adversarial = "find " + ("Ananya " * 20_000) + "!"
+        started = time.perf_counter()
+        self.assertFalse(_is_find_employee_query(adversarial))
+        self.assertLess(time.perf_counter() - started, 1.0)
+
     def test_ordered_match_preserves_phrase_order_and_line_boundaries(self):
         self.assertTrue(has_ordered_regex_matches("write code in Python", r"\bwrite\b", r"\bpython\b"))
         self.assertFalse(has_ordered_regex_matches("Python, then write", r"\bwrite\b", r"\bpython\b"))

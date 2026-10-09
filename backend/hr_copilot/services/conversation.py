@@ -7,6 +7,7 @@ from datetime import datetime, timezone as dt_timezone
 from django.db import transaction
 
 from ..models import CopilotConversationContext
+from .regex_safety import find_email_address
 
 
 FOLLOW_UP_REFERENCE = re.compile(r"\b(?:he|she|they|them|his|her|their|that employee|the employee|that request|that leave|it)\b", re.IGNORECASE)
@@ -84,7 +85,7 @@ def apply_context(question, intent, context):
     result = dict(intent)
     entities = dict(intent.get("entities") or {})
     current_employee_id = context.get("current_employee_id")
-    explicit_email = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", question or "", re.IGNORECASE)
+    explicit_email = find_email_address(question or "")
 
     if current_employee_id and not explicit_email and entities.get("employee_name"):
         current_name = str(context.get("current_employee_name") or "").casefold().strip()

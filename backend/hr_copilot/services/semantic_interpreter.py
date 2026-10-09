@@ -9,7 +9,7 @@ from employees.models import Employee
 
 from .llm import get_structured_intent
 from .pipeline import CopilotError
-from .regex_safety import has_ordered_regex_matches
+from .regex_safety import find_email_address, has_ordered_regex_matches
 
 
 class SemanticInterpreter:
@@ -115,7 +115,7 @@ class SemanticInterpreter:
         entities = dict(intent.get("entities") or {})
 
         current_employee_id = context.get("current_employee_id") or context.get("employee_id")
-        explicit_email = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", question or "", re.IGNORECASE)
+        explicit_email = find_email_address(question or "")
         explicit_id = entities.get("employee_id") or re.search(
             r"\b(?:employee\s+)?(?:id|#)\s*(\d+)\b", question or "", re.IGNORECASE,
         )

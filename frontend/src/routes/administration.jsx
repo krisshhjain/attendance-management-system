@@ -1575,10 +1575,17 @@ function Administration() {
                 <IconButton 
                   size="small" 
                   color="primary"
-                  onClick={() => {
+                  onClick={async () => {
                     const elem = document.querySelector('[data-document-preview]');
-                    if (elem.requestFullscreen) {
-                      elem.requestFullscreen();
+                    if (elem?.requestFullscreen) {
+                      try {
+                        await elem.requestFullscreen();
+                      } catch (fullscreenError) {
+                        notifyError(fullscreenError, {
+                          title: "Fullscreen unavailable",
+                          fallback: "Could not open the document preview in fullscreen.",
+                        });
+                      }
                     }
                   }}
                 >
