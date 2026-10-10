@@ -60,22 +60,18 @@ frontend/.env
 frontend/.env.*
 !frontend/.env.example
 
-# Facial recognition
-facial-recognition/
-!facial-recognition/
-facial-recognition/*
-!facial-recognition/requirements.lock
-!facial-recognition/coverage-dev.txt
-!facial-recognition/coverage.lock
-!facial-recognition/.coveragerc
-!facial-recognition/app.py
-!facial-recognition/face_utils.py
-!facial-recognition/liveness.py
-!facial-recognition/requirements.txt
-!facial-recognition/test_service.py
-!facial-recognition/README.md
-!facial-recognition/MODEL_NOTICE.md
-!facial-recognition/models/
+# Facial-recognition local data and generated artifacts. Keep source and test
+# scripts visible to Git so they can be reviewed and intentionally tracked.
+facial-recognition/diagnostic_output/
+facial-recognition/embeddings/
+facial-recognition/embeddings_backup_*/
+facial-recognition/person*/
+facial-recognition/benchmark_results*.json
+facial-recognition/scoped_regeneration_report_*.json
+facial-recognition/vggface2_open_set_results.json
+
+# Keep additional downloaded model assets out of Git; the runtime models and
+# license below are explicitly tracked through the exceptions.
 facial-recognition/models/*
 !facial-recognition/models/mini_fas_best_model_quantized.onnx
 !facial-recognition/models/mini_fas_detector_quantized.onnx
