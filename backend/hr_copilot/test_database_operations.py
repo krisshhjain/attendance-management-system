@@ -36,6 +36,17 @@ __test__ = False
 
 class HRCopilotDatabaseOperationTests(TransactionTestCase):
     def setUp(self):
+        # AttendanceEvent's post_save signal schedules its Celery task after
+        # commit. Keep these database tests independent of an external broker.
+        notification_dispatch_patch = patch(
+            "attendance.signals.create_attendance_notification.delay"
+        )
+        self.attendance_notification_dispatch = notification_dispatch_patch.start()
+        self.addCleanup(notification_dispatch_patch.stop)
+        email_dispatch_patch = patch("notifications.services.send_notification_email.delay")
+        self.email_notification_dispatch = email_dispatch_patch.start()
+        self.addCleanup(email_dispatch_patch.stop)
+
         self.factory = APIRequestFactory()
         self.admin = get_user_model().objects.create_user(
             email="copilot-admin@example.test",
@@ -286,6 +297,15 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(attendance.status, "PRESENT")
         self.assertEqual(result["operation"], "created")
         self.assertEqual(action.status, "EXECUTED")
+        expected_event_ids = set(
+            AttendanceEvent.objects.filter(employee=self.employee).values_list("pk", flat=True)
+        )
+        scheduled_event_ids = [
+            call.args[0]
+            for call in self.attendance_notification_dispatch.call_args_list
+        ]
+        self.assertTrue(expected_event_ids)
+        self.assertCountEqual(scheduled_event_ids, expected_event_ids)
 
     def test_approved_leave_create_adds_pending_request(self):
         start_date = date.today() + timedelta(days=8)
@@ -379,6 +399,13 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(attendance.leave_request, leave_request)
         self.assertEqual(result["status"], "APPROVED")
         self.assertEqual(action.status, "EXECUTED")
+        self.assertTrue(
+            any(
+                args[0] == [self.employee_user.email]
+                and args[1] == "Leave request approved"
+                for args, _kwargs in self.email_notification_dispatch.call_args_list
+            )
+        )
 
     def test_denial_requires_reason_before_any_database_change(self):
         leave_date = date.today() + timedelta(days=7)
@@ -482,7 +509,8 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertTrue(action.validated)
         self.assertFalse(Attendance.objects.filter(employee=self.employee, date=target_date).exists())
 
-    def test_exact_ashish_present_conversation_preserves_slots_until_confirmation(self):
+    @patch("django.utils.timezone.localdate", return_value=date(2026, 9, 30))
+    def test_exact_ashish_present_conversation_preserves_slots_until_confirmation(self, _today):
         # This test validates multi-turn slot-filling (collecting check-in/out times
         # across conversation turns) and conversation memory persistence. It does NOT
         # test authorization.
