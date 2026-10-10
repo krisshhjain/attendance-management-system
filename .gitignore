@@ -50,6 +50,10 @@ pnpm-debug.log*
 dist/
 build/
 coverage/
+**/.coverage
+**/.coverage.*
+**/coverage.xml
+coverage-reports/
 
 # React/Vite environment files
 frontend/.env
@@ -61,6 +65,9 @@ facial-recognition/
 !facial-recognition/
 facial-recognition/*
 !facial-recognition/requirements.lock
+!facial-recognition/coverage-dev.txt
+!facial-recognition/coverage.lock
+!facial-recognition/.coveragerc
 !facial-recognition/app.py
 !facial-recognition/face_utils.py
 !facial-recognition/liveness.py

@@ -1,0 +1,12 @@
+[run]
+branch = True
+source = app,face_utils,liveness
+relative_files = True
+omit =
+    test_*.py
+    tests_*.py
+    */__pycache__/*
+
+[report]
+show_missing = True
+skip_covered = False

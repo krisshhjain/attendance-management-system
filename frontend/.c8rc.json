@@ -1,0 +1,16 @@
+{
+  "all": true,
+  "include": [
+    "src/**/*.js",
+    "src/**/*.jsx",
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "exclude": [
+    "src/**/*.test.*",
+    "src/**/__tests__/**",
+    "src/routeTree.gen.js"
+  ],
+  "reporter": ["text", "lcov"],
+  "reportsDirectory": "coverage"
+}

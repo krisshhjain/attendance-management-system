@@ -7,4 +7,5 @@ packaging==26.3
 pluggy==1.6.0
 Pygments==2.21.0
 pytest==9.0.3
+coverage==7.16.1
 tomli==2.4.1; python_version < "3.11"

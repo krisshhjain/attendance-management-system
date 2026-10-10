@@ -7,6 +7,10 @@ and include SHA-256 hashes for accepted distributions:
 - Runtime image: `requirements.lock`
 - CI and local development: `requirements-dev.lock`
 
+The backend development lock also includes `coverage.py` for Django coverage
+reports. CI runs the full Django test suite and writes `coverage.xml` in the
+backend directory; this tooling is not installed in the runtime image.
+
 Both locks target Python 3.10 on 64-bit Linux. Pip is configured to accept
 binary distributions only, and installs use `--require-hashes` so an
 unlisted package or artifact with a different hash is rejected.
