@@ -1,6 +1,7 @@
+from datetime import datetime, time, timedelta
+
 from django.conf import settings
 from django.db import models
-from datetime import datetime, time, timedelta
 
 
 def attendance_day_end(target_date):
@@ -119,17 +120,26 @@ class Attendance(models.Model):
 
     def recompute_from_events(self):
         """
-        Recompute check_in, check_out, status, and working_duration from AttendanceEvents.
-        First CHECK_IN -> check_in, Latest CHECK_OUT that comes AFTER the last CHECK_IN -> check_out.
+        Recompute attendance fields from AttendanceEvents.
+        Use the first CHECK_IN and latest CHECK_OUT after the last CHECK_IN.
         Falls back to existing Attendance fields if no events exist.
         """
-        from django.utils import timezone
-
         # Filter events by matching the date part of timestamp (aware datetime)
         # Use simple __date lookup which works with timezone-aware datetimes
-        effective_events = get_effective_attendance_events(self.employee, self.date)
-        check_in_events = [event for event in effective_events if event.event_type == "CHECK_IN"]
-        check_out_events = [event for event in effective_events if event.event_type == "CHECK_OUT"]
+        effective_events = get_effective_attendance_events(
+            self.employee,
+            self.date,
+        )
+        check_in_events = [
+            event
+            for event in effective_events
+            if event.event_type == "CHECK_IN"
+        ]
+        check_out_events = [
+            event
+            for event in effective_events
+            if event.event_type == "CHECK_OUT"
+        ]
 
         first_check_in = check_in_events[0] if check_in_events else None
         last_check_out = check_out_events[-1] if check_out_events else None
@@ -161,7 +171,11 @@ class Attendance(models.Model):
                 effective_events,
                 end_at=attendance_day_end(self.date),
             )
-            self.status = "INCOMPLETE" if latest_event and latest_event.event_type == "CHECK_IN" else "PRESENT"
+            self.status = (
+                "INCOMPLETE"
+                if latest_event and latest_event.event_type == "CHECK_IN"
+                else "PRESENT"
+            )
         else:
             self.working_duration = None
             # If no events at all and status was INCOMPLETE, keep it
@@ -169,12 +183,15 @@ class Attendance(models.Model):
             if self.status not in {"LEAVE", "ABSENT"}:
                 self.status = "INCOMPLETE"
 
-        self.save(update_fields=[
-            "check_in", "check_out", "status", "working_duration",
-            "check_in_latitude", "check_in_longitude", "check_in_accuracy",
-            "check_in_distance", "check_out_latitude", "check_out_longitude",
-            "check_out_accuracy", "check_out_distance", "updated_at"
-        ])
+        self.save(
+            update_fields=[
+                "check_in", "check_out", "status", "working_duration",
+                "check_in_latitude", "check_in_longitude", "check_in_accuracy",
+                "check_in_distance", "check_out_latitude",
+                "check_out_longitude", "check_out_accuracy",
+                "check_out_distance", "updated_at",
+            ]
+        )
 
     def get_shift_adherence(self):
         """
@@ -189,30 +206,30 @@ class Attendance(models.Model):
         effective_shift = self.employee.get_effective_shift()
         if not effective_shift or not effective_shift.is_active:
             return None
-        
+
         shift = effective_shift
         first_check_in = self.check_in
-        
+
         if not first_check_in:
             return None
-        
+
         # Compare first check-in time with shift start time (same date)
-        from datetime import datetime, time
-        
         shift_start = datetime.combine(self.date, shift.start_time)
         shift_end = datetime.combine(self.date, shift.end_time)
-        
+
         # Make timezone-aware if needed
         from django.utils import timezone
         if timezone.is_naive(shift_start):
             shift_start = timezone.make_aware(shift_start)
         if timezone.is_naive(shift_end):
             shift_end = timezone.make_aware(shift_end)
-        
+
         # Allow 5-minute grace period
         grace_period = 5 * 60  # seconds
-        
-        if first_check_in <= shift_start + timezone.timedelta(seconds=grace_period):
+
+        if first_check_in <= shift_start + timezone.timedelta(
+            seconds=grace_period
+        ):
             return "ON_TIME"
         else:
             return "LATE"
@@ -222,9 +239,11 @@ class Attendance(models.Model):
         """Atomically get or create attendance record for employee/date."""
         from django.db import transaction
         with transaction.atomic():
-            attendance, created = cls.objects.select_for_update().get_or_create(
-                employee=employee,
-                date=date,
+            attendance, created = (
+                cls.objects.select_for_update().get_or_create(
+                    employee=employee,
+                    date=date,
+                )
             )
             return attendance, created
 
@@ -235,7 +254,7 @@ class Shift(models.Model):
         ("CONTRACT", "Contract"),
         ("INTERN", "Intern"),
     ]
-    
+
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=20, unique=True)
     start_time = models.TimeField()
@@ -293,7 +312,11 @@ class AttendanceEvent(models.Model):
     )
     timestamp = models.DateTimeField()
     event_type = models.CharField(max_length=10, choices=EVENT_TYPES)
-    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="MOBILE")
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default="MOBILE",
+    )
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     accuracy = models.FloatField(null=True, blank=True)
@@ -339,10 +362,14 @@ def get_effective_attendance_events(employee, target_date):
         if correction.previous_data.get("effective_event_mode") == "REPLACE"
     ]
     replacement_boundary = (
-        replacement_corrections[-1].timestamp if replacement_corrections else None
+        replacement_corrections[-1].timestamp
+        if replacement_corrections
+        else None
     )
     replacement_event_id = (
-        replacement_corrections[-1].previous_data.get("effective_event_after_event_id")
+        replacement_corrections[-1].previous_data.get(
+            "effective_event_after_event_id"
+        )
         if replacement_corrections
         else None
     )
@@ -357,10 +384,15 @@ def get_effective_attendance_events(employee, target_date):
             )
         return event.timestamp > replacement_boundary
 
-    has_linked_events = any(event.correction_id is not None for event in event_rows)
-    if latest_correction is not None and (has_linked_events or replacement_boundary is not None):
+    has_linked_events = any(
+        event.correction_id is not None for event in event_rows
+    )
+    if latest_correction is not None and (
+        has_linked_events or replacement_boundary is not None
+    ):
         active_correction_events = [
-            event for event in event_rows
+            event
+            for event in event_rows
             if event.correction_id == latest_correction_id
         ]
         unlinked_events = [
@@ -369,13 +401,19 @@ def get_effective_attendance_events(employee, target_date):
             if event.correction_id is None
             and is_after_replacement_boundary(event)
         ]
-        corrected_types = {event.event_type for event in active_correction_events}
+        corrected_types = {
+            event.event_type for event in active_correction_events
+        }
         effective_events = [
-            event for event in unlinked_events
+            event
+            for event in unlinked_events
             if event.event_type not in corrected_types
         ]
         effective_events.extend(active_correction_events)
-        return sorted(effective_events, key=lambda event: (event.timestamp, event.id))
+        return sorted(
+            effective_events,
+            key=lambda event: (event.timestamp, event.id),
+        )
 
     admin_event_types = {
         event.event_type for event in event_rows if event.source == "ADMIN"
@@ -413,7 +451,7 @@ class AttendanceAuditLog(models.Model):
     distance = models.FloatField(null=True, blank=True)
     error_message = models.TextField(blank=True, default="")
     # Optional: we could add a snapshot ImageField here in the future
-    
+
     def __str__(self):
         return f"{self.event_type} - {self.status} at {self.timestamp}"
 
@@ -431,7 +469,8 @@ class AttendanceCorrection(models.Model):
         null=True
     )
     timestamp = models.DateTimeField(auto_now_add=True)
-    correction_type = models.CharField(max_length=50) # 'RESET', 'EDIT', 'REGULARIZATION'
+    correction_type = models.CharField(max_length=50)
+    # Values include RESET, EDIT, and REGULARIZATION.
     reason = models.TextField()
     previous_data = models.JSONField(default=dict)
 
@@ -439,7 +478,10 @@ class AttendanceCorrection(models.Model):
         ordering = ["-timestamp"]
 
     def __str__(self):
-        return f"{self.correction_type} by {self.admin_user} on {self.attendance}"
+        return (
+            f"{self.correction_type} by {self.admin_user} "
+            f"on {self.attendance}"
+        )
 
 
 class RegularizationRequest(models.Model):
@@ -449,13 +491,13 @@ class RegularizationRequest(models.Model):
         ("INCORRECT_ATTENDANCE", "Incorrect Attendance"),
         ("SYSTEM_ISSUE", "System Issue"),
     ]
-    
+
     STATUS_CHOICES = [
         ("PENDING", "Pending"),
         ("APPROVED", "Approved"),
         ("REJECTED", "Rejected"),
     ]
-    
+
     # Primary fields
     employee = models.ForeignKey(
         "employees.Employee",
@@ -464,11 +506,11 @@ class RegularizationRequest(models.Model):
     )
     attendance_date = models.DateField()
     request_type = models.CharField(max_length=30, choices=REQUEST_TYPES)
-    
+
     # Existing attendance (before correction)
     existing_check_in = models.DateTimeField(null=True, blank=True)
     existing_check_out = models.DateTimeField(null=True, blank=True)
-    
+
     # Requested attendance (after correction)
     requested_check_in = models.DateTimeField(null=True, blank=True)
     requested_check_out = models.DateTimeField(null=True, blank=True)
@@ -476,13 +518,17 @@ class RegularizationRequest(models.Model):
     # Final times applied by the reviewer; these can differ from the request.
     approved_check_in = models.DateTimeField(null=True, blank=True)
     approved_check_out = models.DateTimeField(null=True, blank=True)
-    
+
     # Request details
     reason = models.TextField()
     description = models.TextField(blank=True, default="")
-    
+
     # Status and review
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="PENDING",
+    )
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -492,11 +538,11 @@ class RegularizationRequest(models.Model):
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True, default="")
-    
+
     # Audit trail
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     # Link to resulting attendance correction (after approval)
     attendance_correction = models.ForeignKey(
         AttendanceCorrection,
@@ -506,7 +552,11 @@ class RegularizationRequest(models.Model):
         related_name="regularization_request",
     )
     PERIOD_TYPES = [("DAY", "Day"), ("WEEK", "Week"), ("MONTH", "Month")]
-    period_type = models.CharField(max_length=10, choices=PERIOD_TYPES, default="DAY")
+    period_type = models.CharField(
+        max_length=10,
+        choices=PERIOD_TYPES,
+        default="DAY",
+    )
     period_start = models.DateField(null=True, blank=True)
     period_end = models.DateField(null=True, blank=True)
     attachment = models.URLField(max_length=1000, blank=True, default="")
@@ -528,81 +578,103 @@ class RegularizationRequest(models.Model):
         ]
 
     def __str__(self):
-        return f"Regularization: {self.employee} - {self.attendance_date} ({self.status})"
-    
+        return (
+            f"Regularization: {self.employee} - {self.attendance_date} "
+            f"({self.status})"
+        )
+
     def clean(self):
         """Validate the regularization request."""
+        import datetime
+
         from django.core.exceptions import ValidationError
         from django.utils import timezone
-        import datetime
-        
+
         # Validate 48-hour rule or current week rule
         if self.attendance_date:
-            reference_date = timezone.localtime(self.created_at).date() if self.id and self.created_at else timezone.localdate()
+            reference_date = (
+                timezone.localtime(self.created_at).date()
+                if self.id and self.created_at
+                else timezone.localdate()
+            )
             if self.attendance_date > reference_date:
-                raise ValidationError("Regularization requests are not allowed for future dates.")
-                
+                raise ValidationError(
+                    "Regularization requests are not allowed for future dates."
+                )
+
             if self.period_type in ["WEEK", "MONTH"]:
-                week_start = reference_date - datetime.timedelta(days=reference_date.weekday())
+                week_start = reference_date - datetime.timedelta(
+                    days=reference_date.weekday()
+                )
                 if self.attendance_date < week_start:
                     raise ValidationError(
-                        "Multi-day regularization requests are only allowed for dates in the current calendar week."
+                        "Multi-day regularization requests are only allowed "
+                        "for "
+                        "dates in the current calendar week."
                     )
             else:
                 max_allowed_date = reference_date - datetime.timedelta(days=2)
-                
+
                 if self.attendance_date < max_allowed_date:
                     raise ValidationError(
-                        "Regularization requests are only allowed within 48 hours of the attendance date."
+                        "Regularization requests are only allowed within 48 "
+                        "hours of the attendance date."
                     )
-        
+
         # Validate requested times are logical
         if self.requested_check_in and self.requested_check_out:
             if self.requested_check_out <= self.requested_check_in:
                 raise ValidationError(
                     "Requested check-out time must be after check-in time."
                 )
-        
+
         # Validate that requested times are on the correct date
         if self.requested_check_in and self.attendance_date:
             if self.requested_check_in.date() != self.attendance_date:
                 raise ValidationError(
                     "Requested check-in time must be on the attendance date."
                 )
-        
+
         if self.requested_check_out and self.attendance_date:
             if self.requested_check_out.date() != self.attendance_date:
                 raise ValidationError(
                     "Requested check-out time must be on the attendance date."
                 )
-    
+
     def save(self, *args, **kwargs):
         """Override save to run validation."""
         self.clean()
         super().save(*args, **kwargs)
-    
+
     @property
     def is_within_48_hours(self):
-        """Check if the request is eligible based on the 48-hour or current-week window."""
-        from django.utils import timezone
+        """Check eligibility based on the 48-hour or current-week window."""
         import datetime
-        
-        reference_date = timezone.localtime(self.created_at).date() if self.id and self.created_at else timezone.localdate()
+
+        from django.utils import timezone
+
+        reference_date = (
+            timezone.localtime(self.created_at).date()
+            if self.id and self.created_at
+            else timezone.localdate()
+        )
         if self.attendance_date > reference_date:
             return False
-            
+
         if self.period_type in ["WEEK", "MONTH"]:
-            week_start = reference_date - datetime.timedelta(days=reference_date.weekday())
+            week_start = reference_date - datetime.timedelta(
+                days=reference_date.weekday()
+            )
             return self.attendance_date >= week_start
-            
+
         cutoff_date = reference_date - datetime.timedelta(days=2)
         return self.attendance_date >= cutoff_date
-    
+
     @property
     def can_be_processed(self):
         """Check if the request can be approved or rejected."""
         return self.status == "PENDING" and self.is_within_48_hours
-    
+
     def approve(
         self,
         reviewed_by_user,
@@ -612,38 +684,56 @@ class RegularizationRequest(models.Model):
     ):
         """
         Approve the regularization request and optionally apply the correction.
-        
+
         Args:
             reviewed_by_user: User who is approving the request
-            apply_correction: Whether to apply the attendance correction (default: True)
-        
+            apply_correction: Whether to apply the correction (default: True)
+
         Returns:
-            AttendanceCorrection instance if correction was applied, None otherwise
+            AttendanceCorrection if applied, otherwise None.
         """
-        from django.utils import timezone
         from django.db import transaction
-        
+        from django.utils import timezone
+
         if self.status != "PENDING":
-            raise ValueError(f"Cannot approve request with status {self.status}")
-        
+            raise ValueError(
+                f"Cannot approve request with status {self.status}"
+            )
+
         if not self.is_within_48_hours:
             raise ValueError("Cannot approve request outside 48-hour window")
-        
+
         final_check_in = approved_check_in
         if final_check_in is None:
             final_check_in = self.requested_check_in or self.existing_check_in
         final_check_out = approved_check_out
         if final_check_out is None:
-            final_check_out = self.requested_check_out or self.existing_check_out
+            final_check_out = (
+                self.requested_check_out or self.existing_check_out
+            )
 
-        if final_check_in and final_check_out and final_check_out <= final_check_in:
-            raise ValueError("Final check-out time must be after final check-in time.")
+        if (
+            final_check_in
+            and final_check_out
+            and final_check_out <= final_check_in
+        ):
+            raise ValueError(
+                "Final check-out time must be after final check-in time."
+            )
 
         # Only explicitly corrected fields become correction-linked events.
         # The other final value is retained for request metadata and is read
         # from the historical counterpart during effective-event selection.
-        correction_check_in = approved_check_in if approved_check_in is not None else self.requested_check_in
-        correction_check_out = approved_check_out if approved_check_out is not None else self.requested_check_out
+        correction_check_in = (
+            approved_check_in
+            if approved_check_in is not None
+            else self.requested_check_in
+        )
+        correction_check_out = (
+            approved_check_out
+            if approved_check_out is not None
+            else self.requested_check_out
+        )
 
         with transaction.atomic():
             # Update request status
@@ -665,30 +755,35 @@ class RegularizationRequest(models.Model):
                     correction_check_in=correction_check_in,
                     correction_check_out=correction_check_out,
                 )
-        
+
         return None
-    
+
     def reject(self, reviewed_by_user, rejection_reason):
         """
         Reject the regularization request.
-        
+
         Args:
             reviewed_by_user: User who is rejecting the request
             rejection_reason: Reason for rejection
         """
         from django.utils import timezone
-        
+
         if self.status != "PENDING":
-            raise ValueError(f"Cannot reject request with status {self.status}")
-        
+            raise ValueError(
+                f"Cannot reject request with status {self.status}"
+            )
+
         self.status = "REJECTED"
         self.reviewed_by = reviewed_by_user
         self.reviewed_at = timezone.now()
         self.rejection_reason = rejection_reason
-        self.save(update_fields=[
-            "status", "reviewed_by", "reviewed_at", "rejection_reason", "updated_at"
-        ])
-    
+        self.save(
+            update_fields=[
+                "status", "reviewed_by", "reviewed_at", "rejection_reason",
+                "updated_at",
+            ]
+        )
+
     def _apply_attendance_correction(
         self,
         reviewed_by_user,
@@ -699,34 +794,46 @@ class RegularizationRequest(models.Model):
     ):
         """
         Apply the regularization correction to attendance records.
-        
+
         This method:
         1. Gets or creates the Attendance record for the date
         2. Stores the previous state
         3. Creates corrective AttendanceEvents with source='ADMIN'
         4. Recomputes the attendance summary
         5. Creates an AttendanceCorrection audit record
-        
+
         Returns:
             AttendanceCorrection instance
         """
         from django.db import transaction
-        
+
         with transaction.atomic():
             # Get or create attendance record
             attendance, created = Attendance.get_or_create_for_date(
                 employee=self.employee,
                 date=self.attendance_date
             )
-            
+
             # Store previous state for audit
             previous_data = {
-                "check_in": attendance.check_in.isoformat() if attendance.check_in else None,
-                "check_out": attendance.check_out.isoformat() if attendance.check_out else None,
+                "check_in": (
+                    attendance.check_in.isoformat()
+                    if attendance.check_in
+                    else None
+                ),
+                "check_out": (
+                    attendance.check_out.isoformat()
+                    if attendance.check_out
+                    else None
+                ),
                 "status": attendance.status,
-                "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
+                "working_duration": (
+                    str(attendance.working_duration)
+                    if attendance.working_duration
+                    else None
+                ),
             }
-            
+
             # Create audit record
             correction = AttendanceCorrection.objects.create(
                 attendance=attendance,
@@ -747,13 +854,13 @@ class RegularizationRequest(models.Model):
 
             # Recompute attendance from effective events.
             attendance.recompute_from_events()
-            
+
             # Link the correction to this request
             self.attendance_correction = correction
             self.save(update_fields=["attendance_correction", "updated_at"])
-            
+
             return correction
-    
+
     def _create_correction_events(
         self,
         check_in,
@@ -764,13 +871,13 @@ class RegularizationRequest(models.Model):
     ):
         """
         Create corrective AttendanceEvents based on the regularization request.
-        
+
         This preserves the event-based architecture by creating new events
-        with source='ADMIN' rather than directly modifying attendance summaries.
+        with source='ADMIN' instead of modifying attendance summaries directly.
         """
         # Get employee's effective shift for the date
         shift = self.employee.get_effective_shift()
-        
+
         # Create check-in event if requested
         if correction_check_in:
             AttendanceEvent.objects.create(
@@ -781,7 +888,7 @@ class RegularizationRequest(models.Model):
                 source="ADMIN",
                 correction=correction,
             )
-        
+
         # Create check-out event if requested
         if correction_check_out:
             AttendanceEvent.objects.create(
@@ -802,7 +909,10 @@ class RegularizationRequestDay(models.Model):
         related_name="days",
     )
     attendance_date = models.DateField()
-    request_type = models.CharField(max_length=30, choices=RegularizationRequest.REQUEST_TYPES)
+    request_type = models.CharField(
+        max_length=30,
+        choices=RegularizationRequest.REQUEST_TYPES,
+    )
     existing_check_in = models.DateTimeField(null=True, blank=True)
     existing_check_out = models.DateTimeField(null=True, blank=True)
     requested_check_in = models.DateTimeField(null=True, blank=True)
@@ -822,11 +932,19 @@ class RegularizationRequestDay(models.Model):
     class Meta:
         ordering = ["attendance_date"]
         constraints = [
-            models.UniqueConstraint(fields=["request", "attendance_date"], name="unique_regularization_request_day")
+            models.UniqueConstraint(
+                fields=["request", "attendance_date"],
+                name="unique_regularization_request_day",
+            )
         ]
 
     def __str__(self):
-        return f"Regularization day: {self.request_id} - {self.attendance_date}"
+        return (
+            f"Regularization day: {self.request_id} - "
+            f"{self.attendance_date}"
+        )
+
+
 class OfficeLocation(models.Model):
     name = models.CharField(max_length=255, unique=True)
     latitude = models.FloatField()
@@ -866,4 +984,7 @@ class RegularizationQuotaPolicy(models.Model):
         return policy
 
     def __str__(self):
-        return f"Regularization limits: {self.weekly_limit}/week, {self.monthly_limit}/month"
+        return (
+            f"Regularization limits: {self.weekly_limit}/week, "
+            f"{self.monthly_limit}/month"
+        )
