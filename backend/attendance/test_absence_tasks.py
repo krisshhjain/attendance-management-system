@@ -5,12 +5,13 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
+from accounts.models import ManagerScope
 from attendance.models import Attendance
 from attendance.tasks import check_consecutive_absences
 from employees.models import Employee
+from holidays.models import Holiday
 from leave_management.models import LeaveRequest, LeaveType
 from notifications.models import Notification
-from holidays.models import Holiday
 
 
 User = get_user_model()
@@ -23,6 +24,11 @@ class ConsecutiveAbsenceTaskTests(TestCase):
             email="manager@example.com",
             password="password123",
             is_system_admin=True,
+        )
+        ManagerScope.objects.create(
+            manager=self.manager,
+            scope_type=ManagerScope.DEPARTMENT,
+            value="Operations",
         )
         self.employee_user = User.objects.create_user(
             email="employee@example.com",
@@ -127,17 +133,111 @@ class ConsecutiveAbsenceTaskTests(TestCase):
 
         self.assertFalse(Notification.objects.filter(notification_type="ABSENCE_ALERT").exists())
 
-    def test_multiple_managers_receive_alerts(self):
-        second_manager = User.objects.create_user(
-            email="manager-two@example.com",
-            password="password123",
+    def test_unscoped_manager_does_not_receive_alert(self):
+        unscoped_manager = User.objects.create_user(
+            email="unscoped-manager@example.com",
             is_system_admin=True,
         )
 
         self.run_task(date(2026, 9, 30))
 
-        recipients = set(
-            Notification.objects.filter(notification_type="ABSENCE_ALERT")
-            .values_list("user__email", flat=True)
+        self.assertTrue(
+            Notification.objects.filter(
+                user=self.manager,
+                notification_type="ABSENCE_ALERT",
+            ).exists()
         )
-        self.assertEqual(recipients, {self.manager.email, second_manager.email})
+        self.assertFalse(
+            Notification.objects.filter(
+                user=unscoped_manager,
+                notification_type="ABSENCE_ALERT",
+            ).exists()
+        )
+
+    def test_cross_department_manager_does_not_receive_alert(self):
+        hr_manager = User.objects.create_user(
+            email="hr-manager@example.com",
+            is_system_admin=True,
+        )
+        ManagerScope.objects.create(
+            manager=hr_manager,
+            scope_type=ManagerScope.DEPARTMENT,
+            value="HR",
+        )
+
+        self.run_task(date(2026, 9, 30))
+
+        self.assertTrue(
+            Notification.objects.filter(
+                user=self.manager,
+                notification_type="ABSENCE_ALERT",
+            ).exists()
+        )
+        self.assertFalse(
+            Notification.objects.filter(
+                user=hr_manager,
+                notification_type="ABSENCE_ALERT",
+            ).exists()
+        )
+
+    def test_managers_receive_alerts_only_for_employees_in_their_scope(self):
+        hr_manager = User.objects.create_user(
+            email="hr-manager@example.com",
+            is_system_admin=True,
+        )
+        ManagerScope.objects.create(
+            manager=hr_manager,
+            scope_type=ManagerScope.DEPARTMENT,
+            value="HR",
+        )
+        hr_employee_user = User.objects.create_user(
+            email="hr-employee@example.com",
+        )
+        Employee.objects.create(
+            user=hr_employee_user,
+            department="HR",
+            employment_type="PERMANENT",
+            date_joined=date(2026, 1, 1),
+        )
+
+        self.run_task(date(2026, 9, 30))
+
+        operations_alert = Notification.objects.get(
+            user=self.manager,
+            notification_type="ABSENCE_ALERT",
+        )
+        hr_alert = Notification.objects.get(
+            user=hr_manager,
+            notification_type="ABSENCE_ALERT",
+        )
+        self.assertEqual(
+            operations_alert.message,
+            "employee@example.com has been absent on "
+            "2026-09-28 and 2026-09-29.",
+        )
+        self.assertEqual(
+            hr_alert.message,
+            "hr-employee@example.com has been absent on "
+            "2026-09-28 and 2026-09-29.",
+        )
+
+    def test_absence_recipients_remain_active_managers_only(self):
+        staff_admin = User.objects.create_user(
+            email="staff-admin@example.com",
+            is_staff=True,
+        )
+        superuser = User.objects.create_superuser(
+            email="superuser@example.com",
+        )
+
+        self.run_task(date(2026, 9, 30))
+
+        self.assertEqual(
+            set(
+                Notification.objects.filter(notification_type="ABSENCE_ALERT")
+                .values_list("user_id", flat=True)
+            ),
+            {self.manager.id},
+        )
+        self.assertFalse(staff_admin.notifications.exists())
+        self.assertFalse(superuser.notifications.exists())

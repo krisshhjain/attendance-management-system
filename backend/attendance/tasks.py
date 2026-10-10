@@ -5,9 +5,10 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from accounts.scope_service import filter_employees_by_manager_scope
 from attendance.models import Attendance, AttendanceEvent
-from holidays.services import is_working_day
 from employees.models import Employee
+from holidays.services import is_working_day
 from leave_management.models import LeaveRequest
 from notifications.services import (
     active_manager_users,
@@ -93,7 +94,9 @@ def _has_approved_leave(employee, target_date):
 
 
 @shared_task(name="attendance.check_consecutive_absences")
-def check_consecutive_absences(run_date=None):
+def check_consecutive_absences(
+    run_date: date | str | None = None,
+) -> dict[str, bool | int | str]:
     """Alert managers about absence on the two most recent required days."""
     if run_date:
         if isinstance(run_date, str):
@@ -113,14 +116,23 @@ def check_consecutive_absences(run_date=None):
     first_absence_date, second_absence_date = required_dates
 
     managers = list(active_manager_users())
+    active_employees = Employee.objects.select_related("user").filter(
+        is_active=True,
+        user__is_active=True,
+    )
+    employee_ids_by_manager = {
+        manager.pk: set(
+            filter_employees_by_manager_scope(
+                manager,
+                active_employees,
+            ).values_list("pk", flat=True)
+        )
+        for manager in managers
+    }
     alerts_created = 0
 
     with transaction.atomic():
-        employees = Employee.objects.select_related("user").filter(
-            is_active=True,
-            user__is_active=True,
-        )
-        for employee in employees:
+        for employee in active_employees:
             absent_on_first = not _has_valid_attendance(employee, first_absence_date)
             absent_on_second = not _has_valid_attendance(employee, second_absence_date)
             on_leave = _has_approved_leave(employee, first_absence_date) or _has_approved_leave(
@@ -154,7 +166,12 @@ def check_consecutive_absences(run_date=None):
                 },
             )
 
-            for manager in managers:
+            scoped_managers = [
+                manager
+                for manager in managers
+                if employee.pk in employee_ids_by_manager[manager.pk]
+            ]
+            for manager in scoped_managers:
                 before = manager.notifications.filter(
                     deduplication_key=f"{deduplication_prefix}:{manager.pk}"
                 ).exists()
