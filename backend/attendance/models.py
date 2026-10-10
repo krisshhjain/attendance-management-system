@@ -314,17 +314,16 @@ class AttendanceEvent(models.Model):
 def get_effective_attendance_events(employee, target_date):
     """Return the events that currently define one attendance date.
 
-    Historical events are never deleted. Once a correction-linked event
-    exists, only events from the latest correction remain authoritative among
-    correction events; unlinked operational/admin events remain available for
-    the counterpart of a partial correction.
+    Historical events are never deleted. Replacement corrections establish a
+    boundary after which new operational events can become effective again.
+    Other correction-linked events replace matching event types while keeping
+    the uncorrected counterpart of a partial correction.
     """
     event_rows = list(
         employee.attendance_events.filter(timestamp__date=target_date)
         .select_related("correction")
         .order_by("timestamp", "id")
     )
-    correction_ids = {event.correction_id for event in event_rows if event.correction_id}
     corrections = list(
         AttendanceCorrection.objects.filter(
             attendance__employee=employee,
@@ -334,23 +333,46 @@ def get_effective_attendance_events(employee, target_date):
     latest_correction = corrections[-1] if corrections else None
     latest_correction_id = latest_correction.id if latest_correction else None
 
-    if (
-        latest_correction is not None
-        and latest_correction.previous_data.get("effective_event_mode") == "REPLACE"
-        and not latest_correction.attendance_events.exists()
-    ):
-        return []
+    replacement_corrections = [
+        correction
+        for correction in corrections
+        if correction.previous_data.get("effective_event_mode") == "REPLACE"
+    ]
+    replacement_boundary = (
+        replacement_corrections[-1].timestamp if replacement_corrections else None
+    )
+    replacement_event_id = (
+        replacement_corrections[-1].previous_data.get("effective_event_after_event_id")
+        if replacement_corrections
+        else None
+    )
 
-    if correction_ids:
+    def is_after_replacement_boundary(event: AttendanceEvent) -> bool:
+        if replacement_boundary is None:
+            return True
+        if replacement_event_id is not None:
+            return (
+                event.id > replacement_event_id
+                and event.timestamp >= replacement_boundary
+            )
+        return event.timestamp > replacement_boundary
+
+    has_linked_events = any(event.correction_id is not None for event in event_rows)
+    if latest_correction is not None and (has_linked_events or replacement_boundary is not None):
         active_correction_events = [
             event for event in event_rows
             if event.correction_id == latest_correction_id
         ]
-        unlinked_events = [event for event in event_rows if event.correction_id is None]
+        unlinked_events = [
+            event
+            for event in event_rows
+            if event.correction_id is None
+            and is_after_replacement_boundary(event)
+        ]
         corrected_types = {event.event_type for event in active_correction_events}
         effective_events = [
             event for event in unlinked_events
-            if event.source == "ADMIN" or event.event_type not in corrected_types
+            if event.event_type not in corrected_types
         ]
         effective_events.extend(active_correction_events)
         return sorted(effective_events, key=lambda event: (event.timestamp, event.id))
