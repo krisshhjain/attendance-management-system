@@ -151,6 +151,10 @@ class WriteActionExecutor:
             previous_data={
                 **previous_state,
                 'effective_event_mode': 'REPLACE',
+                'effective_event_after_event_id': max(
+                    (event.id for event in events),
+                    default=0,
+                ),
                 'copilot_action_id': str(pending_action['action_id']),
             },
         )

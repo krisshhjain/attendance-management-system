@@ -12,7 +12,9 @@ from rest_framework.test import APITestCase
 from employees.models import Employee, FaceProfile
 from attendance.models import (
     Attendance,
+    AttendanceCorrection,
     AttendanceEvent,
+    Shift,
     attendance_day_end,
     calculate_working_duration,
     get_effective_attendance_events,
@@ -3982,6 +3984,15 @@ class AdminEditAttendanceTests(APITestCase):
 
     def test_superuser_edit_incomplete_to_present(self):
         self.client.force_authenticate(user=self.superuser)
+
+        old_admin_event = AttendanceEvent.objects.create(
+            employee=self.employee,
+            timestamp=timezone.make_aware(
+                datetime.combine(self.attendance_date, datetime_time(8, 45))
+            ),
+            event_type="CHECK_IN",
+            source="ADMIN",
+        )
         
         new_check_in = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(9, 0)))
         new_check_out = timezone.make_aware(datetime.combine(self.attendance_date, datetime_time(17, 0)))
@@ -4004,4 +4015,227 @@ class AdminEditAttendanceTests(APITestCase):
         self.assertEqual(self.attendance.check_out, new_check_out)
 
         admin_events = AttendanceEvent.objects.filter(employee=self.employee, source="ADMIN")
-        self.assertEqual(admin_events.count(), 2)
+        self.assertEqual(admin_events.count(), 3)
+        self.assertTrue(AttendanceEvent.objects.filter(pk=old_admin_event.pk).exists())
+        correction = AttendanceCorrection.objects.get(
+            attendance=self.attendance,
+            correction_type="EDIT",
+        )
+        self.assertEqual(correction.attendance_events.count(), 2)
+        self.assertEqual(
+            list(get_effective_attendance_events(self.employee, self.attendance_date)),
+            list(correction.attendance_events.order_by("timestamp", "id")),
+        )
+
+
+class AdminResetAttendanceHistoryTests(APITestCase):
+    def setUp(self):
+        self.today = timezone.localdate()
+        self.employee_user = User.objects.create_user(
+            email="reset.employee@example.com",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            user=self.employee_user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=self.today - timedelta(days=30),
+            is_active=True,
+            app_access={"attendance": True},
+        )
+        self.shift = Shift.objects.create(
+            name="Reset Test Shift",
+            code="RESET-TEST",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+            employment_type="PERMANENT",
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
+        self.admin = User.objects.create_user(
+            email="reset.admin@example.com",
+            password="password123",
+            is_superuser=True,
+        )
+        self.staff_admin = User.objects.create_user(
+            email="reset.staff@example.com",
+            password="password123",
+            is_staff=True,
+        )
+        self.attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=self.today,
+            check_in=timezone.make_aware(
+                datetime.combine(self.today, datetime_time(9, 0))
+            ),
+            check_out=timezone.make_aware(
+                datetime.combine(self.today, datetime_time(17, 0))
+            ),
+            status="PRESENT",
+            working_duration=timedelta(hours=8),
+        )
+        self.mobile_check_in = AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=timezone.make_aware(
+                datetime.combine(self.today, datetime_time(9, 0))
+            ),
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        self.mobile_check_out = AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=timezone.make_aware(
+                datetime.combine(self.today, datetime_time(17, 0))
+            ),
+            event_type="CHECK_OUT",
+            source="MOBILE",
+        )
+
+    def reset_attendance(self, reset_type="both"):
+        self.client.force_authenticate(user=self.admin)
+        return self.client.post(
+            "/api/admin/attendance/reset/",
+            {
+                "employee": self.employee_user.email,
+                "reason": "Correcting a device issue.",
+                "reset_type": reset_type,
+            },
+            format="json",
+        )
+
+    def test_full_reset_clears_effective_state_and_preserves_audited_events(self):
+        event_ids = {self.mobile_check_in.id, self.mobile_check_out.id}
+
+        response = self.reset_attendance()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.attendance.refresh_from_db()
+        self.assertIsNone(self.attendance.check_in)
+        self.assertIsNone(self.attendance.check_out)
+        self.assertIsNone(self.attendance.working_duration)
+        self.assertEqual(self.attendance.status, "INCOMPLETE")
+        self.assertEqual(
+            set(AttendanceEvent.objects.filter(employee=self.employee).values_list("id", flat=True)),
+            event_ids,
+        )
+        self.assertEqual(get_effective_attendance_events(self.employee, self.today), [])
+        correction = AttendanceCorrection.objects.get(
+            attendance=self.attendance,
+            correction_type="RESET",
+        )
+        self.assertEqual(correction.reason, "Correcting a device issue.")
+        self.assertEqual(correction.previous_data["effective_event_mode"], "REPLACE")
+
+    def test_fresh_check_in_and_checkout_after_reset_are_effective(self):
+        old_event_created_at = timezone.make_aware(
+            datetime.combine(self.today, datetime_time(7, 0))
+        )
+        AttendanceEvent.objects.filter(
+            id__in=[self.mobile_check_in.id, self.mobile_check_out.id]
+        ).update(created_at=old_event_created_at)
+        reset_time = timezone.make_aware(
+            datetime.combine(self.today, datetime_time(8, 0))
+        )
+        with patch("attendance.views.timezone.now", return_value=reset_time):
+            reset_response = self.reset_attendance()
+        self.assertEqual(reset_response.status_code, 200)
+        self.client.force_authenticate(user=self.employee_user)
+        geofence_result = (True, "", 0.0, (0.0, 0.0, 1.0))
+
+        with patch("attendance.views.validate_attendance_geofence", return_value=geofence_result), \
+             patch("attendance.views.timezone.now") as mocked_now:
+            check_in_time = timezone.make_aware(
+                datetime.combine(self.today, datetime_time(10, 0))
+            )
+            check_out_time = timezone.make_aware(
+                datetime.combine(self.today, datetime_time(18, 0))
+            )
+            mocked_now.return_value = check_in_time
+            check_in_response = self.client.post("/api/attendance/check-in/", {}, format="json")
+            mocked_now.return_value = check_out_time
+            check_out_response = self.client.post("/api/attendance/check-out/", {}, format="json")
+
+        self.assertEqual(check_in_response.status_code, 201, check_in_response.data)
+        self.assertEqual(check_out_response.status_code, 200, check_out_response.data)
+        self.attendance.refresh_from_db()
+        self.assertEqual(self.attendance.check_in, check_in_time)
+        self.assertEqual(self.attendance.check_out, check_out_time)
+        self.assertEqual(self.attendance.working_duration, timedelta(hours=8))
+        self.assertEqual(AttendanceEvent.objects.filter(employee=self.employee).count(), 4)
+        effective_events = get_effective_attendance_events(self.employee, self.today)
+        self.assertEqual([event.timestamp for event in effective_events], [check_in_time, check_out_time])
+
+    def test_repeated_resets_preserve_events_and_only_latest_reset_is_effective(self):
+        self.assertEqual(self.reset_attendance().status_code, 200)
+        later_event = AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=timezone.now(),
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        self.assertEqual(self.reset_attendance().status_code, 200)
+
+        self.assertEqual(AttendanceEvent.objects.filter(employee=self.employee).count(), 3)
+        self.assertTrue(AttendanceEvent.objects.filter(pk=later_event.pk).exists())
+        self.assertEqual(
+            AttendanceCorrection.objects.filter(
+                attendance=self.attendance,
+                correction_type="RESET",
+            ).count(),
+            2,
+        )
+        self.assertEqual(get_effective_attendance_events(self.employee, self.today), [])
+
+    def test_reset_boundary_handles_equal_times_and_delayed_events(self):
+        reset_time = timezone.make_aware(
+            datetime.combine(self.today, datetime_time(8, 0))
+        )
+        old_event_at_boundary = AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=reset_time,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        with patch("attendance.views.timezone.now", return_value=reset_time):
+            response = self.reset_attendance()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(AttendanceEvent.objects.filter(pk=old_event_at_boundary.pk).exists())
+        self.assertEqual(get_effective_attendance_events(self.employee, self.today), [])
+
+        delayed_event = AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=reset_time - timedelta(minutes=1),
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        self.assertEqual(get_effective_attendance_events(self.employee, self.today), [])
+
+        event_created_at_reset_time = AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=reset_time,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        self.assertTrue(AttendanceEvent.objects.filter(pk=delayed_event.pk).exists())
+        self.assertEqual(
+            get_effective_attendance_events(self.employee, self.today),
+            [event_created_at_reset_time],
+        )
+
+    def test_staff_admin_cannot_reset_attendance(self):
+        self.client.force_authenticate(user=self.staff_admin)
+
+        response = self.client.post(
+            "/api/admin/attendance/reset/",
+            {"employee": self.employee_user.email, "reason": "Unauthorized reset."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(AttendanceEvent.objects.filter(employee=self.employee).count(), 2)

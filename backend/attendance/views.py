@@ -834,28 +834,50 @@ class AdminResetAttendanceView(APIView):
             "working_duration": str(attendance.working_duration) if attendance.working_duration else None,
         }
 
+        from .models import AttendanceCorrection
+
         with transaction.atomic():
             if reset_type == "checkout_only":
                 attendance.check_out = None
                 attendance.status = "INCOMPLETE"
                 attendance.working_duration = None
                 attendance.save()
+                correction_data = previous_data
             else:
-                # Full wipe - delete events and attendance
-                AttendanceEvent.objects.filter(
-                    employee=attendance.employee,
-                    timestamp__date=today
-                ).delete()
-                attendance.delete()
-                attendance = None
+                last_event_id = (
+                    AttendanceEvent.objects.filter(
+                        employee=attendance.employee,
+                        timestamp__date=today,
+                    )
+                    .order_by("-id")
+                    .values_list("id", flat=True)
+                    .first()
+                    or 0
+                )
+                correction_data = {
+                    **previous_data,
+                    "effective_event_mode": "REPLACE",
+                    "effective_event_after_event_id": last_event_id,
+                }
+                attendance.check_in = None
+                attendance.check_out = None
+                attendance.working_duration = None
+                attendance.status = "INCOMPLETE"
+                attendance.leave_request = None
+                for field in (
+                    "check_in_latitude", "check_in_longitude", "check_in_accuracy",
+                    "check_in_distance", "check_out_latitude", "check_out_longitude",
+                    "check_out_accuracy", "check_out_distance",
+                ):
+                    setattr(attendance, field, None)
+                attendance.save()
 
-            from .models import AttendanceCorrection
             AttendanceCorrection.objects.create(
                 attendance=attendance,
                 admin_user=request.user,
                 correction_type="RESET",
                 reason=reason,
-                previous_data=previous_data
+                previous_data=correction_data,
             )
 
         record_event(
@@ -869,7 +891,7 @@ class AdminResetAttendanceView(APIView):
             source="ADMIN",
             request=request,
             before_state=previous_data,
-            after_state={"reset_type": reset_type, "attendance_exists": attendance is not None},
+            after_state={"reset_type": reset_type, "attendance_exists": True},
         )
 
         return Response({"message": "Attendance successfully reset for today."})
@@ -934,12 +956,29 @@ class AdminEditAttendanceView(APIView):
                 return Response({"error": "Invalid check_out time format"}, status=400)
 
         with transaction.atomic():
-            # Remove any existing ADMIN events for this day to allow a clean override
-            AttendanceEvent.objects.filter(
-                employee=attendance.employee,
-                timestamp__date=target_date,
-                source="ADMIN"
-            ).delete()
+            from .models import AttendanceCorrection
+
+            last_event_id = (
+                AttendanceEvent.objects.filter(
+                    employee=attendance.employee,
+                    timestamp__date=target_date,
+                )
+                .order_by("-id")
+                .values_list("id", flat=True)
+                .first()
+                or 0
+            )
+            correction = AttendanceCorrection.objects.create(
+                attendance=attendance,
+                admin_user=request.user,
+                correction_type="EDIT",
+                reason=reason,
+                previous_data={
+                    **previous_data,
+                    "effective_event_mode": "REPLACE",
+                    "effective_event_after_event_id": last_event_id,
+                },
+            )
 
             effective_shift = attendance.employee.get_effective_shift()
 
@@ -950,6 +989,7 @@ class AdminEditAttendanceView(APIView):
                     timestamp=parsed_check_in,
                     event_type="CHECK_IN",
                     source="ADMIN",
+                    correction=correction,
                 )
 
             if parsed_check_out:
@@ -959,6 +999,7 @@ class AdminEditAttendanceView(APIView):
                     timestamp=parsed_check_out,
                     event_type="CHECK_OUT",
                     source="ADMIN",
+                    correction=correction,
                 )
 
             attendance.recompute_from_events()
@@ -975,15 +1016,6 @@ class AdminEditAttendanceView(APIView):
                 attendance.status = status
 
             attendance.save()
-
-        from .models import AttendanceCorrection
-        AttendanceCorrection.objects.create(
-            attendance=attendance,
-            admin_user=request.user,
-            correction_type="EDIT",
-            reason=reason,
-            previous_data=previous_data
-        )
 
         record_event(
             event_type="ATTENDANCE_EDIT",
