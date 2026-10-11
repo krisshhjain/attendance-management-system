@@ -7,11 +7,7 @@ import re
 from dataclasses import dataclass
 from urllib.error import URLError
 from urllib.parse import urlparse
-from urllib.request import (
-    HTTPRedirectHandler,
-    Request,
-    build_opener,
-)
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 logger = logging.getLogger(__name__)
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "host.docker.internal"}
