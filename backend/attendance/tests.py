@@ -3044,8 +3044,11 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(events.count(), 1)
         self.assertEqual(events.first().event_type, "CHECK_OUT")
 
-    def test_second_checkin_after_checkout(self):
+    @patch("django.utils.timezone.localdate")
+    def test_second_checkin_after_checkout(self, mock_localdate):
         """Second check-in after checkout is allowed and creates new event."""
+        target_date = datetime.now(timezone.get_current_timezone()).date()
+        mock_localdate.return_value = target_date
         # Check in
         self.client.post(
             "/api/attendance/check-in/", self.valid_location, format="json"
