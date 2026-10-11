@@ -1,17 +1,13 @@
 from datetime import datetime
-from copy import deepcopy
 from django.utils import timezone
 from django.db import IntegrityError, transaction
 from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser
 from leave_management.permissions import (
     IsEmployee, 
     IsAdminOrAppAdmin, 
-    IsEmployeeWithShift,
     IsManagerOrAdmin,
-    IsManagerOrSuperUser,
     IsSuperAdmin,
 )
 
@@ -1150,7 +1146,7 @@ class WebsiteFacialCheckInView(APIView):
             return Response({"status": e.status, "error": str(e)}, status=status_code)
         except FaceExtractionError as e:
             return Response({"error": str(e)}, status=400)
-        except Exception as e:
+        except Exception:
             return Response({"error": "Internal server error"}, status=500)
 
         if not is_match:
@@ -1258,7 +1254,7 @@ class WebsiteFacialCheckOutView(APIView):
             return Response({"status": e.status, "error": str(e)}, status=status_code)
         except FaceExtractionError as e:
             return Response({"error": str(e)}, status=400)
-        except Exception as e:
+        except Exception:
             return Response({"error": "Internal server error"}, status=500)
 
         if not is_match:
@@ -2306,25 +2302,37 @@ class RegularizationRequestCreateView(APIView):
                     day = get_day_classification(day_date)
                     reason = "weekends" if day["day_type"] == "WEEKEND" else "company holidays"
                     raise ValueError(f"{day_date}: {reason} are not eligible for regularization.")
-                if kind not in valid_types or not reason: raise ValueError(f"{day_date}: request type and reason are required.")
+                if kind not in valid_types or not reason:
+                    raise ValueError(f"{day_date}: request type and reason are required.")
                 def parse_time(value, field):
-                    if not value: return None
+                    if not value:
+                        return None
                     result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-                    if timezone.is_naive(result): result = timezone.make_aware(result, timezone.get_current_timezone())
-                    if timezone.localtime(result).date() != day_date: raise ValueError(f"{day_date}: {field} must fall on that date.")
+                    if timezone.is_naive(result):
+                        result = timezone.make_aware(result, timezone.get_current_timezone())
+                    if timezone.localtime(result).date() != day_date:
+                        raise ValueError(f"{day_date}: {field} must fall on that date.")
                     return result
                 check_in, check_out = parse_time(item.get("requested_check_in"), "check-in"), parse_time(item.get("requested_check_out"), "check-out")
-                if kind == "FORGOT_CHECK_IN" and not check_in: raise ValueError(f"{day_date}: check-in is required.")
-                if kind == "FORGOT_CHECK_OUT" and not check_out: raise ValueError(f"{day_date}: check-out is required.")
-                if not check_in and not check_out: raise ValueError(f"{day_date}: at least one corrected time is required.")
-                if check_in and check_out and check_out <= check_in: raise ValueError(f"{day_date}: check-out must be after check-in.")
+                if kind == "FORGOT_CHECK_IN" and not check_in:
+                    raise ValueError(f"{day_date}: check-in is required.")
+                if kind == "FORGOT_CHECK_OUT" and not check_out:
+                    raise ValueError(f"{day_date}: check-out is required.")
+                if not check_in and not check_out:
+                    raise ValueError(f"{day_date}: at least one corrected time is required.")
+                if check_in and check_out and check_out <= check_in:
+                    raise ValueError(f"{day_date}: check-out must be after check-in.")
                 parsed.append({"date": day_date, "type": kind, "check_in": check_in, "check_out": check_out, "reason": reason, "description": str(item.get("description", "")).strip()})
-            if len({row["date"] for row in parsed}) != len(parsed): raise ValueError("A date can only be included once.")
+            if len({row["date"] for row in parsed}) != len(parsed):
+                raise ValueError("A date can only be included once.")
             parsed.sort(key=lambda row: row["date"])
             start, end = parsed[0]["date"], parsed[-1]["date"]
-            if period_type == "DAY" and len(parsed) != 1: raise ValueError("A day request must have exactly one date.")
-            if period_type == "WEEK" and any(row["date"].isocalendar()[:2] != start.isocalendar()[:2] for row in parsed): raise ValueError("Selected dates must belong to the same week.")
-            if period_type == "MONTH" and any((row["date"].year, row["date"].month) != (start.year, start.month) for row in parsed): raise ValueError("Selected dates must belong to the same month.")
+            if period_type == "DAY" and len(parsed) != 1:
+                raise ValueError("A day request must have exactly one date.")
+            if period_type == "WEEK" and any(row["date"].isocalendar()[:2] != start.isocalendar()[:2] for row in parsed):
+                raise ValueError("Selected dates must belong to the same week.")
+            if period_type == "MONTH" and any((row["date"].year, row["date"].month) != (start.year, start.month) for row in parsed):
+                raise ValueError("Selected dates must belong to the same month.")
             selected_dates = [row["date"] for row in parsed]
             with transaction.atomic():
                 locked_employee = Employee.objects.select_for_update().get(pk=employee.pk)
@@ -2338,7 +2346,8 @@ class RegularizationRequestCreateView(APIView):
                         **usage,
                     }, status=400)
                 has_pending = RegularizationRequest.objects.filter(employee=employee, status="PENDING", attendance_date__in=selected_dates).exists() or RegularizationRequestDay.objects.filter(request__employee=employee, request__status="PENDING", attendance_date__in=selected_dates).exists()
-                if has_pending: raise ValueError("A pending request already includes one or more selected dates.")
+                if has_pending:
+                    raise ValueError("A pending request already includes one or more selected dates.")
                 first = parsed[0]
                 first_attendance = Attendance.objects.filter(employee=employee, date=first["date"]).first()
                 parent = RegularizationRequest.objects.create(employee=employee, attendance_date=first["date"], request_type=first["type"], existing_check_in=first_attendance.check_in if first_attendance else None, existing_check_out=first_attendance.check_out if first_attendance else None, requested_check_in=first["check_in"], requested_check_out=first["check_out"], reason=first["reason"], description=first["description"], status="PENDING", period_type=period_type, period_start=start, period_end=end, attachment=str(request.data.get("attachment", "")))
@@ -2477,7 +2486,8 @@ class RegularizationRequestListView(APIView):
             scoped_employees = filter_employees_by_manager_scope(request.user, Employee.objects.all())
             requests = requests.filter(employee__in=scoped_employees)
             employee_id = request.query_params.get("employee_id")
-            if employee_id: requests = requests.filter(employee_id=employee_id)
+            if employee_id:
+                requests = requests.filter(employee_id=employee_id)
         elif hasattr(request.user, "employee"):
             requests = requests.filter(employee=request.user.employee)
         else:
@@ -2494,7 +2504,8 @@ class RegularizationRequestListView(APIView):
             record = {"id": req.id, "attendance_date": req.attendance_date, "request_type": first["request_type"], "reason": first["reason"], "description": first["description"], "status": req.status, "existing_check_in": first["existing_check_in"], "existing_check_out": first["existing_check_out"], "requested_check_in": first["requested_check_in"], "requested_check_out": first["requested_check_out"], "approved_check_in": first["approved_check_in"], "approved_check_out": first["approved_check_out"], "created_at": req.created_at, "reviewed_at": req.reviewed_at, "rejection_reason": req.rejection_reason, "period_type": req.period_type, "period_start": req.period_start or req.attendance_date, "period_end": req.period_end or req.attendance_date, "attachment": req.attachment, "day_count": len(rows), "days": day_rows}
             if manager:
                 record.update({"employee_id": req.employee.id, "employee_name": f"{req.employee.user.first_name} {req.employee.user.last_name}".strip(), "employee_email": req.employee.user.email})
-            if req.reviewed_by: record["reviewed_by_name"] = f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}".strip()
+            if req.reviewed_by:
+                record["reviewed_by_name"] = f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}".strip()
             data.append(record)
         return Response(data)
 
@@ -2520,7 +2531,8 @@ class RegularizationRequestDetailView(APIView):
             days = [{"id": None, "attendance_date": req.attendance_date, "request_type": req.request_type, "reason": req.reason, "description": req.description, "existing_check_in": req.existing_check_in, "existing_check_out": req.existing_check_out, "requested_check_in": req.requested_check_in, "requested_check_out": req.requested_check_out, "approved_check_in": req.approved_check_in, "approved_check_out": req.approved_check_out}]
         first = days[0]
         data = {"id": req.id, "employee_id": req.employee.id, "employee_name": f"{req.employee.user.first_name} {req.employee.user.last_name}".strip(), "employee_email": req.employee.user.email, **first, "status": req.status, "created_at": req.created_at, "reviewed_at": req.reviewed_at, "rejection_reason": req.rejection_reason, "is_within_48_hours": req.is_within_48_hours, "can_be_processed": req.can_be_processed, "period_type": req.period_type, "period_start": req.period_start or req.attendance_date, "period_end": req.period_end or req.attendance_date, "attachment": req.attachment, "days": days}
-        if req.reviewed_by: data["reviewed_by_name"] = f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}".strip()
+        if req.reviewed_by:
+            data["reviewed_by_name"] = f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}".strip()
         return Response(data)
 
 
@@ -2535,8 +2547,10 @@ class RegularizationRequestApproveView(APIView):
                 if not employee_in_manager_scope(request.user, req.employee):
                     return Response({"error": "You do not have permission to access this request."}, status=403)
                 before_state = _regularization_log_state(req)
-                if req.status != "PENDING": return Response({"error": f"Cannot approve request with status {req.status}."}, status=400)
-                if not req.is_within_48_hours: return Response({"error": "Cannot approve request outside 48-hour window."}, status=400)
+                if req.status != "PENDING":
+                    return Response({"error": f"Cannot approve request with status {req.status}."}, status=400)
+                if not req.is_within_48_hours:
+                    return Response({"error": "Cannot approve request outside 48-hour window."}, status=400)
                 rows = list(req.days.all())
                 if rows:
                     payload = request.data.get("days", [])
@@ -2551,17 +2565,22 @@ class RegularizationRequestApproveView(APIView):
                         item = by_id.get(row.id, {})
                         def parse(field, fallback):
                             value = item.get(field, fallback)
-                            if value in (None, ""): return None
+                            if value in (None, ""):
+                                return None
                             parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-                            if timezone.is_naive(parsed): parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
-                            if timezone.localtime(parsed).date() != row.attendance_date: raise ValueError(f"Final {field} must be on {row.attendance_date}.")
+                            if timezone.is_naive(parsed):
+                                parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+                            if timezone.localtime(parsed).date() != row.attendance_date:
+                                raise ValueError(f"Final {field} must be on {row.attendance_date}.")
                             return parsed
                         requested_check_in = parse("check_in", row.requested_check_in)
                         requested_check_out = parse("check_out", row.requested_check_out)
                         check_in = requested_check_in or row.existing_check_in
                         check_out = requested_check_out or row.existing_check_out
-                        if not check_in and not check_out: raise ValueError(f"At least one final time is required for {row.attendance_date}.")
-                        if check_in and check_out and check_out <= check_in: raise ValueError(f"Check-out must be after check-in for {row.attendance_date}.")
+                        if not check_in and not check_out:
+                            raise ValueError(f"At least one final time is required for {row.attendance_date}.")
+                        if check_in and check_out and check_out <= check_in:
+                            raise ValueError(f"Check-out must be after check-in for {row.attendance_date}.")
                         final.append((row, check_in, check_out, requested_check_in, requested_check_out))
                     req.status, req.reviewed_by, req.reviewed_at = "APPROVED", request.user, timezone.now()
                     req.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
@@ -2572,7 +2591,8 @@ class RegularizationRequestApproveView(APIView):
                         from .models import AttendanceCorrection
                         correction = AttendanceCorrection.objects.create(attendance=attendance, admin_user=request.user, correction_type="REGULARIZATION", reason=f"Regularization approved: {row.reason}", previous_data=previous)
                         for timestamp, kind in ((correction_check_in, "CHECK_IN"), (correction_check_out, "CHECK_OUT")):
-                            if timestamp: AttendanceEvent.objects.create(employee=req.employee, shift=shift, timestamp=timestamp, event_type=kind, source="ADMIN", correction=correction)
+                            if timestamp:
+                                AttendanceEvent.objects.create(employee=req.employee, shift=shift, timestamp=timestamp, event_type=kind, source="ADMIN", correction=correction)
                         attendance.recompute_from_events()
                         row.attendance_correction = correction
                         row.approved_check_in, row.approved_check_out = check_in, check_out
@@ -2596,17 +2616,22 @@ class RegularizationRequestApproveView(APIView):
 
                 def parse_legacy(field, fallback):
                     value = request.data.get(field, fallback)
-                    if value in (None, ""): return None
+                    if value in (None, ""):
+                        return None
                     parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-                    if timezone.is_naive(parsed): parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
-                    if timezone.localtime(parsed).date() != req.attendance_date: raise ValueError(f"Final {field} must be on the attendance date.")
+                    if timezone.is_naive(parsed):
+                        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+                    if timezone.localtime(parsed).date() != req.attendance_date:
+                        raise ValueError(f"Final {field} must be on the attendance date.")
                     return parsed
                 if is_company_holiday(req.attendance_date):
                     return Response({"error": f"Cannot approve regularization for company holiday {req.attendance_date}."}, status=400)
                 check_in = parse_legacy("check_in", req.requested_check_in or req.existing_check_in)
                 check_out = parse_legacy("check_out", req.requested_check_out or req.existing_check_out)
-                if not check_in and not check_out: return Response({"error": "At least one final check-in or check-out time is required."}, status=400)
-                if check_in and check_out and check_out <= check_in: return Response({"error": "Final check-out time must be after final check-in time."}, status=400)
+                if not check_in and not check_out:
+                    return Response({"error": "At least one final check-in or check-out time is required."}, status=400)
+                if check_in and check_out and check_out <= check_in:
+                    return Response({"error": "Final check-out time must be after final check-in time."}, status=400)
                 correction = req.approve(request.user, approved_check_in=check_in, approved_check_out=check_out)
                 _queue_regularization_outcome(req, "APPROVED")
                 record_event(
