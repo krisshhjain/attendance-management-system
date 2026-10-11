@@ -414,3 +414,211 @@ class Phase6WriteTests(TestCase):
             pending_action_manager.approve_action(
                 "phase6-idempotent", action_id, self.admin.id
             )
+
+    def test_attendance_planner_rejects_invalid_status_and_inverted_times(self):
+        target = timezone.localdate()
+        base = {
+            "employee_id": self.employee.id,
+            "date_range": {
+                "start": target.isoformat(),
+                "end": target.isoformat(),
+            },
+        }
+
+        for entities, expected_code in (
+            ({**base, "target_status": "UNKNOWN"}, "invalid_status"),
+            (
+                {
+                    **base,
+                    "target_status": "PRESENT",
+                    "check_in_time": "18:00",
+                    "check_out_time": "09:00",
+                },
+                "invalid_attendance_time",
+            ),
+        ):
+            with self.subTest(expected_code=expected_code):
+                with self.assertRaises(CopilotError) as error:
+                    write_action_planner.plan_write_action(
+                        self.intent("attendance_update", entities),
+                        self.admin,
+                        f"phase6-invalid-attendance-{expected_code}",
+                    )
+                self.assertEqual(error.exception.code, expected_code)
+
+    def test_attendance_planner_requires_admin_for_past_changes(self):
+        target = timezone.localdate() - timedelta(days=1)
+        intent = self.intent(
+            "attendance_update",
+            {
+                "employee_id": self.employee.id,
+                "date_range": {
+                    "start": target.isoformat(),
+                    "end": target.isoformat(),
+                },
+                "target_status": "ABSENT",
+            },
+        )
+        manager = get_user_model().objects.create_user(
+            email="phase6-past-attendance-manager@example.test",
+            is_system_admin=True,
+        )
+        ManagerScope.objects.create(
+            manager=manager, scope_type="DEPARTMENT", value="Engineering"
+        )
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                intent, manager, "phase6-past-attendance-denied"
+            )
+
+        self.assertEqual(error.exception.code, "admin_only")
+        self.assertEqual(error.exception.status, 403)
+
+    def test_force_checkout_requires_latest_attendance_event_to_be_check_in(
+        self,
+    ):
+        target = timezone.localdate()
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=timezone.make_aware(datetime.combine(target, time(9))),
+            event_type="CHECK_IN",
+        )
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=timezone.make_aware(datetime.combine(target, time(12))),
+            event_type="CHECK_OUT",
+        )
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                self.intent(
+                    "attendance_force_checkout",
+                    {
+                        "employee_id": self.employee.id,
+                        "date_range": {
+                            "start": target.isoformat(),
+                            "end": target.isoformat(),
+                        },
+                    },
+                ),
+                self.admin,
+                "phase6-force-checkout-closed",
+            )
+
+        self.assertEqual(error.exception.code, "no_active_checkin")
+
+    def test_leave_review_requires_scoped_pending_request_and_denial_reason(
+        self,
+    ):
+        target = timezone.localdate() + timedelta(days=5)
+        leave = LeaveRequest.objects.create(
+            employee=self.employee,
+            leave_type=self.leave_type,
+            start_date=target,
+            end_date=target,
+            duration_days=Decimal(1),
+            reason="Personal appointment",
+            status="PENDING",
+        )
+        entities = {
+            "employee_id": self.employee.id,
+            "request_id": leave.id,
+        }
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                self.intent("leave_deny", entities),
+                self.admin,
+                "phase6-denial-reason-required",
+            )
+        self.assertEqual(error.exception.code, "review_reason_required")
+
+        pending = write_action_planner.plan_write_action(
+            self.intent("leave_approve", entities),
+            self.admin,
+            "phase6-leave-review-approved-preview",
+        )
+        self.assertEqual(pending["proposed_changes"]["status"], "APPROVED")
+        self.assertTrue(pending["requires_confirmation"])
+        self.assertEqual(pending["target_data"]["leave_request_id"], leave.id)
+
+    def test_regularization_planning_validates_times_and_review_scope(self):
+        target = timezone.localdate() - timedelta(days=1)
+        create = self.intent(
+            "regularization_create",
+            {
+                "employee_id": self.employee.id,
+                "date_range": {
+                    "start": target.isoformat(),
+                    "end": target.isoformat(),
+                },
+                "request_type": "FORGOT_CHECK_IN",
+                "reason": "Forgot to check in",
+                "check_in_time": "not-a-time",
+            },
+        )
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                create, self.admin, "phase6-regularization-invalid-time"
+            )
+        self.assertEqual(error.exception.code, "invalid_regularization_time")
+
+        request = RegularizationRequest.objects.create(
+            employee=self.employee,
+            attendance_date=target,
+            request_type="FORGOT_CHECK_IN",
+            reason="Forgot to check in",
+        )
+        reject = self.intent(
+            "regularization_reject",
+            {"request_id": request.id, "reason": "No supporting details"},
+        )
+        pending = write_action_planner.plan_write_action(
+            reject, self.admin, "phase6-regularization-reject-preview"
+        )
+        self.assertEqual(pending["proposed_changes"]["status"], "REJECTED")
+        self.assertEqual(
+            pending["proposed_changes"]["reason"], "No supporting details"
+        )
+        self.assertTrue(pending["requires_confirmation"])
+
+    def test_shift_planning_rejects_incompatible_employment_type(self):
+        intern_shift = Shift.objects.create(
+            name="Intern Shift",
+            code="PHASE6-INTERN",
+            start_time=time(10),
+            end_time=time(17),
+            employment_type="INTERN",
+        )
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                self.intent(
+                    "employee_shift_assign",
+                    {
+                        "employee_id": self.employee.id,
+                        "shift_id": intern_shift.id,
+                    },
+                ),
+                self.admin,
+                "phase6-incompatible-shift",
+            )
+
+        self.assertEqual(error.exception.code, "shift_incompatible")
+
+    def test_target_employee_lookup_fails_closed_for_unknown_employee(self):
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                self.intent(
+                    "employee_status_update",
+                    {"employee_id": 999999, "is_active": False},
+                ),
+                self.admin,
+                "phase6-unknown-employee",
+            )
+
+        self.assertEqual(error.exception.code, "employee_not_found")
