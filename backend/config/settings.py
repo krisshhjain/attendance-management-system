@@ -83,8 +83,18 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = DJANGO_ENV != "production"
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 ROOT_URLCONF = "config.urls"
 
@@ -125,7 +135,19 @@ validate_production_configuration(
     os.environ.get(
         "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
     ),
+    SECRET_KEY,
+    os.environ.get("FACE_SERVICE_TOKEN", ""),
 )
+
+# Use browser transport protections whenever the environment is explicitly
+# marked as production. Deployments must terminate TLS before serving requests.
+SECURE_SSL_REDIRECT = DJANGO_ENV == "production"
+SESSION_COOKIE_SECURE = DJANGO_ENV == "production"
+CSRF_COOKIE_SECURE = DJANGO_ENV == "production"
+SECURE_HSTS_SECONDS = 31_536_000 if DJANGO_ENV == "production" else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = DJANGO_ENV == "production"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 DATABASES = {
     "default": {

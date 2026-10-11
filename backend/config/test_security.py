@@ -104,6 +104,8 @@ class ProductionConfigurationTests(SimpleTestCase):
                         provider,
                         llm_url,
                         email_backend,
+                        "x" * 50,
+                        "f" * 32,
                     )
 
     def test_allows_secure_production_configuration(self):
@@ -116,4 +118,42 @@ class ProductionConfigurationTests(SimpleTestCase):
             "remote",
             "https://llm.example.com",
             "django.core.mail.backends.smtp.EmailBackend",
+            "x" * 50,
+            "f" * 32,
         )
+
+    def test_rejects_short_production_secret(self):
+        with self.assertRaisesMessage(
+            ImproperlyConfigured,
+            "DJANGO_SECRET_KEY must contain at least 50 characters",
+        ):
+            validate_production_configuration(
+                "production",
+                False,
+                ["attendance.example.com"],
+                "strong-secret",
+                "amqps://worker:secret@broker",
+                "remote",
+                "https://llm.example.com",
+                "django.core.mail.backends.smtp.EmailBackend",
+                "too-short",
+                "face-service-test-token",
+            )
+
+    def test_rejects_short_face_service_token(self):
+        with self.assertRaisesMessage(
+            ImproperlyConfigured,
+            "FACE_SERVICE_TOKEN must contain at least 32 characters",
+        ):
+            validate_production_configuration(
+                "production",
+                False,
+                ["attendance.example.com"],
+                "strong-secret",
+                "amqps://worker:secret@broker",
+                "remote",
+                "https://llm.example.com",
+                "django.core.mail.backends.smtp.EmailBackend",
+                "x" * 50,
+                "short",
+            )

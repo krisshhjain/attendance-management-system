@@ -1,3 +1,5 @@
+# Local development stack. Production deployments must use the platform's
+# secret manager and an HTTPS-terminating reverse proxy.
 services:
 
   db:
@@ -5,15 +7,15 @@ services:
     container_name: attendance_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: attendance_db
-      POSTGRES_USER: attendance_user
-      POSTGRES_PASSWORD: attendance_password
+      POSTGRES_DB: ${DB_NAME:-attendance_db}
+      POSTGRES_USER: ${DB_USER:-attendance_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the root .env file}
     ports:
-      - "5434:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U attendance_user -d attendance_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-attendance_user} -d ${DB_NAME:-attendance_db}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -24,10 +26,10 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: attendance_user
-      RABBITMQ_DEFAULT_PASS: attendance_password
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in the root .env file}
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -43,9 +45,13 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      DJANGO_ENV: ${DJANGO_ENV:?Set DJANGO_ENV in the root .env file}
+      POSTGRES_DB: ${DB_NAME:-attendance_db}
+      POSTGRES_USER: ${DB_USER:-attendance_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the root .env file}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-      CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
+      CELERY_BROKER_URL: amqp://attendance_user:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in the root .env file}@rabbitmq:5672//
       HR_COPILOT_LLM_URL: http://host.docker.internal:11434
       FACE_SERVICE_URL: http://host.docker.internal:8001
     depends_on:
@@ -54,7 +60,7 @@ services:
       rabbitmq:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     profiles:
       - full
 
@@ -65,9 +71,13 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      DJANGO_ENV: ${DJANGO_ENV:?Set DJANGO_ENV in the root .env file}
+      POSTGRES_DB: ${DB_NAME:-attendance_db}
+      POSTGRES_USER: ${DB_USER:-attendance_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the root .env file}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-      CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
+      CELERY_BROKER_URL: amqp://attendance_user:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in the root .env file}@rabbitmq:5672//
       HR_COPILOT_LLM_URL: http://host.docker.internal:11434
       FACE_SERVICE_URL: http://host.docker.internal:8001
     depends_on:
@@ -86,9 +96,13 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      DJANGO_ENV: ${DJANGO_ENV:?Set DJANGO_ENV in the root .env file}
+      POSTGRES_DB: ${DB_NAME:-attendance_db}
+      POSTGRES_USER: ${DB_USER:-attendance_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the root .env file}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-      CELERY_BROKER_URL: amqp://attendance_user:attendance_password@rabbitmq:5672//
+      CELERY_BROKER_URL: amqp://attendance_user:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in the root .env file}@rabbitmq:5672//
       HR_COPILOT_LLM_URL: http://host.docker.internal:11434
       FACE_SERVICE_URL: http://host.docker.internal:8001
     depends_on:
@@ -105,7 +119,7 @@ services:
     container_name: attendance_frontend
     restart: unless-stopped
     ports:
-      - "80:8080"
+      - "127.0.0.1:80:8080"
     depends_on:
       - backend
     profiles:
@@ -117,8 +131,8 @@ services:
     container_name: attendance_mailpit
     restart: unless-stopped
     ports:
-      - "8025:8025"
-      - "1025:1025"
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
     profiles:
       - full
 

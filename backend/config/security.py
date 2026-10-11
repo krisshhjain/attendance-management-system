@@ -22,12 +22,18 @@ def validate_production_configuration(
     llm_provider="",
     llm_url="",
     email_backend="",
+    secret_key="",
+    face_service_token="",
 ):
     """Reject development-only settings when explicitly running in production."""
     if environment != "production":
         return
     if debug:
         raise ImproperlyConfigured("DJANGO_DEBUG must be false in production")
+    if len(secret_key) < 50:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must contain at least 50 characters in production"
+        )
     if not allowed_hosts or "*" in allowed_hosts:
         raise ImproperlyConfigured(
             "ALLOWED_HOSTS must list production hostnames"
@@ -51,4 +57,8 @@ def validate_production_configuration(
     if email_backend.endswith("console.EmailBackend"):
         raise ImproperlyConfigured(
             "Console email backend is not allowed in production"
+        )
+    if len(face_service_token.strip()) < 32:
+        raise ImproperlyConfigured(
+            "FACE_SERVICE_TOKEN must contain at least 32 characters in production"
         )
