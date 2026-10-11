@@ -13,7 +13,7 @@ def queue_attendance_notification(sender, instance, created, **kwargs):
 
     attendance_event_id = instance.pk
     transaction.on_commit(
-        lambda event_id=attendance_event_id: create_attendance_notification.delay(
-            event_id
+        lambda event_id=attendance_event_id: (
+            create_attendance_notification.delay(event_id)
         )
     )

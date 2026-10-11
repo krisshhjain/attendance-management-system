@@ -116,6 +116,7 @@ class Attendance(models.Model):
         Returns: True if weekend, False otherwise.
         """
         from holidays.services import is_weekend
+
         return is_weekend(self.date)
 
     def recompute_from_events(self):
@@ -185,11 +186,19 @@ class Attendance(models.Model):
 
         self.save(
             update_fields=[
-                "check_in", "check_out", "status", "working_duration",
-                "check_in_latitude", "check_in_longitude", "check_in_accuracy",
-                "check_in_distance", "check_out_latitude",
-                "check_out_longitude", "check_out_accuracy",
-                "check_out_distance", "updated_at",
+                "check_in",
+                "check_out",
+                "status",
+                "working_duration",
+                "check_in_latitude",
+                "check_in_longitude",
+                "check_in_accuracy",
+                "check_in_distance",
+                "check_out_latitude",
+                "check_out_longitude",
+                "check_out_accuracy",
+                "check_out_distance",
+                "updated_at",
             ]
         )
 
@@ -201,6 +210,7 @@ class Attendance(models.Model):
         """
         # If no shift assigned, return None
         from holidays.services import attendance_required
+
         if not attendance_required(self.date):
             return None
         effective_shift = self.employee.get_effective_shift()
@@ -219,6 +229,7 @@ class Attendance(models.Model):
 
         # Make timezone-aware if needed
         from django.utils import timezone
+
         if timezone.is_naive(shift_start):
             shift_start = timezone.make_aware(shift_start)
         if timezone.is_naive(shift_end):
@@ -238,6 +249,7 @@ class Attendance(models.Model):
     def get_or_create_for_date(cls, employee, date):
         """Atomically get or create attendance record for employee/date."""
         from django.db import transaction
+
         with transaction.atomic():
             attendance, created = (
                 cls.objects.select_for_update().get_or_create(
@@ -419,7 +431,8 @@ def get_effective_attendance_events(employee, target_date):
         event.event_type for event in event_rows if event.source == "ADMIN"
     }
     return [
-        event for event in event_rows
+        event
+        for event in event_rows
         if event.source == "ADMIN" or event.event_type not in admin_event_types
     ]
 
@@ -461,12 +474,10 @@ class AttendanceCorrection(models.Model):
         Attendance,
         on_delete=models.SET_NULL,
         null=True,
-        related_name="corrections"
+        related_name="corrections",
     )
     admin_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
     )
     timestamp = models.DateTimeField(auto_now_add=True)
     correction_type = models.CharField(max_length=50)
@@ -479,8 +490,7 @@ class AttendanceCorrection(models.Model):
 
     def __str__(self):
         return (
-            f"{self.correction_type} by {self.admin_user} "
-            f"on {self.attendance}"
+            f"{self.correction_type} by {self.admin_user} on {self.attendance}"
         )
 
 
@@ -742,10 +752,16 @@ class RegularizationRequest(models.Model):
             self.reviewed_at = timezone.now()
             self.approved_check_in = final_check_in
             self.approved_check_out = final_check_out
-            self.save(update_fields=[
-                "status", "reviewed_by", "reviewed_at",
-                "approved_check_in", "approved_check_out", "updated_at",
-            ])
+            self.save(
+                update_fields=[
+                    "status",
+                    "reviewed_by",
+                    "reviewed_at",
+                    "approved_check_in",
+                    "approved_check_out",
+                    "updated_at",
+                ]
+            )
 
             if apply_correction:
                 return self._apply_attendance_correction(
@@ -779,7 +795,10 @@ class RegularizationRequest(models.Model):
         self.rejection_reason = rejection_reason
         self.save(
             update_fields=[
-                "status", "reviewed_by", "reviewed_at", "rejection_reason",
+                "status",
+                "reviewed_by",
+                "reviewed_at",
+                "rejection_reason",
                 "updated_at",
             ]
         )
@@ -810,8 +829,7 @@ class RegularizationRequest(models.Model):
         with transaction.atomic():
             # Get or create attendance record
             attendance, created = Attendance.get_or_create_for_date(
-                employee=self.employee,
-                date=self.attendance_date
+                employee=self.employee, date=self.attendance_date
             )
 
             # Store previous state for audit
@@ -903,6 +921,7 @@ class RegularizationRequest(models.Model):
 
 class RegularizationRequestDay(models.Model):
     """One affected attendance date within a grouped regularization request."""
+
     request = models.ForeignKey(
         RegularizationRequest,
         on_delete=models.CASCADE,
@@ -940,8 +959,7 @@ class RegularizationRequestDay(models.Model):
 
     def __str__(self):
         return (
-            f"Regularization day: {self.request_id} - "
-            f"{self.attendance_date}"
+            f"Regularization day: {self.request_id} - {self.attendance_date}"
         )
 
 
@@ -963,6 +981,7 @@ class OfficeLocation(models.Model):
 
 class RegularizationQuotaPolicy(models.Model):
     """Application-wide request limits configured by an app superuser."""
+
     weekly_limit = models.PositiveSmallIntegerField(default=1)
     monthly_limit = models.PositiveSmallIntegerField(default=4)
     updated_by = models.ForeignKey(

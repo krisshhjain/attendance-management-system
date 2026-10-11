@@ -1,10 +1,11 @@
-import logging
-import requests
 import base64
-from typing import Union, Tuple, Optional, List
+import logging
+from typing import List, Optional, Tuple, Union
+
+import requests
+from django.conf import settings
 
 from employees.models import Employee, FaceProfile
-from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ def _face_service_request_kwargs(payload, timeout):
 
 class FaceExtractionError(Exception):
     """Raised when face extraction fails or produces ambiguous results."""
+
     pass
 
 
@@ -32,7 +34,9 @@ class FaceLivenessError(FaceExtractionError):
             message = "Liveness check failed. Please use a live camera image and try again."
         else:
             self.status = "liveness_error"
-            message = "Liveness check is temporarily unavailable. Please try again."
+            message = (
+                "Liveness check is temporarily unavailable. Please try again."
+            )
         super().__init__(message)
 
 
@@ -56,11 +60,11 @@ def _to_base64_string(image_data: Union[str, bytes]) -> str:
     """Helper to ensure image data is a base64 encoded string for JSON transmission."""
     if isinstance(image_data, str):
         # Could be 'data:image/jpeg;base64,....'
-        if image_data.startswith('data:image'):
-            return image_data.split(',', 1)[1]
+        if image_data.startswith("data:image"):
+            return image_data.split(",", 1)[1]
         return image_data
     elif isinstance(image_data, bytes):
-        return base64.b64encode(image_data).decode('utf-8')
+        return base64.b64encode(image_data).decode("utf-8")
     else:
         raise FaceExtractionError("Unsupported image data type.")
 
@@ -69,9 +73,15 @@ def _recognize_payload(image_data, candidates, threshold, captured_at_ms=None):
     """Use the sequence gate for attendance captures; retain legacy single-image callers."""
     if isinstance(image_data, (list, tuple)):
         if not 3 <= len(image_data) <= 7:
-            raise FaceExtractionError("A facial attendance check requires 3 to 7 camera frames.")
-        if not isinstance(captured_at_ms, (list, tuple)) or len(captured_at_ms) != len(image_data):
-            raise FaceExtractionError("Camera frame timestamps are missing or invalid.")
+            raise FaceExtractionError(
+                "A facial attendance check requires 3 to 7 camera frames."
+            )
+        if not isinstance(captured_at_ms, (list, tuple)) or len(
+            captured_at_ms
+        ) != len(image_data):
+            raise FaceExtractionError(
+                "Camera frame timestamps are missing or invalid."
+            )
         payload = {
             "frames": [_to_base64_string(frame) for frame in image_data],
             "captured_at_ms": list(captured_at_ms),
@@ -101,9 +111,9 @@ def process_enrollment(images: List[Union[str, bytes]]) -> List[float]:
     """
     if len(images) != 3:
         raise ValueError("Enrollment requires exactly 3 images.")
-        
+
     b64_images = [_to_base64_string(img) for img in images]
-    
+
     try:
         response = requests.post(
             f"{settings.FACE_SERVICE_URL}/enroll",
@@ -111,56 +121,63 @@ def process_enrollment(images: List[Union[str, bytes]]) -> List[float]:
         )
     except requests.RequestException as e:
         logger.error(f"FR Service connection error: {e}")
-        raise FaceExtractionError("Facial Recognition service is currently unavailable.")
-        
+        raise FaceExtractionError(
+            "Facial Recognition service is currently unavailable."
+        )
+
     if response.status_code != 200:
         error_msg = response.json().get("error", "Unknown FR service error")
         raise FaceExtractionError(error_msg)
-        
+
     return response.json().get("template")
 
 
-def find_closest_match(query_image_data, threshold: float = 0.60, captured_at_ms=None) -> Tuple[Optional[Employee], float]:
+def find_closest_match(
+    query_image_data, threshold: float = 0.60, captured_at_ms=None
+) -> Tuple[Optional[Employee], float]:
     """
     Finds the closest enrolled employee matching the query image using the local FR microservice.
     Returns (Employee, distance) or (None, best_distance) if no match under threshold.
     """
-    profiles = FaceProfile.objects.select_related('employee').filter(
-        employee__is_active=True, 
-        status="ACTIVE"
+    profiles = FaceProfile.objects.select_related("employee").filter(
+        employee__is_active=True, status="ACTIVE"
     )
-    
+
     if not profiles.exists():
-        return None, float('inf')
-        
+        return None, float("inf")
+
     # Build candidate list
     candidates = []
     # Create a fast lookup dict by ID
     profile_dict = {}
-    
+
     for profile in profiles:
         emp_emb = profile.face_template
         if not emp_emb:
             continue
         candidates.append({"id": profile.employee.id, "template": emp_emb})
         profile_dict[profile.employee.id] = profile.employee
-        
+
     if not candidates:
-        return None, float('inf')
-    
+        return None, float("inf")
+
     try:
-        response = _recognize_payload(query_image_data, candidates, threshold, captured_at_ms)
+        response = _recognize_payload(
+            query_image_data, candidates, threshold, captured_at_ms
+        )
     except requests.RequestException as e:
         logger.error(f"FR Service connection error: {e}")
-        raise FaceExtractionError("Facial Recognition service is currently unavailable.")
-        
+        raise FaceExtractionError(
+            "Facial Recognition service is currently unavailable."
+        )
+
     if response.status_code != 200:
         _raise_for_recognition_error(response)
-        
+
     result = response.json()
     status = result.get("status")
-    distance = result.get("distance", float('inf'))
-    
+    distance = result.get("distance", float("inf"))
+
     if status == "match":
         emp_id = result.get("employee_id")
         matched_employee = profile_dict.get(emp_id)
@@ -170,7 +187,12 @@ def find_closest_match(query_image_data, threshold: float = 0.60, captured_at_ms
         return None, distance
 
 
-def verify_employee_face(employee: Employee, query_image_data, threshold: float = 0.60, captured_at_ms=None) -> Tuple[bool, float]:
+def verify_employee_face(
+    employee: Employee,
+    query_image_data,
+    threshold: float = 0.60,
+    captured_at_ms=None,
+) -> Tuple[bool, float]:
     """
     Verifies if the face in the query image matches the specified employee (1:1 verification).
     Returns (True, distance) if it matches, or (False, distance) if it doesn't.
@@ -178,26 +200,30 @@ def verify_employee_face(employee: Employee, query_image_data, threshold: float 
     try:
         profile = FaceProfile.objects.get(employee=employee, status="ACTIVE")
     except FaceProfile.DoesNotExist:
-        return False, float('inf')
+        return False, float("inf")
 
     if not profile.face_template:
-        return False, float('inf')
+        return False, float("inf")
 
     candidates = [{"id": employee.id, "template": profile.face_template}]
 
     try:
-        response = _recognize_payload(query_image_data, candidates, threshold, captured_at_ms)
+        response = _recognize_payload(
+            query_image_data, candidates, threshold, captured_at_ms
+        )
     except requests.RequestException as e:
         logger.error(f"FR Service connection error: {e}")
-        raise FaceExtractionError("Facial Recognition service is currently unavailable.")
-        
+        raise FaceExtractionError(
+            "Facial Recognition service is currently unavailable."
+        )
+
     if response.status_code != 200:
         _raise_for_recognition_error(response)
-        
+
     result = response.json()
     status = result.get("status")
-    distance = result.get("distance", float('inf'))
-    
+    distance = result.get("distance", float("inf"))
+
     if status == "match":
         return True, distance
     else:
