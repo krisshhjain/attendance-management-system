@@ -52,12 +52,29 @@ class SystemLog(models.Model):
     class Meta:
         ordering = ["-timestamp", "-id"]
         indexes = [
-            models.Index(fields=["timestamp", "id"], name="system_log_time_idx"),
-            models.Index(fields=["event_type", "timestamp", "id"], name="system_log_event_idx"),
-            models.Index(fields=["category", "timestamp", "id"], name="system_log_category_idx"),
-            models.Index(fields=["severity", "timestamp", "id"], name="system_log_severity_idx"),
-            models.Index(fields=["status", "timestamp", "id"], name="system_log_status_idx"),
-            models.Index(fields=["actor", "timestamp", "id"], name="system_log_actor_idx"),
+            models.Index(
+                fields=["timestamp", "id"], name="system_log_time_idx"
+            ),
+            models.Index(
+                fields=["event_type", "timestamp", "id"],
+                name="system_log_event_idx",
+            ),
+            models.Index(
+                fields=["category", "timestamp", "id"],
+                name="system_log_category_idx",
+            ),
+            models.Index(
+                fields=["severity", "timestamp", "id"],
+                name="system_log_severity_idx",
+            ),
+            models.Index(
+                fields=["status", "timestamp", "id"],
+                name="system_log_status_idx",
+            ),
+            models.Index(
+                fields=["actor", "timestamp", "id"],
+                name="system_log_actor_idx",
+            ),
             models.Index(fields=["request_id"], name="system_log_request_idx"),
             models.Index(
                 fields=["target_type", "target_id", "timestamp"],

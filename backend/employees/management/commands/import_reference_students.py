@@ -8,7 +8,6 @@ from django.utils import timezone
 from accounts.models import User
 from employees.models import Employee
 
-
 STUDENTS = [
     ("Tanvi Kad", "C", "C1"),
     ("Jasleen Kaur", "C", "C1"),
@@ -98,7 +97,11 @@ def normalize_name(name):
 
 
 def email_slug(name):
-    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    ascii_name = (
+        unicodedata.normalize("NFKD", name)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
     return re.sub(r"[^a-z0-9]+", ".", ascii_name.casefold()).strip(".")
 
 
@@ -124,7 +127,10 @@ class Command(BaseCommand):
             normalized_name = normalize_name(full_name)
             base_email = f"{email_slug(full_name)}@dailoqa.com"
             email = base_email
-            if normalized_name in existing_names or email.casefold() in generated_emails:
+            if (
+                normalized_name in existing_names
+                or email.casefold() in generated_emails
+            ):
                 skipped.append(full_name)
                 continue
 
@@ -167,7 +173,9 @@ class Command(BaseCommand):
             self.stdout.write(f"{index}. {name}")
         self.stdout.write("\nNewly added:")
         for index, (name, section, subsection) in enumerate(added, 1):
-            self.stdout.write(f"{index}. {name} — Section {section} — {subsection}")
+            self.stdout.write(
+                f"{index}. {name} — Section {section} — {subsection}"
+            )
         if failed:
             self.stdout.write("\nFailed details:")
             for name, error in failed:

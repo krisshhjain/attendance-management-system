@@ -1,38 +1,28 @@
 import os
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db import transaction
 from rest_framework import status
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from employees.models import Employee
-from .models import LeavePolicy, LeaveRequest, LeaveType
-from .permissions import (
-    IsAdminOrSuperAdmin,
-    IsEmployee,
-    IsSystemAdminOrSuperAdminReadOnly,
-    IsManagerOrAdmin,
-)
-from .serializers import (
-    CreateLeaveRequestSerializer,
-    LeavePolicySerializer,
-    LeaveRequestSerializer,
-    LeaveTypeSerializer,
-)
-from .services import (
-    approve_leave_request,
-    calculate_employee_leave_balances,
-    calculate_working_days,
-    cancel_leave_request,
-    deny_leave_request,
-    validate_leave_request,
-)
 from notifications.services import queue_manager_notifications_after_commit
 from system_logs.services import record_event
+
+from .models import LeavePolicy, LeaveRequest, LeaveType
+from .permissions import (IsAdminOrSuperAdmin, IsEmployee, IsManagerOrAdmin,
+                          IsSystemAdminOrSuperAdminReadOnly)
+from .serializers import (CreateLeaveRequestSerializer, LeavePolicySerializer,
+                          LeaveRequestSerializer, LeaveTypeSerializer)
+from .services import (approve_leave_request,
+                       calculate_employee_leave_balances,
+                       calculate_working_days, cancel_leave_request,
+                       deny_leave_request, validate_leave_request)
 
 
 def _leave_log_state(leave_request):
@@ -46,9 +36,13 @@ def _leave_log_state(leave_request):
         "duration_days": str(leave_request.duration_days),
         "status": leave_request.status,
         "reviewed_by_id": leave_request.reviewed_by_id,
-        "reviewed_at": leave_request.reviewed_at.isoformat() if leave_request.reviewed_at else None,
+        "reviewed_at": leave_request.reviewed_at.isoformat()
+        if leave_request.reviewed_at
+        else None,
         "cancelled_by_id": leave_request.cancelled_by_id,
-        "cancelled_at": leave_request.cancelled_at.isoformat() if leave_request.cancelled_at else None,
+        "cancelled_at": leave_request.cancelled_at.isoformat()
+        if leave_request.cancelled_at
+        else None,
     }
 
 
@@ -77,13 +71,16 @@ def _leave_policy_log_state(policy):
         "min_notice_days": policy.min_notice_days,
         "is_active": policy.is_active,
         "effective_from": policy.effective_from.isoformat(),
-        "effective_to": policy.effective_to.isoformat() if policy.effective_to else None,
+        "effective_to": policy.effective_to.isoformat()
+        if policy.effective_to
+        else None,
     }
 
 
 # ==============================================================================
 # EMPLOYEE VIEWS
 # ==============================================================================
+
 
 class EmployeeLeaveTypesView(APIView):
     permission_classes = [IsEmployee]
@@ -118,14 +115,20 @@ class EstimateLeaveDurationView(APIView):
         day_type = request.data.get("day_type", "FULL_DAY")
 
         if not start_date_str or not end_date_str:
-            return Response({"error": "start_date and end_date are required."}, status=400)
+            return Response(
+                {"error": "start_date and end_date are required."}, status=400
+            )
 
         from datetime import date as date_type
+
         try:
             start_date = date_type.fromisoformat(start_date_str)
             end_date = date_type.fromisoformat(end_date_str)
         except ValueError:
-            return Response({"error": "Invalid date format. Expected YYYY-MM-DD."}, status=400)
+            return Response(
+                {"error": "Invalid date format. Expected YYYY-MM-DD."},
+                status=400,
+            )
 
         duration = calculate_working_days(start_date, end_date, day_type)
         return Response({"duration_days": float(duration)})
@@ -138,9 +141,9 @@ class EmployeeLeaveRequestsView(APIView):
         employee = request.user.employee
         status_filter = request.query_params.get("status")
 
-        requests = LeaveRequest.objects.filter(employee=employee).select_related(
-            "leave_type", "reviewed_by", "cancelled_by"
-        )
+        requests = LeaveRequest.objects.filter(
+            employee=employee
+        ).select_related("leave_type", "reviewed_by", "cancelled_by")
         if status_filter:
             requests = requests.filter(status=status_filter.upper())
 
@@ -171,7 +174,14 @@ class EmployeeLeaveRequestsView(APIView):
                 attachment=attachment,
             )
         except ValidationError as e:
-            return Response({"error": e.message if hasattr(e, "message") else str(e.messages[0] if hasattr(e, "messages") else e)}, status=400)
+            return Response(
+                {
+                    "error": e.message
+                    if hasattr(e, "message")
+                    else str(e.messages[0] if hasattr(e, "messages") else e)
+                },
+                status=400,
+            )
 
         with transaction.atomic():
             leave_req = LeaveRequest.objects.create(
@@ -236,7 +246,9 @@ class EmployeeCancelLeaveRequestView(APIView):
 
     def post(self, request, pk):
         try:
-            leave_req = LeaveRequest.objects.get(pk=pk, employee=request.user.employee)
+            leave_req = LeaveRequest.objects.get(
+                pk=pk, employee=request.user.employee
+            )
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
 
@@ -244,7 +256,10 @@ class EmployeeCancelLeaveRequestView(APIView):
             before_state = _leave_log_state(leave_req)
             updated_req = cancel_leave_request(leave_req, user=request.user)
         except ValidationError as e:
-            return Response({"error": e.message if hasattr(e, "message") else str(e)}, status=400)
+            return Response(
+                {"error": e.message if hasattr(e, "message") else str(e)},
+                status=400,
+            )
 
         record_event(
             event_type="LEAVE_CANCELLED",
@@ -266,16 +281,27 @@ class EmployeeCancelLeaveRequestView(APIView):
 # ADMIN VIEWS
 # ==============================================================================
 
+
 class AdminLeaveRequestsView(APIView):
     """Manager and Admin can view all leave requests."""
+
     permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         from accounts.scope_service import filter_employees_by_manager_scope
         from employees.models import Employee
-        scoped_employees = filter_employees_by_manager_scope(request.user, Employee.objects.all())
-        requests = LeaveRequest.objects.filter(employee__in=scoped_employees).select_related(
-            "employee", "employee__user", "leave_type", "reviewed_by", "cancelled_by"
+
+        scoped_employees = filter_employees_by_manager_scope(
+            request.user, Employee.objects.all()
+        )
+        requests = LeaveRequest.objects.filter(
+            employee__in=scoped_employees
+        ).select_related(
+            "employee",
+            "employee__user",
+            "leave_type",
+            "reviewed_by",
+            "cancelled_by",
         )
 
         status_param = request.query_params.get("status")
@@ -293,25 +319,37 @@ class AdminLeaveRequestsView(APIView):
 
 class AdminLeaveRequestDetailView(APIView):
     """Manager and Admin can view leave request details."""
+
     permission_classes = [IsManagerOrAdmin]
 
     def get(self, request, pk):
         try:
             leave_req = LeaveRequest.objects.select_related(
-                "employee", "employee__user", "leave_type", "reviewed_by", "cancelled_by"
+                "employee",
+                "employee__user",
+                "leave_type",
+                "reviewed_by",
+                "cancelled_by",
             ).get(pk=pk)
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
-            
+
         from accounts.scope_service import employee_in_manager_scope
+
         if not employee_in_manager_scope(request.user, leave_req.employee):
-            return Response({"error": "You do not have permission to access this leave request."}, status=403)
+            return Response(
+                {
+                    "error": "You do not have permission to access this leave request."
+                },
+                status=403,
+            )
 
         return Response(LeaveRequestSerializer(leave_req).data)
 
 
 class AdminApproveLeaveView(APIView):
     """Manager and Admin can approve leave requests."""
+
     permission_classes = [IsManagerOrAdmin]
 
     def post(self, request, pk):
@@ -319,10 +357,16 @@ class AdminApproveLeaveView(APIView):
             leave_req = LeaveRequest.objects.get(pk=pk)
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
-            
+
         from accounts.scope_service import employee_in_manager_scope
+
         if not employee_in_manager_scope(request.user, leave_req.employee):
-            return Response({"error": "You do not have permission to access this leave request."}, status=403)
+            return Response(
+                {
+                    "error": "You do not have permission to access this leave request."
+                },
+                status=403,
+            )
 
         remarks = request.data.get("remarks", "")
         try:
@@ -333,7 +377,10 @@ class AdminApproveLeaveView(APIView):
                 remarks=remarks,
             )
         except ValidationError as e:
-            return Response({"error": e.message if hasattr(e, "message") else str(e)}, status=400)
+            return Response(
+                {"error": e.message if hasattr(e, "message") else str(e)},
+                status=400,
+            )
 
         record_event(
             event_type="LEAVE_APPROVED",
@@ -353,6 +400,7 @@ class AdminApproveLeaveView(APIView):
 
 class AdminDenyLeaveView(APIView):
     """Manager and Admin can deny leave requests."""
+
     permission_classes = [IsManagerOrAdmin]
 
     def post(self, request, pk):
@@ -360,10 +408,16 @@ class AdminDenyLeaveView(APIView):
             leave_req = LeaveRequest.objects.get(pk=pk)
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
-            
+
         from accounts.scope_service import employee_in_manager_scope
+
         if not employee_in_manager_scope(request.user, leave_req.employee):
-            return Response({"error": "You do not have permission to access this leave request."}, status=403)
+            return Response(
+                {
+                    "error": "You do not have permission to access this leave request."
+                },
+                status=403,
+            )
 
         remarks = request.data.get("remarks", "")
         try:
@@ -374,7 +428,10 @@ class AdminDenyLeaveView(APIView):
                 remarks=remarks,
             )
         except ValidationError as e:
-            return Response({"error": e.message if hasattr(e, "message") else str(e)}, status=400)
+            return Response(
+                {"error": e.message if hasattr(e, "message") else str(e)},
+                status=400,
+            )
 
         record_event(
             event_type="LEAVE_DENIED",
@@ -394,6 +451,7 @@ class AdminDenyLeaveView(APIView):
 
 class AdminCancelApprovedLeaveView(APIView):
     """Manager and Admin can cancel approved leave."""
+
     permission_classes = [IsManagerOrAdmin]
 
     def post(self, request, pk):
@@ -401,10 +459,16 @@ class AdminCancelApprovedLeaveView(APIView):
             leave_req = LeaveRequest.objects.get(pk=pk)
         except LeaveRequest.DoesNotExist:
             return Response({"error": "Leave request not found."}, status=404)
-            
+
         from accounts.scope_service import employee_in_manager_scope
+
         if not employee_in_manager_scope(request.user, leave_req.employee):
-            return Response({"error": "You do not have permission to access this leave request."}, status=403)
+            return Response(
+                {
+                    "error": "You do not have permission to access this leave request."
+                },
+                status=403,
+            )
 
         try:
             before_state = _leave_log_state(leave_req)
@@ -413,7 +477,10 @@ class AdminCancelApprovedLeaveView(APIView):
                 user=request.user,
             )
         except ValidationError as e:
-            return Response({"error": e.message if hasattr(e, "message") else str(e)}, status=400)
+            return Response(
+                {"error": e.message if hasattr(e, "message") else str(e)},
+                status=400,
+            )
 
         record_event(
             event_type="LEAVE_CANCELLED",
@@ -433,6 +500,7 @@ class AdminCancelApprovedLeaveView(APIView):
 
 class AdminEmployeeLeaveBalancesView(APIView):
     """Manager and Admin can view employee leave balances."""
+
     permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
@@ -445,39 +513,57 @@ class AdminEmployeeLeaveBalancesView(APIView):
 
         if employee_id:
             try:
-                emp = Employee.objects.select_related("user").get(pk=employee_id)
+                emp = Employee.objects.select_related("user").get(
+                    pk=employee_id
+                )
             except Employee.DoesNotExist:
                 return Response({"error": "Employee not found."}, status=404)
-                
+
             from accounts.scope_service import employee_in_manager_scope
+
             if not employee_in_manager_scope(request.user, emp):
-                return Response({"error": "You do not have permission to access this employee."}, status=403)
+                return Response(
+                    {
+                        "error": "You do not have permission to access this employee."
+                    },
+                    status=403,
+                )
 
             balances = calculate_employee_leave_balances(emp, year=year)
-            return Response({
-                "employee_id": emp.id,
-                "employee_email": emp.user.email,
-                "employment_type": emp.employment_type,
-                "balances": balances,
-            })
-        else:
-            from accounts.scope_service import filter_employees_by_manager_scope
-            employees = filter_employees_by_manager_scope(request.user, Employee.objects.filter(is_active=True).select_related("user"))
-            result = []
-            for emp in employees:
-                balances = calculate_employee_leave_balances(emp, year=year)
-                result.append({
+            return Response(
+                {
                     "employee_id": emp.id,
                     "employee_email": emp.user.email,
                     "employment_type": emp.employment_type,
                     "balances": balances,
-                })
+                }
+            )
+        else:
+            from accounts.scope_service import \
+                filter_employees_by_manager_scope
+
+            employees = filter_employees_by_manager_scope(
+                request.user,
+                Employee.objects.filter(is_active=True).select_related("user"),
+            )
+            result = []
+            for emp in employees:
+                balances = calculate_employee_leave_balances(emp, year=year)
+                result.append(
+                    {
+                        "employee_id": emp.id,
+                        "employee_email": emp.user.email,
+                        "employment_type": emp.employment_type,
+                        "balances": balances,
+                    }
+                )
             return Response(result)
 
 
 # ==============================================================================
 # SUPER ADMIN VIEWS
 # ==============================================================================
+
 
 class SuperAdminLeaveTypesListCreateView(APIView):
     permission_classes = [IsSystemAdminOrSuperAdminReadOnly]
@@ -503,7 +589,9 @@ class SuperAdminLeaveTypesListCreateView(APIView):
             request=request,
             after_state=_leave_type_log_state(lt),
         )
-        return Response(LeaveTypeSerializer(lt).data, status=status.HTTP_201_CREATED)
+        return Response(
+            LeaveTypeSerializer(lt).data, status=status.HTTP_201_CREATED
+        )
 
 
 class SuperAdminLeaveTypeDetailView(APIView):
@@ -571,7 +659,11 @@ class SuperAdminLeavePoliciesListCreateView(APIView):
     permission_classes = [IsSystemAdminOrSuperAdminReadOnly]
 
     def get(self, request):
-        policies = LeavePolicy.objects.select_related("leave_type").all().order_by("-effective_from", "employee_type")
+        policies = (
+            LeavePolicy.objects.select_related("leave_type")
+            .all()
+            .order_by("-effective_from", "employee_type")
+        )
         serializer = LeavePolicySerializer(policies, many=True)
         return Response(serializer.data)
 
@@ -591,7 +683,9 @@ class SuperAdminLeavePoliciesListCreateView(APIView):
             request=request,
             after_state=_leave_policy_log_state(policy),
         )
-        return Response(LeavePolicySerializer(policy).data, status=status.HTTP_201_CREATED)
+        return Response(
+            LeavePolicySerializer(policy).data, status=status.HTTP_201_CREATED
+        )
 
 
 class SuperAdminLeavePolicyDetailView(APIView):
@@ -613,7 +707,9 @@ class SuperAdminLeavePolicyDetailView(APIView):
         policy = self.get_object(pk)
         if not policy:
             return Response({"error": "Leave policy not found."}, status=404)
-        serializer = LeavePolicySerializer(policy, data=request.data, partial=True)
+        serializer = LeavePolicySerializer(
+            policy, data=request.data, partial=True
+        )
         serializer.is_valid(raise_exception=True)
         before_state = _leave_policy_log_state(policy)
         updated = serializer.save()
@@ -660,39 +756,49 @@ class FileUploadView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
-        if 'file' not in request.FILES:
+        if "file" not in request.FILES:
             return Response({"error": "No file provided."}, status=400)
 
-        file = request.FILES['file']
-        
+        file = request.FILES["file"]
+
         # Validate file size (max 5MB)
         max_size = 5 * 1024 * 1024
         if file.size > max_size:
-            return Response({"error": "File size exceeds 5MB limit."}, status=400)
+            return Response(
+                {"error": "File size exceeds 5MB limit."}, status=400
+            )
 
         # Validate file extension
-        allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']
+        allowed_extensions = [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"]
         file_extension = os.path.splitext(file.name)[1].lower()
         if file_extension not in allowed_extensions:
-            return Response({
-                "error": f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
-            }, status=400)
+            return Response(
+                {
+                    "error": f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
+                },
+                status=400,
+            )
 
         try:
             # Save file with unique name
             import uuid
+
             unique_filename = f"{uuid.uuid4()}{file_extension}"
             file_path = f"leave_attachments/{unique_filename}"
-            
+
             saved_path = default_storage.save(file_path, file)
-            file_url = request.build_absolute_uri(settings.MEDIA_URL + saved_path)
-            
-            return Response({
-                "message": "File uploaded successfully.",
-                "file_url": file_url,
-                "file_path": saved_path,
-                "original_name": file.name
-            })
-            
+            file_url = request.build_absolute_uri(
+                settings.MEDIA_URL + saved_path
+            )
+
+            return Response(
+                {
+                    "message": "File uploaded successfully.",
+                    "file_url": file_url,
+                    "file_path": saved_path,
+                    "original_name": file.name,
+                }
+            )
+
         except Exception as e:
             return Response({"error": "Failed to upload file."}, status=500)

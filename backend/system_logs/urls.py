@@ -1,7 +1,7 @@
 from django.urls import path
 
-from .views import SystemLogActorView, SystemLogDetailView, SystemLogExportView, SystemLogListView
-
+from .views import (SystemLogActorView, SystemLogDetailView,
+                    SystemLogExportView, SystemLogListView)
 
 urlpatterns = [
     path("actors/", SystemLogActorView.as_view(), name="system-log-actors"),

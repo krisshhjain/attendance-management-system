@@ -1,11 +1,13 @@
 from datetime import date, timedelta
 from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
 from attendance.models import Attendance
 from holidays.services import is_working_day
+
 from .models import LeavePolicy, LeaveRequest, LeaveType
 
 
@@ -60,23 +62,38 @@ def calculate_employee_leave_balances(employee, year=None):
             # Fallback to any active policy for today
             policy = get_active_policy(employee, lt)
 
-        entitlement = Decimal(str(policy.annual_entitlement)) if policy else Decimal("0.0")
+        entitlement = (
+            Decimal(str(policy.annual_entitlement))
+            if policy
+            else Decimal("0.0")
+        )
         allow_carry_forward = policy.allow_carry_forward if policy else False
-        max_carry_forward = Decimal(str(policy.max_carry_forward)) if policy else Decimal("0.0")
+        max_carry_forward = (
+            Decimal(str(policy.max_carry_forward))
+            if policy
+            else Decimal("0.0")
+        )
 
         # Calculate carried forward from previous year if policy allows
         carried_forward = Decimal("0.0")
         if allow_carry_forward:
-            prev_year_policy = get_active_policy(employee, lt, target_date=date(year - 1, 1, 1))
+            prev_year_policy = get_active_policy(
+                employee, lt, target_date=date(year - 1, 1, 1)
+            )
             if prev_year_policy:
-                prev_entitlement = Decimal(str(prev_year_policy.annual_entitlement))
+                prev_entitlement = Decimal(
+                    str(prev_year_policy.annual_entitlement)
+                )
                 prev_approved = LeaveRequest.objects.filter(
                     employee=employee,
                     leave_type=lt,
                     status="APPROVED",
                     start_date__year=year - 1,
                 )
-                prev_used = sum([req.duration_days for req in prev_approved], Decimal("0.0"))
+                prev_used = sum(
+                    [req.duration_days for req in prev_approved],
+                    Decimal("0.0"),
+                )
                 unused_prev = max(Decimal("0.0"), prev_entitlement - prev_used)
                 carried_forward = min(unused_prev, max_carry_forward)
 
@@ -87,7 +104,9 @@ def calculate_employee_leave_balances(employee, year=None):
             status="APPROVED",
             start_date__year=year,
         )
-        used = sum([req.duration_days for req in approved_requests], Decimal("0.0"))
+        used = sum(
+            [req.duration_days for req in approved_requests], Decimal("0.0")
+        )
 
         # Pending for current year
         pending_requests = LeaveRequest.objects.filter(
@@ -96,35 +115,59 @@ def calculate_employee_leave_balances(employee, year=None):
             status="PENDING",
             start_date__year=year,
         )
-        pending = sum([req.duration_days for req in pending_requests], Decimal("0.0"))
+        pending = sum(
+            [req.duration_days for req in pending_requests], Decimal("0.0")
+        )
 
         available = max(Decimal("0.0"), entitlement + carried_forward - used)
 
-        balances.append({
-            "leave_type_id": lt.id,
-            "leave_type_name": lt.name,
-            "leave_type_code": lt.code,
-            "is_paid": lt.is_paid,
-            "annual_entitlement": float(entitlement),
-            "carried_forward": float(carried_forward),
-            "used": float(used),
-            "pending": float(pending),
-            "available": float(available),
-            "requires_document": policy.requires_document if policy else lt.requires_document,
-            "allow_half_day": policy.allow_half_day if policy else lt.allow_half_day,
-            "max_consecutive_days": policy.max_consecutive_days if policy else 10,
-            "min_notice_days": policy.min_notice_days if policy else lt.min_notice_days,
-        })
+        balances.append(
+            {
+                "leave_type_id": lt.id,
+                "leave_type_name": lt.name,
+                "leave_type_code": lt.code,
+                "is_paid": lt.is_paid,
+                "annual_entitlement": float(entitlement),
+                "carried_forward": float(carried_forward),
+                "used": float(used),
+                "pending": float(pending),
+                "available": float(available),
+                "requires_document": policy.requires_document
+                if policy
+                else lt.requires_document,
+                "allow_half_day": policy.allow_half_day
+                if policy
+                else lt.allow_half_day,
+                "max_consecutive_days": policy.max_consecutive_days
+                if policy
+                else 10,
+                "min_notice_days": policy.min_notice_days
+                if policy
+                else lt.min_notice_days,
+            }
+        )
 
     return balances
 
 
-def validate_leave_request(employee, leave_type, start_date, end_date, day_type="FULL_DAY", reason="", attachment=""):
+def validate_leave_request(
+    employee,
+    leave_type,
+    start_date,
+    end_date,
+    day_type="FULL_DAY",
+    reason="",
+    attachment="",
+):
     if not employee.is_active:
-        raise ValidationError("Inactive employee cannot submit leave requests.")
+        raise ValidationError(
+            "Inactive employee cannot submit leave requests."
+        )
 
     if not leave_type.is_active:
-        raise ValidationError(f"Leave type '{leave_type.name}' is currently inactive.")
+        raise ValidationError(
+            f"Leave type '{leave_type.name}' is currently inactive."
+        )
 
     if start_date > end_date:
         raise ValidationError("Start date cannot be after end date.")
@@ -132,39 +175,59 @@ def validate_leave_request(employee, leave_type, start_date, end_date, day_type=
     today = timezone.localdate()
 
     if not leave_type.allow_past_dates and start_date < today:
-        raise ValidationError("Leave request for past dates is not allowed for this leave type.")
+        raise ValidationError(
+            "Leave request for past dates is not allowed for this leave type."
+        )
 
     if not leave_type.allow_future_dates and start_date > today:
-        raise ValidationError("Leave request for future dates is not allowed for this leave type.")
+        raise ValidationError(
+            "Leave request for future dates is not allowed for this leave type."
+        )
 
     if day_type in ("FIRST_HALF", "SECOND_HALF"):
         if not leave_type.allow_half_day:
-            raise ValidationError(f"Half-day leave is not allowed for {leave_type.name}.")
+            raise ValidationError(
+                f"Half-day leave is not allowed for {leave_type.name}."
+            )
         if start_date != end_date:
-            raise ValidationError("Half-day leave can only be requested for a single day.")
+            raise ValidationError(
+                "Half-day leave can only be requested for a single day."
+            )
 
     duration = calculate_working_days(start_date, end_date, day_type)
     if duration <= Decimal("0.0"):
-        raise ValidationError("Selected date range contains no working days (e.g. weekend only).")
+        raise ValidationError(
+            "Selected date range contains no working days (e.g. weekend only)."
+        )
 
     policy = get_active_policy(employee, leave_type, target_date=start_date)
 
     # Minimum notice period check
-    min_notice = policy.min_notice_days if policy else leave_type.min_notice_days
+    min_notice = (
+        policy.min_notice_days if policy else leave_type.min_notice_days
+    )
     if min_notice > 0 and start_date > today:
         days_notice = (start_date - today).days
         if days_notice < min_notice:
-            raise ValidationError(f"Minimum notice period for {leave_type.name} is {min_notice} days.")
+            raise ValidationError(
+                f"Minimum notice period for {leave_type.name} is {min_notice} days."
+            )
 
     # Max consecutive days check
     max_consecutive = policy.max_consecutive_days if policy else 10
     if duration > max_consecutive:
-        raise ValidationError(f"Maximum consecutive days allowed for {leave_type.name} is {max_consecutive} days.")
+        raise ValidationError(
+            f"Maximum consecutive days allowed for {leave_type.name} is {max_consecutive} days."
+        )
 
     # Documentation requirement check
-    req_doc = policy.requires_document if policy else leave_type.requires_document
+    req_doc = (
+        policy.requires_document if policy else leave_type.requires_document
+    )
     if req_doc and not attachment:
-        raise ValidationError(f"Supporting documentation is required for {leave_type.name}.")
+        raise ValidationError(
+            f"Supporting documentation is required for {leave_type.name}."
+        )
 
     # Overlapping leave check (PENDING or APPROVED)
     overlapping = LeaveRequest.objects.filter(
@@ -174,16 +237,25 @@ def validate_leave_request(employee, leave_type, start_date, end_date, day_type=
         end_date__gte=start_date,
     )
     if overlapping.exists():
-        raise ValidationError("You already have a pending or approved leave request for this date range.")
+        raise ValidationError(
+            "You already have a pending or approved leave request for this date range."
+        )
 
     # Available balance check for paid leave types
     if leave_type.is_paid:
-        year_balances = calculate_employee_leave_balances(employee, year=start_date.year)
-        lt_balance = next((b for b in year_balances if b["leave_type_id"] == leave_type.id), None)
+        year_balances = calculate_employee_leave_balances(
+            employee, year=start_date.year
+        )
+        lt_balance = next(
+            (b for b in year_balances if b["leave_type_id"] == leave_type.id),
+            None,
+        )
         if lt_balance:
             available = Decimal(str(lt_balance["available"]))
             if duration > available:
-                raise ValidationError(f"Insufficient leave balance for {leave_type.name}. Requested: {duration} days, Available: {available} days.")
+                raise ValidationError(
+                    f"Insufficient leave balance for {leave_type.name}. Requested: {duration} days, Available: {available} days."
+                )
 
     return duration
 
@@ -193,24 +265,47 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
     req = LeaveRequest.objects.select_for_update().get(id=leave_request.id)
 
     if req.status != "PENDING":
-        raise ValidationError(f"Cannot approve leave request with status '{req.status}'. Only PENDING requests can be approved.")
+        raise ValidationError(
+            f"Cannot approve leave request with status '{req.status}'. Only PENDING requests can be approved."
+        )
 
     # Re-evaluate pending requests against current active holidays. This covers
     # holidays added after submission; already-approved requests retain their
     # approval-time duration as a historical balance snapshot.
     prior_duration = req.duration_days
-    current_duration = calculate_working_days(req.start_date, req.end_date, req.day_type)
+    current_duration = calculate_working_days(
+        req.start_date, req.end_date, req.day_type
+    )
     if current_duration <= Decimal("0.0"):
-        raise ValidationError("This leave request now contains no working days because its dates are non-working days.")
+        raise ValidationError(
+            "This leave request now contains no working days because its dates are non-working days."
+        )
     if current_duration != prior_duration:
-        policy = get_active_policy(req.employee, req.leave_type, target_date=req.start_date)
+        policy = get_active_policy(
+            req.employee, req.leave_type, target_date=req.start_date
+        )
         max_consecutive = policy.max_consecutive_days if policy else 10
         if current_duration > max_consecutive:
-            raise ValidationError(f"Maximum consecutive days allowed for {req.leave_type.name} is {max_consecutive} days.")
+            raise ValidationError(
+                f"Maximum consecutive days allowed for {req.leave_type.name} is {max_consecutive} days."
+            )
         if req.leave_type.is_paid:
-            balances = calculate_employee_leave_balances(req.employee, year=req.start_date.year)
-            leave_balance = next((row for row in balances if row["leave_type_id"] == req.leave_type_id), None)
-            available = Decimal(str(leave_balance["available"])) if leave_balance else Decimal("0.0")
+            balances = calculate_employee_leave_balances(
+                req.employee, year=req.start_date.year
+            )
+            leave_balance = next(
+                (
+                    row
+                    for row in balances
+                    if row["leave_type_id"] == req.leave_type_id
+                ),
+                None,
+            )
+            available = (
+                Decimal(str(leave_balance["available"]))
+                if leave_balance
+                else Decimal("0.0")
+            )
             if current_duration > available:
                 raise ValidationError(
                     f"Insufficient leave balance for {req.leave_type.name}. "
@@ -264,10 +359,14 @@ def deny_leave_request(leave_request, reviewer_user, remarks):
     req = LeaveRequest.objects.select_for_update().get(id=leave_request.id)
 
     if req.status != "PENDING":
-        raise ValidationError(f"Cannot deny leave request with status '{req.status}'. Only PENDING requests can be denied.")
+        raise ValidationError(
+            f"Cannot deny leave request with status '{req.status}'. Only PENDING requests can be denied."
+        )
 
     if not remarks or not remarks.strip():
-        raise ValidationError("Reviewer remarks are required when denying a leave request.")
+        raise ValidationError(
+            "Reviewer remarks are required when denying a leave request."
+        )
 
     req.status = "DENIED"
     req.reviewed_at = timezone.now()
@@ -305,9 +404,11 @@ def cancel_leave_request(leave_request, user):
     is_admin = bool(user and (user.is_staff or user.is_superuser))
     if not is_admin:
         if req.status not in ["PENDING", "APPROVED"]:
-            raise ValidationError("Employees can only cancel PENDING or APPROVED leave requests.")
+            raise ValidationError(
+                "Employees can only cancel PENDING or APPROVED leave requests."
+            )
 
-    was_approved = (req.status == "APPROVED")
+    was_approved = req.status == "APPROVED"
 
     req.status = "CANCELLED"
     req.cancelled_at = timezone.now()

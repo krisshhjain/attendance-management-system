@@ -8,7 +8,6 @@ from django.db import models
 
 from .models import SystemLog
 
-
 SYSTEM_ACTOR = "SYSTEM"
 MAX_DEPTH = 5
 MAX_ITEMS = 50
@@ -169,7 +168,9 @@ def _sanitize_json(value, depth=0):
     if isinstance(value, str):
         return _sanitize_string(value)
     if isinstance(value, (datetime, date, time, UUID, Decimal)):
-        return _bounded_string(value.isoformat() if hasattr(value, "isoformat") else value)
+        return _bounded_string(
+            value.isoformat() if hasattr(value, "isoformat") else value
+        )
     if isinstance(value, Mapping):
         sanitized = {}
         for index, (key, item) in enumerate(value.items()):
@@ -184,7 +185,9 @@ def _sanitize_json(value, depth=0):
             )
         return sanitized
     if isinstance(value, (list, tuple, set)):
-        items = [_sanitize_json(item, depth + 1) for item in list(value)[:MAX_ITEMS]]
+        items = [
+            _sanitize_json(item, depth + 1) for item in list(value)[:MAX_ITEMS]
+        ]
         if len(value) > MAX_ITEMS:
             items.append("[TRUNCATED_ITEMS]")
         return items

@@ -10,10 +10,12 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-from pathlib import Path
 import os
-from dotenv import load_dotenv
+from pathlib import Path
+
 from celery.schedules import crontab
+from dotenv import load_dotenv
+
 from config.security import required_secret, validate_production_configuration
 
 load_dotenv()
@@ -35,7 +37,9 @@ DJANGO_ENV = os.environ.get("DJANGO_ENV", "development").strip().lower()
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").strip().lower() == "true"
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    for host in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(
+        ","
+    )
     if host.strip()
 ]
 
@@ -68,45 +72,47 @@ REST_FRAMEWORK = {
 }
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'system_logs.middleware.RequestContextMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "system_logs.middleware.RequestContextMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+WSGI_APPLICATION = "config.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "attendance_password")
-CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672//")
+CELERY_BROKER_URL = os.environ.get(
+    "CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672//"
+)
 
 validate_production_configuration(
     DJANGO_ENV,
@@ -116,7 +122,9 @@ validate_production_configuration(
     CELERY_BROKER_URL,
     os.environ.get("HR_COPILOT_LLM_PROVIDER", "local_ollama_qwen"),
     os.environ.get("HR_COPILOT_LLM_URL", "http://127.0.0.1:11434"),
-    os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"),
+    os.environ.get(
+        "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+    ),
 )
 
 DATABASES = {
@@ -136,16 +144,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -153,9 +161,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'Asia/Kolkata'
+TIME_ZONE = "Asia/Kolkata"
 
 USE_I18N = True
 
@@ -173,14 +181,23 @@ EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "false").lower() == "true"
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "webmaster@localhost")
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL", "webmaster@localhost"
+)
 
 # Celery Configuration
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND") or None
 CELERY_TIMEZONE = os.environ.get("CELERY_TIMEZONE", "Asia/Kolkata")
-CELERY_WORKER_ENABLE_REMOTE_CONTROL = os.environ.get("CELERY_WORKER_ENABLE_REMOTE_CONTROL", "false").lower() == "true"
-CELERY_WORKER_MINGLE = os.environ.get("CELERY_WORKER_MINGLE", "false").lower() == "true"
-CELERY_WORKER_GOSSIP = os.environ.get("CELERY_WORKER_GOSSIP", "false").lower() == "true"
+CELERY_WORKER_ENABLE_REMOTE_CONTROL = (
+    os.environ.get("CELERY_WORKER_ENABLE_REMOTE_CONTROL", "false").lower()
+    == "true"
+)
+CELERY_WORKER_MINGLE = (
+    os.environ.get("CELERY_WORKER_MINGLE", "false").lower() == "true"
+)
+CELERY_WORKER_GOSSIP = (
+    os.environ.get("CELERY_WORKER_GOSSIP", "false").lower() == "true"
+)
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_BEAT_SCHEDULE = {
@@ -193,27 +210,32 @@ CELERY_BEAT_SCHEDULE = {
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "static/"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Media files (Uploads)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # Facial Recognition Service
-FACE_SERVICE_URL = os.environ.get('FACE_SERVICE_URL', 'http://127.0.0.1:8001')
+FACE_SERVICE_URL = os.environ.get("FACE_SERVICE_URL", "http://127.0.0.1:8001")
 FACE_SERVICE_TOKEN = os.environ.get("FACE_SERVICE_TOKEN", "")
 
 # HR Copilot LLM Configuration
 # Force enable local Qwen3-8B model for natural language processing
-os.environ.setdefault('HR_COPILOT_LLM_PROVIDER', 'local_ollama_qwen')
-os.environ.setdefault('HR_COPILOT_LLM_URL', 'http://127.0.0.1:11434')
-os.environ.setdefault('HR_COPILOT_LLM_MODEL', 'qwen3-8b-q4km-local')
-os.environ.setdefault('HR_COPILOT_LLM_TIMEOUT_SECONDS', '120')  # Increased timeout for Qwen3-8B
-os.environ.setdefault('HR_COPILOT_LLM_TEMPERATURE', '0')  # Faster, deterministic responses
-os.environ.setdefault('HR_COPILOT_LLM_NUM_CTX', '8192')  # Ollama context window
-
+os.environ.setdefault("HR_COPILOT_LLM_PROVIDER", "local_ollama_qwen")
+os.environ.setdefault("HR_COPILOT_LLM_URL", "http://127.0.0.1:11434")
+os.environ.setdefault("HR_COPILOT_LLM_MODEL", "qwen3-8b-q4km-local")
+os.environ.setdefault(
+    "HR_COPILOT_LLM_TIMEOUT_SECONDS", "120"
+)  # Increased timeout for Qwen3-8B
+os.environ.setdefault(
+    "HR_COPILOT_LLM_TEMPERATURE", "0"
+)  # Faster, deterministic responses
+os.environ.setdefault(
+    "HR_COPILOT_LLM_NUM_CTX", "8192"
+)  # Ollama context window

@@ -14,14 +14,20 @@ def get_manager_scope(manager):
 
     if not getattr(manager, "is_authenticated", False):
         return {"unrestricted": False, "sections": set(), "departments": set()}
-    if not getattr(manager, "is_system_admin", False) or not getattr(manager, "is_active", False):
+    if not getattr(manager, "is_system_admin", False) or not getattr(
+        manager, "is_active", False
+    ):
         return {"unrestricted": False, "sections": set(), "departments": set()}
 
     records = ManagerScope.objects.filter(manager=manager, is_active=True)
     return {
         "unrestricted": False,
-        "sections": {r.value for r in records if r.scope_type == ManagerScope.SECTION},
-        "departments": {r.value for r in records if r.scope_type == ManagerScope.DEPARTMENT},
+        "sections": {
+            r.value for r in records if r.scope_type == ManagerScope.SECTION
+        },
+        "departments": {
+            r.value for r in records if r.scope_type == ManagerScope.DEPARTMENT
+        },
     }
 
 
@@ -45,6 +51,7 @@ def filter_employees_by_manager_scope(manager, queryset):
     if not scope["sections"] and not scope["departments"]:
         return queryset.none()
     from django.db.models import Q
+
     return queryset.filter(
         Q(employment_type="INTERN", section__in=scope["sections"])
         | Q(employment_type="PERMANENT", department__in=scope["departments"])
