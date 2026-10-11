@@ -1,41 +1,34 @@
 from datetime import datetime
-from django.utils import timezone
+
 from django.db import IntegrityError, transaction
-from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
+from django.utils import timezone
+from rest_framework.permissions import (AllowAny, BasePermission,
+                                        IsAuthenticated)
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from leave_management.permissions import (
-    IsEmployee, 
-    IsAdminOrAppAdmin, 
-    IsManagerOrAdmin,
-    IsSuperAdmin,
-)
 
+from accounts.scope_service import (employee_in_manager_scope,
+                                    filter_employees_by_manager_scope)
 from employees.models import Employee
-from .models import (
-    Attendance,
-    AttendanceEvent,
-    AttendanceAuditLog,
-    Shift,
-    RegularizationRequest,
-    RegularizationRequestDay,
-    RegularizationQuotaPolicy,
-    attendance_day_end,
-    calculate_completed_working_duration,
-    calculate_working_duration,
-    get_effective_attendance_events,
-    OfficeLocation,
-)
-from .geofence import validate_attendance_geofence
-from .face_service import find_closest_match, verify_employee_face, FaceExtractionError, FaceLivenessError
+from holidays.services import (attendance_required, get_day_classification,
+                               get_day_classifications, is_company_holiday,
+                               is_working_day)
 from leave_management.models import LeaveRequest
-from notifications.services import (
-    queue_manager_notifications_after_commit,
-    queue_notification_after_commit,
-)
+from leave_management.permissions import (IsAdminOrAppAdmin, IsEmployee,
+                                          IsManagerOrAdmin, IsSuperAdmin)
+from notifications.services import (queue_manager_notifications_after_commit,
+                                    queue_notification_after_commit)
 from system_logs.services import record_event
-from accounts.scope_service import employee_in_manager_scope, filter_employees_by_manager_scope
-from holidays.services import attendance_required, get_day_classification, get_day_classifications, is_company_holiday, is_working_day
+
+from .face_service import (FaceExtractionError, FaceLivenessError,
+                           find_closest_match, verify_employee_face)
+from .geofence import validate_attendance_geofence
+from .models import (Attendance, AttendanceAuditLog, AttendanceEvent,
+                     OfficeLocation, RegularizationQuotaPolicy,
+                     RegularizationRequest, RegularizationRequestDay, Shift,
+                     attendance_day_end, calculate_completed_working_duration,
+                     calculate_working_duration,
+                     get_effective_attendance_events)
 
 
 def _regularization_created_message(request_obj):
@@ -173,6 +166,8 @@ def _get_previous_incomplete_attendance(employee, target_date):
                 "needs_regularization": True,
             }
     return None
+
+
 class CheckInView(APIView):
     permission_classes = [IsEmployee]
     app_access_key = "attendance"
@@ -275,6 +270,7 @@ class CheckInView(APIView):
             status=201,
         )
 
+
 class CheckOutView(APIView):
     permission_classes = [IsEmployee]
     app_access_key = "attendance"
@@ -324,7 +320,7 @@ class CheckOutView(APIView):
 
         lat, lon, acc = coords
         now = timezone.now()
-        
+
         # Get effective shift for event recording
         effective_shift = employee.get_effective_shift()
 
@@ -365,6 +361,7 @@ class CheckOutView(APIView):
             },
             status=200,
         )
+
 
 class TodayAttendanceView(APIView):
     permission_classes = [IsEmployee]
@@ -436,6 +433,7 @@ class TodayAttendanceView(APIView):
             "holiday_name": day_classification["holiday_name"],
             "previous_incomplete_attendance": previous_incomplete,
         })
+
 
 class MyTeamView(APIView):
     """
@@ -521,7 +519,7 @@ class MyTeamView(APIView):
         checked_in_count = 0
         yet_to_check_in_count = 0
         on_leave_count = 0
-        
+
         # Check if today is a weekend (Saturday=5, Sunday=6)
         day_classification = get_day_classification(today)
 
@@ -602,7 +600,7 @@ class AttendanceHistoryView(APIView):
     def get(self, request):
         # Check if user is a manager or admin
         is_manager_or_admin = request.user.is_staff or request.user.is_system_admin
-        
+
         if is_manager_or_admin:
             manager_scoped = request.user.is_system_admin and not request.user.is_superuser
             employee_scope = filter_employees_by_manager_scope(request.user, Employee.objects.all()) if manager_scoped else None
@@ -657,10 +655,11 @@ class AttendanceHistoryView(APIView):
                 record["employee_id"] = attendance.employee.id
                 record["employee_name"] = f"{attendance.employee.user.first_name} {attendance.employee.user.last_name}"
                 record["employee_email"] = attendance.employee.user.email
-            
+
             data.append(record)
 
         return Response(data)
+
 
 class AdminAttendanceView(APIView):
     """Manager and Admin can view attendance records."""
@@ -691,7 +690,7 @@ class AdminAttendanceView(APIView):
         for emp in employees:
             att = attendance_map.get(emp.id)
             events = get_effective_attendance_events(emp, filter_date)
-            
+
             # Determine actual display status
             if att:
                 if att.status == "LEAVE":
@@ -703,10 +702,10 @@ class AdminAttendanceView(APIView):
                 elif att.check_in is None:
                     status_display = "ABSENT"
                 else:
-                    status_display = att.status # PRESENT or INCOMPLETE
+                    status_display = att.status  # PRESENT or INCOMPLETE
             else:
                 status_display = day_classification["day_type"] if day_classification["day_type"] != "WORKING_DAY" else "ABSENT"
-                
+
             data.append({
                 "employee": emp.user.email,
                 "employee_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
@@ -730,7 +729,7 @@ class AdminAttendanceView(APIView):
             0 if x["status"] == "PRESENT" else 1 if x["status"] == "INCOMPLETE" else 2,
             x["employee_name"]
         ))
-        
+
         return Response(data)
 
 
@@ -802,6 +801,7 @@ class AdminDashboardView(APIView):
             "day_type": day_classification["day_type"],
             "holiday_name": day_classification["holiday_name"],
         })
+
 
 class AdminResetAttendanceView(APIView):
     """Only SuperUser can reset attendance - Manager cannot."""
@@ -892,6 +892,7 @@ class AdminResetAttendanceView(APIView):
 
         return Response({"message": "Attendance successfully reset for today."})
 
+
 class AdminEditAttendanceView(APIView):
     """SuperUser-only past attendance correction."""
     permission_classes = [IsSuperAdmin]
@@ -916,7 +917,7 @@ class AdminEditAttendanceView(APIView):
         if str(status).upper() == "ABSENT" and not attendance_required(target_date):
             day = get_day_classification(target_date)
             return Response({"error": f"Cannot mark an employee absent on a {day['day_type'].lower()} date."}, status=400)
-            
+
         if target_date > timezone.localdate():
             return Response({"error": "Cannot edit future attendance."}, status=400)
 
@@ -1029,6 +1030,7 @@ class AdminEditAttendanceView(APIView):
 
         return Response({"message": "Attendance successfully edited."})
 
+
 class AdminForceCheckoutView(APIView):
     """Manager and Admin can force checkout."""
     permission_classes = [IsManagerOrAdmin]
@@ -1043,7 +1045,7 @@ class AdminForceCheckoutView(APIView):
                 target_date = date_type.fromisoformat(date_param)
             except ValueError:
                 return Response({"error": "Invalid date format"}, status=400)
-                
+
         is_all = request.data.get("all", False)
         employee_email = request.data.get("employee")
 
@@ -1115,8 +1117,10 @@ class AdminForceCheckoutView(APIView):
                 after_state=_attendance_log_state(att),
             )
             count += 1
-            
+
         return Response({"message": f"Successfully forced check-out for {count} records", "count": count})
+
+
 class WebsiteFacialCheckInView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1185,7 +1189,7 @@ class WebsiteFacialCheckInView(APIView):
 
         lat, lon, acc = coords
         now = timezone.now()
-        
+
         # Get effective shift for event recording
         effective_shift = employee.get_effective_shift()
 
@@ -1224,6 +1228,7 @@ class WebsiteFacialCheckInView(APIView):
             },
             status=201,
         )
+
 
 class WebsiteFacialCheckOutView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1287,7 +1292,7 @@ class WebsiteFacialCheckOutView(APIView):
 
         lat, lon, acc = coords
         now = timezone.now()
-        
+
         # Get effective shift for event recording
         effective_shift = employee.get_effective_shift()
 
@@ -1514,7 +1519,7 @@ class KioskFaceCheckOutView(APIView):
             )
 
         now = timezone.now()
-        
+
         # Get effective shift for event recording
         effective_shift = employee.get_effective_shift()
 
@@ -1555,6 +1560,7 @@ class KioskFaceCheckOutView(APIView):
             },
             status=200,
         )
+
 
 class FaceVerifyView(APIView):
     permission_classes = [AllowAny]
@@ -1632,19 +1638,20 @@ class FaceVerifyView(APIView):
 # SHIFT ASSIGNMENT VIEWS
 # ============================================================================
 
+
 class ShiftListView(APIView):
     """List active shifts configured for employee's employment type."""
     permission_classes = [IsEmployee]
 
     def get(self, request):
         employee = request.user.employee
-        
+
         # Get shifts configured for this employee's employment type
         shifts = Shift.objects.filter(
             employment_type=employee.employment_type,
             is_active=True
         ).order_by("code")
-        
+
         data = [
             {
                 "id": s.id,
@@ -1655,7 +1662,7 @@ class ShiftListView(APIView):
             }
             for s in shifts
         ]
-        
+
         return Response({
             "shifts": data,
             "count": len(data),
@@ -1669,30 +1676,30 @@ class EmployeeShiftSelfAssignView(APIView):
 
     def post(self, request):
         employee = request.user.employee
-        
+
         # Check if already has shift
         if employee.shift is not None:
             return Response(
                 {"error": "You already have a shift assigned. Contact admin to change it."},
                 status=400,
             )
-        
+
         shift_id = request.data.get("shift_id")
         if not shift_id:
             return Response({"error": "shift_id is required"}, status=400)
-        
+
         try:
             shift = Shift.objects.get(id=shift_id, is_active=True)
         except Shift.DoesNotExist:
             return Response({"error": "Invalid or inactive shift"}, status=400)
-        
+
         # Validate shift belongs to employee's employment type
         if shift.employment_type and shift.employment_type != employee.employment_type:
             return Response(
                 {"error": f"This shift is configured for {shift.employment_type} employees only"},
                 status=400,
             )
-        
+
         # Atomic check-and-set to prevent race conditions
         before_state = {"shift": None}
         with transaction.atomic():
@@ -1719,7 +1726,7 @@ class EmployeeShiftSelfAssignView(APIView):
             before_state=before_state,
             after_state={"shift": _shift_log_state(shift)},
         )
-        
+
         return Response(
             {
                 "message": "Shift self-assigned successfully",
@@ -1742,20 +1749,20 @@ class AdminEmployeeShiftAssignView(APIView):
     def post(self, request):
         employee_email = request.data.get("employee_email")
         shift_id = request.data.get("shift_id")  # null to remove
-        
+
         if not employee_email:
             return Response({"error": "employee_email is required"}, status=400)
-        
+
         try:
             employee = Employee.objects.get(user__email=employee_email)
         except Employee.DoesNotExist:
             return Response({"error": "Employee not found"}, status=404)
-            
+
         if getattr(request.user, "is_system_admin", False) and not request.user.is_superuser and not request.user.is_staff:
             from accounts.scope_service import employee_in_manager_scope
             if not employee_in_manager_scope(request.user, employee):
                 return Response({"error": "You do not have permission to manage this employee's shift"}, status=403)
-        
+
         before_state = {"shift": _shift_log_state(employee.shift)}
         shift = None
         if shift_id is not None:
@@ -1769,7 +1776,7 @@ class AdminEmployeeShiftAssignView(APIView):
         else:
             employee.shift = None
             message = f"Shift removed from {employee_email}"
-        
+
         employee.save(update_fields=["shift"])
         record_event(
             event_type="SHIFT_ASSIGNED",
@@ -1784,7 +1791,7 @@ class AdminEmployeeShiftAssignView(APIView):
             before_state=before_state,
             after_state={"shift": _shift_log_state(shift)},
         )
-        
+
         return Response({"message": message, "employee_email": employee_email, "shift_id": shift_id})
 
 
@@ -1797,10 +1804,10 @@ class AdminEmployeeShiftBulkAssignView(APIView):
         employee_emails = request.data.get("employee_emails", [])  # list
         section = request.data.get("section")  # optional filter
         employment_type = request.data.get("employment_type")  # optional filter
-        
+
         if shift_id is None and not employee_emails and not section and not employment_type:
             return Response({"error": "Provide shift_id and at least one target filter"}, status=400)
-        
+
         if shift_id is not None:
             try:
                 shift = Shift.objects.get(id=shift_id)
@@ -1808,13 +1815,14 @@ class AdminEmployeeShiftBulkAssignView(APIView):
                 return Response({"error": "Shift not found"}, status=400)
         else:
             shift = None  # remove shift
-        
+
         # Build queryset
         queryset = Employee.objects.filter(is_active=True)
         if getattr(request.user, "is_system_admin", False) and not request.user.is_superuser and not request.user.is_staff:
-            from accounts.scope_service import filter_employees_by_manager_scope
+            from accounts.scope_service import \
+                filter_employees_by_manager_scope
             queryset = filter_employees_by_manager_scope(request.user, queryset)
-            
+
         if employee_emails:
             queryset = queryset.filter(user__email__in=employee_emails)
         if section:
@@ -1849,7 +1857,7 @@ class AdminEmployeeShiftBulkAssignView(APIView):
             after_state=after_state,
             metadata={"count": count},
         )
-        
+
         action = "assigned" if shift else "removed from"
         return Response({"message": f"Shift {action} {count} employees", "count": count})
 
@@ -1860,10 +1868,10 @@ class MyShiftView(APIView):
 
     def get(self, request):
         employee = request.user.employee
-        
+
         # Get effective shift (assigned or single configured shift)
         effective_shift = employee.get_effective_shift()
-        
+
         if effective_shift is None:
             # Check if there are configured shifts for this employment type
             from attendance.models import Shift
@@ -1871,10 +1879,10 @@ class MyShiftView(APIView):
                 employment_type=employee.employment_type,
                 is_active=True
             ).count()
-            
+
             if configured_count == 0:
                 return Response({
-                    "shift": None, 
+                    "shift": None,
                     "message": "No shifts configured for your employment type",
                     "requires_configuration": True
                 })
@@ -1885,14 +1893,15 @@ class MyShiftView(APIView):
                     "requires_selection": True,
                     "available_shifts_count": configured_count
                 })
-        
+
         shift = effective_shift
         # TimeField values may be datetime.time or string depending on DB
+
         def fmt_time(t):
             if hasattr(t, 'strftime'):
                 return t.strftime("%H:%M")
             return str(t)
-        
+
         return Response({
             "shift": {
                 "id": shift.id,
@@ -1917,7 +1926,7 @@ class AdminShiftConfigurationView(APIView):
     def get(self, request):
         """Get all shifts grouped by employment type."""
         shifts = Shift.objects.filter(is_active=True).order_by("employment_type", "code")
-        
+
         # Group by employment type
         config = {
             "PERMANENT": [],
@@ -1925,7 +1934,7 @@ class AdminShiftConfigurationView(APIView):
             "INTERN": [],
             "UNASSIGNED": []  # Legacy shifts with no employment_type
         }
-        
+
         for shift in shifts:
             emp_type = shift.employment_type or "UNASSIGNED"
             config[emp_type].append({
@@ -1935,20 +1944,20 @@ class AdminShiftConfigurationView(APIView):
                 "start_time": shift.start_time.strftime("%H:%M"),
                 "end_time": shift.end_time.strftime("%H:%M"),
             })
-        
+
         return Response({
             "configuration": config,
             "employment_types": ["PERMANENT", "CONTRACT", "INTERN"]
         })
-    
+
     def post(self, request):
         """Configure shifts for an employment type."""
         employment_type = request.data.get("employment_type")
         shifts_data = request.data.get("shifts", [])
-        
+
         if not employment_type or employment_type not in ["PERMANENT", "CONTRACT", "INTERN"]:
             return Response({"error": "Valid employment_type required"}, status=400)
-        
+
         if not isinstance(shifts_data, list):
             return Response({"error": "shifts must be an array"}, status=400)
 
@@ -1959,11 +1968,11 @@ class AdminShiftConfigurationView(APIView):
                 is_active=True,
             )],
         }
-        
+
         with transaction.atomic():
             # Deactivate existing shifts for this employment type
             Shift.objects.filter(employment_type=employment_type, is_active=True).update(is_active=False)
-            
+
             # Create new shifts
             created_shifts = []
             for i, shift_data in enumerate(shifts_data):
@@ -1971,10 +1980,10 @@ class AdminShiftConfigurationView(APIView):
                 start_time = shift_data.get("start_time")
                 end_time = shift_data.get("end_time")
                 custom_code = shift_data.get("code", "").strip().upper()
-                
+
                 if not name:
                     return Response({"error": f"Shift {i+1}: name is required"}, status=400)
-                
+
                 try:
                     from datetime import time
                     if isinstance(start_time, str):
@@ -1985,7 +1994,7 @@ class AdminShiftConfigurationView(APIView):
                         end_time = time(hour, minute)
                 except (ValueError, AttributeError):
                     return Response({"error": f"Shift {i+1}: invalid time format (use HH:MM)"}, status=400)
-                
+
                 # Use custom code if provided, otherwise generate
                 if custom_code:
                     # Check if custom code is already in use
@@ -2000,7 +2009,7 @@ class AdminShiftConfigurationView(APIView):
                     while Shift.objects.filter(code=code).exists():
                         code = f"{base_code}_{counter}"
                         counter += 1
-                
+
                 shift = Shift.objects.create(
                     name=name,
                     code=code,
@@ -2016,7 +2025,7 @@ class AdminShiftConfigurationView(APIView):
                     "start_time": shift.start_time.strftime("%H:%M"),
                     "end_time": shift.end_time.strftime("%H:%M"),
                 })
-        
+
         record_event(
             event_type="SHIFT_CONFIGURATION_CHANGED",
             category="ADMINISTRATION",
@@ -2040,7 +2049,7 @@ class AdminShiftConfigurationView(APIView):
 class AdminAllShiftsView(APIView):
     """Manager and Admin can view all shifts."""
     permission_classes = [IsManagerOrAdmin]
-    
+
     def get(self, request):
         """Get all shifts for admin management (includes legacy shifts)."""
         shifts = Shift.objects.filter(is_active=True).order_by("employment_type", "code")
@@ -2061,6 +2070,7 @@ class AdminAllShiftsView(APIView):
 # REGULARIZATION REQUEST VIEWS
 # ============================================================================
 
+
 class RegularizationRequestCreateView(APIView):
     """Employee creates a regularization request."""
     permission_classes = [IsEmployee]
@@ -2072,13 +2082,13 @@ class RegularizationRequestCreateView(APIView):
                 {"error": "No employee profile associated with this account."},
                 status=403,
             )
-        
+
         employee = request.user.employee
 
         # Grouped requests use one parent with one validated detail per date.
         if request.data.get("days") is not None:
             return self._create_period_request(request, employee)
-        
+
         # Validate required fields
         attendance_date_str = request.data.get("attendance_date")
         request_type = request.data.get("request_type")
@@ -2086,13 +2096,13 @@ class RegularizationRequestCreateView(APIView):
         description = request.data.get("description", "").strip()
         requested_check_in_str = request.data.get("requested_check_in")
         requested_check_out_str = request.data.get("requested_check_out")
-        
+
         if not all([attendance_date_str, request_type, reason]):
             return Response(
                 {"error": "attendance_date, request_type, and reason are required."},
                 status=400,
             )
-        
+
         # Validate request type
         valid_types = [choice[0] for choice in RegularizationRequest.REQUEST_TYPES]
         if request_type not in valid_types:
@@ -2100,7 +2110,7 @@ class RegularizationRequestCreateView(APIView):
                 {"error": f"Invalid request_type. Must be one of: {valid_types}"},
                 status=400,
             )
-        
+
         # Parse attendance date
         try:
             from datetime import date as date_type
@@ -2110,10 +2120,11 @@ class RegularizationRequestCreateView(APIView):
                 {"error": "Invalid attendance_date format. Use YYYY-MM-DD."},
                 status=400,
             )
-        
+
         # Validate 48-hour rule
-        from django.utils import timezone
         import datetime as datetime_module
+
+        from django.utils import timezone
         now = timezone.localdate()
         max_allowed_date = now - datetime_module.timedelta(days=2)
 
@@ -2125,11 +2136,11 @@ class RegularizationRequestCreateView(APIView):
                 {"error": "Regularization requests are only allowed within 48 hours of the attendance date."},
                 status=400,
             )
-        
+
         # Parse requested times if provided
         requested_check_in = None
         requested_check_out = None
-        
+
         def parse_requested_time(value, field_name):
             try:
                 parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -2149,7 +2160,7 @@ class RegularizationRequestCreateView(APIView):
                     {"error": str(exc)},
                     status=400,
                 )
-        
+
         if requested_check_out_str:
             try:
                 requested_check_out = parse_requested_time(requested_check_out_str, "requested_check_out")
@@ -2165,7 +2176,7 @@ class RegularizationRequestCreateView(APIView):
             return Response({"error": "A requested check-out time is required for this request type."}, status=400)
         if not requested_check_in and not requested_check_out:
             return Response({"error": "At least one requested check-in or check-out time is required."}, status=400)
-        
+
         # Validate check-out is after check-in if both provided
         if requested_check_in and requested_check_out:
             if requested_check_out <= requested_check_in:
@@ -2173,7 +2184,7 @@ class RegularizationRequestCreateView(APIView):
                     {"error": "Requested check-out time must be after check-in time."},
                     status=400,
                 )
-        
+
         # Get existing attendance data for the date
         existing_check_in = None
         existing_check_out = None
@@ -2184,20 +2195,20 @@ class RegularizationRequestCreateView(APIView):
         except Attendance.DoesNotExist:
             # No existing attendance record - that's okay
             pass
-        
+
         # Check for existing pending request on the same date
         existing_request = RegularizationRequest.objects.filter(
             employee=employee,
             attendance_date=attendance_date,
             status="PENDING"
         ).first()
-        
+
         if existing_request:
             return Response(
                 {"error": "You already have a pending regularization request for this date."},
                 status=400,
             )
-        
+
         try:
             with transaction.atomic():
                 locked_employee = Employee.objects.select_for_update().get(pk=employee.pk)
@@ -2248,7 +2259,7 @@ class RegularizationRequestCreateView(APIView):
                 request=request,
                 after_state=_regularization_log_state(regularization_request),
             )
-            
+
             return Response({
                 "message": "Regularization request submitted successfully.",
                 "request_id": regularization_request.id,
@@ -2256,7 +2267,7 @@ class RegularizationRequestCreateView(APIView):
                 "attendance_date": regularization_request.attendance_date,
                 "request_type": regularization_request.request_type,
             }, status=201)
-            
+
         except IntegrityError:
             return Response(
                 {"error": "You already have a pending regularization request for this date."},
@@ -2271,6 +2282,7 @@ class RegularizationRequestCreateView(APIView):
     def _create_period_request(self, request, employee):
         import datetime as datetime_module
         from datetime import date as date_type
+
         from django.utils import timezone
         try:
             payload = request.data.get("days")
@@ -2288,7 +2300,7 @@ class RegularizationRequestCreateView(APIView):
             for item in payload:
                 day_date = date_type.fromisoformat(str(item.get("attendance_date", "")))
                 kind, reason = item.get("request_type"), str(item.get("reason", "")).strip()
-                
+
                 if day_date > today:
                     raise ValueError(f"{day_date}: future dates are not allowed.")
                 if period_type in ("WEEK", "MONTH"):
@@ -2297,13 +2309,14 @@ class RegularizationRequestCreateView(APIView):
                 else:
                     if day_date < earliest:
                         raise ValueError(f"{day_date}: date must be within the past 48 hours.")
-                        
+
                 if not is_working_day(day_date):
                     day = get_day_classification(day_date)
                     reason = "weekends" if day["day_type"] == "WEEKEND" else "company holidays"
                     raise ValueError(f"{day_date}: {reason} are not eligible for regularization.")
                 if kind not in valid_types or not reason:
                     raise ValueError(f"{day_date}: request type and reason are required.")
+
                 def parse_time(value, field):
                     if not value:
                         return None
@@ -2385,7 +2398,9 @@ class RegularizationRequestCreateView(APIView):
 
 
 def regularization_quota_usage(employee, current_date=None):
-    from datetime import datetime, date as date_type, timedelta
+    from datetime import date as date_type
+    from datetime import datetime, timedelta
+
     from django.utils import timezone
 
     current_date = current_date or timezone.localdate()
@@ -2481,7 +2496,8 @@ class RegularizationRequestListView(APIView):
         manager = request.user.is_staff or request.user.is_system_admin or request.user.is_superuser
         requests = RegularizationRequest.objects.select_related("employee__user", "reviewed_by")
         if manager:
-            from accounts.scope_service import filter_employees_by_manager_scope
+            from accounts.scope_service import \
+                filter_employees_by_manager_scope
             from employees.models import Employee
             scoped_employees = filter_employees_by_manager_scope(request.user, Employee.objects.all())
             requests = requests.filter(employee__in=scoped_employees)
@@ -2563,6 +2579,7 @@ class RegularizationRequestApproveView(APIView):
                         if is_company_holiday(row.attendance_date):
                             raise ValueError(f"Cannot approve regularization for company holiday {row.attendance_date}.")
                         item = by_id.get(row.id, {})
+
                         def parse(field, fallback):
                             value = item.get(field, fallback)
                             if value in (None, ""):
@@ -2659,16 +2676,16 @@ class RegularizationRequestApproveView(APIView):
 class RegularizationRequestRejectView(APIView):
     """Manager/SuperUser rejects a regularization request."""
     permission_classes = [IsManagerOrAdmin]
-    
+
     def post(self, request, request_id):
         rejection_reason = request.data.get("rejection_reason", "").strip()
-        
+
         if not rejection_reason:
             return Response(
                 {"error": "rejection_reason is required."},
                 status=400,
             )
-        
+
         try:
             with transaction.atomic():
                 regularization_request = RegularizationRequest.objects.select_for_update().select_related(
@@ -2725,6 +2742,7 @@ class RegularizationRequestRejectView(APIView):
             "employee_name": f"{regularization_request.employee.user.first_name} {regularization_request.employee.user.last_name}",
             "attendance_date": regularization_request.attendance_date,
         })
+
 
 class OfficeLocationListCreateView(APIView):
     permission_classes = [IsAuthenticated]
