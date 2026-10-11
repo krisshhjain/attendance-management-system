@@ -123,4 +123,5 @@ def test_local_provider_rejects_redirects_to_other_hosts():
         redirector.server_close()
         destination.server_close()
 
-    assert forwarded_requests == []
+    if forwarded_requests:
+        pytest.fail("The redirected request reached the other host.")

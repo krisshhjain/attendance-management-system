@@ -134,6 +134,112 @@ class Phase6WriteTests(TestCase):
             ).exists()
         )
 
+    def test_attendance_update_outside_manager_scope_is_rejected(self):
+        outside_user = get_user_model().objects.create_user(
+            email="phase6-outside-attendance@example.test"
+        )
+        outside = Employee.objects.create(
+            user=outside_user,
+            department="Finance",
+            employment_type="PERMANENT",
+            date_joined=timezone.localdate(),
+            section="D",
+            subsection="D1",
+        )
+        target = timezone.localdate()
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                self.intent(
+                    "attendance_update",
+                    {
+                        "employee_id": outside.id,
+                        "date_range": {
+                            "start": target.isoformat(),
+                            "end": target.isoformat(),
+                        },
+                        "target_status": "ABSENT",
+                    },
+                ),
+                self.admin,
+                "phase6-attendance-scope-denied",
+            )
+
+        self.assertEqual(error.exception.code, "scope_denied")
+
+    def test_present_attendance_plan_requests_missing_times(self):
+        target = timezone.localdate()
+        pending = write_action_planner.plan_write_action(
+            self.intent(
+                "attendance_update",
+                {
+                    "employee_id": self.employee.id,
+                    "date_range": {
+                        "start": target.isoformat(),
+                        "end": target.isoformat(),
+                    },
+                    "target_status": "PRESENT",
+                },
+            ),
+            self.admin,
+            "phase6-attendance-missing-times",
+        )
+
+        self.assertFalse(pending["validated"])
+        self.assertEqual(
+            pending["validation_errors"], ["check_in_time", "check_out_time"]
+        )
+        self.assertTrue(pending["requires_confirmation"])
+
+    def test_leave_plan_requires_reason_before_execution(self):
+        target = timezone.localdate() + timedelta(days=5)
+        pending = write_action_planner.plan_write_action(
+            self.intent(
+                "leave_create",
+                {
+                    "employee_id": self.employee.id,
+                    "date_range": {
+                        "start": target.isoformat(),
+                        "end": target.isoformat(),
+                    },
+                    "leave_type": self.leave_type.code,
+                },
+            ),
+            self.admin,
+            "phase6-leave-missing-reason",
+        )
+
+        self.assertEqual(pending["status"], "AWAITING_INFORMATION")
+        self.assertFalse(pending["validated"])
+        self.assertEqual(pending["validation_errors"], ["reason"])
+
+    def test_leave_plan_rejects_ambiguous_name_or_code(self):
+        LeaveType.objects.create(
+            name=self.leave_type.code,
+            code="PHASE6-ALTERNATE",
+            is_active=True,
+        )
+        target = timezone.localdate() + timedelta(days=5)
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                self.intent(
+                    "leave_create",
+                    {
+                        "employee_id": self.employee.id,
+                        "date_range": {
+                            "start": target.isoformat(),
+                            "end": target.isoformat(),
+                        },
+                        "leave_type": self.leave_type.code,
+                    },
+                ),
+                self.admin,
+                "phase6-leave-type-ambiguous",
+            )
+
+        self.assertEqual(error.exception.code, "leave_type_ambiguous")
+
     def test_force_checkout_creates_admin_event(self):
         target = timezone.localdate()
         Attendance.objects.create(
