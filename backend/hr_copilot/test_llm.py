@@ -190,3 +190,182 @@ def test_cloud_or_custom_provider_url_is_rejected(monkeypatch):
     with pytest.raises(CopilotError) as raised:
         llm.get_structured_intent("unrelated")
     assert raised.value.code == "llm_unavailable"
+
+
+def test_follow_up_extraction_whitelists_and_trims_only_requested_values(
+    monkeypatch,
+):
+    class Provider:
+        def structured_output(self, messages, *, schema, options):
+            assert schema["additionalProperties"] is False
+            assert set(schema["properties"]) == {
+                "employee_name",
+                "employee_email",
+                "reason",
+            }
+            return {
+                "employee_name": " Asha Rao ",
+                "reason": "  Forgot to check in  ",
+                "unexpected": "ignored",
+                "employee_email": "   ",
+            }
+
+    monkeypatch.setattr(llm, "get_llm_provider", lambda: Provider())
+
+    result = llm.extract_pending_action_fields(
+        "Asha Rao forgot to check in", ["employee_name", "reason"]
+    )
+
+    assert result == {
+        "employee_name": "Asha Rao",
+        "reason": "Forgot to check in",
+    }
+
+
+def test_follow_up_extraction_rejects_non_object_provider_result(monkeypatch):
+    class Provider:
+        def structured_output(self, *args, **kwargs):
+            return []
+
+    monkeypatch.setattr(llm, "get_llm_provider", lambda: Provider())
+
+    with pytest.raises(CopilotError) as raised:
+        llm.extract_pending_action_fields("reply", ["reason"])
+
+    assert raised.value.code == "invalid_intent"
+    assert raised.value.status == 503
+
+
+@pytest.mark.parametrize(
+    ("intent", "data", "expected"),
+    [
+        (
+            {"entities": {"workforce_metric": "shift_assignments"}},
+            [{"name": "Asha Rao", "assigned_shift_name": "Morning"}],
+            "Asha Rao is assigned to the Morning shift.",
+        ),
+        (
+            {"entities": {"workforce_metric": "shift_assignments"}},
+            [{"name": "Asha Rao"}],
+            "Asha Rao has no shift assigned.",
+        ),
+        (
+            {"entities": {"attendance_metric": "missing_checkins"}},
+            [{}, {}],
+            "2 employees have not checked in today.",
+        ),
+        (
+            {"entities": {"attendance_metric": "late_employees"}},
+            [{}],
+            "1 employee arrived late today.",
+        ),
+        (
+            {"entities": {"attendance_metric": "working_hours"}},
+            [{"employee_name": "Asha Rao", "total_working_duration": None}],
+            "Working duration is unavailable for the requested range.",
+        ),
+        (
+            {"entities": {"attendance_metric": "incomplete_explanation"}},
+            [{}],
+            "The attendance record needs review.",
+        ),
+        (
+            {"entities": {"intelligence_metric": "leave_balance"}},
+            [{}, {}],
+            "Found 2 results for leave balance.",
+        ),
+        (
+            {"source": "attendance"},
+            [{"value": 4}],
+            "The result is 4.",
+        ),
+    ],
+)
+def test_grounded_answers_use_only_the_typed_result(intent, data, expected):
+    assert llm.generate_natural_answer("question", intent, data) == expected
+
+
+@pytest.mark.parametrize(
+    ("intent", "data", "expected"),
+    [
+        (
+            {"intent": "attendance_intelligence", "entities": {"attendance_metric": "absence_streaks"}},
+            [{}, {}],
+            "Found 2 absence streaks of at least two working days.",
+        ),
+        (
+            {"intent": "attendance_intelligence", "entities": {"attendance_metric": "summary"}},
+            [{}],
+            "Attendance summary returned 1 working-day row.",
+        ),
+        (
+            {"intent": "absence_count"},
+            [{"value": 1}],
+            "1 employee was absent.",
+        ),
+        (
+            {"intent": "employee_lookup", "source": "employee"},
+            [{"first_name": "Asha", "last_name": "Rao", "department": "Engineering"}],
+            "Asha Rao is an active employee in Engineering, Section , Subsection .",
+        ),
+    ],
+)
+def test_common_deterministic_answers_are_stable(intent, data, expected):
+    assert llm._generate_deterministic_answer(intent, data) == expected
+
+
+def test_answer_fallback_labels_each_supported_result_source():
+    assert llm._generate_fallback_answer({"source": "employee"}, [{}]) == (
+        "Found 1 employee."
+    )
+    assert llm._generate_fallback_answer({"source": "attendance"}, [{}, {}]) == (
+        "Found 2 attendance records."
+    )
+    assert llm._generate_fallback_answer({"source": "leave"}, []) == (
+        "No matching HR records found."
+    )
+
+
+def test_compact_result_data_keeps_typed_fields_and_applies_row_limits():
+    attendance = [
+        {
+            "first_name": str(index),
+            "last_name": "Rao",
+            "date": "2026-09-01",
+            "status": "PRESENT",
+            "private_field": "omit",
+        }
+        for index in range(12)
+    ]
+
+    compacted = llm._compact_result_data(
+        attendance, {"source": "attendance"}
+    )
+
+    assert len(compacted) == 10
+    assert compacted[0] == {
+        "first_name": "0",
+        "last_name": "Rao",
+        "date": "2026-09-01",
+        "status": "PRESENT",
+    }
+    assert llm._compact_result_data([], {"source": "employee"}) == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["No matching HR records were found.", "No absent employees were found."],
+)
+def test_grounding_validator_accepts_supported_empty_result_language(answer):
+    llm._validate_grounded_answer(answer, [])
+
+
+def test_grounding_validator_rejects_unverified_facts():
+    with pytest.raises(CopilotError) as raised:
+        llm._validate_grounded_answer(
+            "Asha Rao received 999 days of leave.",
+            [{"first_name": "Asha", "last_name": "Rao", "value": 3}],
+        )
+
+    assert raised.value.code == "ungrounded_llm_response"
+    assert raised.value.status == 503

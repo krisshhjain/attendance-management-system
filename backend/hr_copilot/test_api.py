@@ -1,5 +1,6 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from django.utils import timezone
@@ -7,7 +8,9 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import ManagerScope
 from hr_copilot import views
+from hr_copilot.services import pipeline, write_actions as write_action_module
 from hr_copilot.services.pipeline import CopilotError
+from hr_copilot.services.write_actions import write_action_planner
 
 
 class FakeAudit:
@@ -46,6 +49,15 @@ def api(monkeypatch):
     monkeypatch.setattr(views, "append_message", lambda *args, **kwargs: None)
     monkeypatch.setattr(views, "load_context", lambda *args, **kwargs: {})
     monkeypatch.setattr(views, "save_context", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        views.pending_action_manager, "get_awaiting_action", lambda *args: None
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager, "get_session_actions", lambda *args: {}
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager, "get_user_actions", lambda *args: {}
+    )
 
     # These request tests exercise API planning and authorization, not the live
     # Ollama integration. Keep the provider behind its separate integration
@@ -116,6 +128,15 @@ def call_endpoint(factory, user=None, payload=None):
     return views.HRCopilotQueryView.as_view()(request)
 
 
+def call_action_endpoint(factory, user=None, payload=None):
+    request = factory.post(
+        "/api/hr-copilot/actions/approve/", payload or {}, format="json"
+    )
+    if user is not None:
+        force_authenticate(request, user=user)
+    return views.HRCopilotActionApprovalView.as_view()(request)
+
+
 def test_query_requires_authentication(api):
     factory, audit_records = api
     response = call_endpoint(factory)
@@ -161,6 +182,580 @@ def test_cancel_awaiting_action_returns_its_action_id(api, monkeypatch):
 
     assert response.status_code == 200
     assert response.data["action_id"] == action["action_id"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"action_id": "a", "action": "approve"},
+        {"action_id": "a", "action": "approve", "conversation_id": " "},
+        {
+            "action_id": "a",
+            "action": "approve",
+            "conversation_id": "x" * 129,
+        },
+        {"action": "approve", "conversation_id": "conversation"},
+        {"action_id": "a", "conversation_id": "conversation"},
+        {
+            "action_id": "a",
+            "action": "execute",
+            "conversation_id": "conversation",
+        },
+    ],
+)
+def test_action_approval_rejects_invalid_request_fields(api, payload):
+    factory, _ = api
+
+    response = call_action_endpoint(factory, system_admin(), payload)
+
+    assert response.status_code == 400
+    assert "detail" in response.data
+
+
+def test_action_approval_requires_system_admin(api):
+    factory, _ = api
+
+    response = call_action_endpoint(
+        factory,
+        system_admin(is_system_admin=False),
+        {
+            "action_id": "a",
+            "action": "approve",
+            "conversation_id": "conversation",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.data["detail"] == "System Admin access is required."
+
+
+def test_action_approval_executes_and_returns_confirmed_result(api, monkeypatch):
+    factory, _ = api
+    action = {
+        "action_id": "action-123",
+        "intent": "employee_status_update",
+        "description": "Deactivate Asha Rao",
+        "conversation_id": "conversation-123",
+    }
+    result = {"success": True, "message": "Employee deactivated."}
+    events = []
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "approve_action",
+        lambda *args: action,
+    )
+    monkeypatch.setattr(
+        views.write_action_executor,
+        "execute_approved_action",
+        lambda pending, user: result,
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "mark_executed",
+        lambda *args: events.append(("executed", args)),
+    )
+    monkeypatch.setattr(
+        views, "_record_copilot_action_event", lambda **kw: events.append(kw)
+    )
+    monkeypatch.setattr(views, "update_action_message", lambda *args: None)
+    monkeypatch.setattr(views, "append_message", lambda *args: None)
+    monkeypatch.setattr(
+        "hr_copilot.services.llm.generate_natural_answer",
+        lambda *args, **kwargs: "Completed.",
+    )
+
+    response = call_action_endpoint(
+        factory,
+        system_admin(),
+        {
+            "action_id": action["action_id"],
+            "action": "approve",
+            "conversation_id": "conversation-123",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.data["response_type"] == "action_success"
+    assert response.data["query_status"] == "executed"
+    assert response.data["action_result"] == result
+    assert any(
+        event.get("event_type") == "COPILOT_ACTION_CONFIRMED"
+        for event in events
+        if isinstance(event, dict)
+    )
+
+
+def test_action_approval_reports_copilot_error_without_success(api, monkeypatch):
+    factory, _ = api
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "approve_action",
+        lambda *args: (_ for _ in ()).throw(
+            CopilotError("scope_denied", "Authorization scope has changed", 403)
+        ),
+    )
+    failed = []
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "mark_failed",
+        lambda *args: failed.append(args),
+    )
+    monkeypatch.setattr(
+        views.HRCopilotActionApprovalView,
+        "_record_failure",
+        staticmethod(lambda *args: None),
+    )
+
+    response = call_action_endpoint(
+        factory,
+        system_admin(),
+        {
+            "action_id": "action-123",
+            "action": "approve",
+            "conversation_id": "conversation-123",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.data["query_status"] == "failed"
+    assert response.data["code"] == "scope_denied"
+    assert len(failed) == 1
+
+
+def test_action_cancellation_does_not_execute_product_changes(api, monkeypatch):
+    factory, _ = api
+    action = {
+        "action_id": "action-cancel-123",
+        "intent": "attendance_update",
+        "conversation_id": "conversation-123",
+    }
+    events = []
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "cancel_action",
+        lambda *args: action,
+    )
+    monkeypatch.setattr(
+        views.write_action_executor,
+        "execute_approved_action",
+        lambda *_: pytest.fail("Cancelled action must not execute"),
+    )
+    monkeypatch.setattr(
+        views, "_record_copilot_action_event", lambda **kwargs: events.append(kwargs)
+    )
+    monkeypatch.setattr(views, "update_action_message", lambda *args: None)
+    monkeypatch.setattr(views, "append_message", lambda *args: None)
+
+    response = call_action_endpoint(
+        factory,
+        system_admin(),
+        {
+            "action_id": action["action_id"],
+            "action": "cancel",
+            "conversation_id": "conversation-123",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.data["response_type"] == "action_cancelled"
+    assert response.data["query_status"] == "cancelled"
+    assert response.data["intent"] == "attendance_update"
+    assert events[0]["event_type"] == "COPILOT_ACTION_CANCELLED"
+
+
+def test_action_approval_sanitizes_unexpected_execution_exception(
+    api, monkeypatch
+):
+    factory, _ = api
+    action = {
+        "action_id": "action-error-123",
+        "intent": "employee_status_update",
+        "description": "Deactivate Asha Rao",
+    }
+    failed = []
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "approve_action",
+        lambda *args: action,
+    )
+    monkeypatch.setattr(
+        views.write_action_executor,
+        "execute_approved_action",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("database password")),
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "mark_failed",
+        lambda *args: failed.append(args),
+    )
+    monkeypatch.setattr(
+        views.HRCopilotActionApprovalView,
+        "_record_failure",
+        staticmethod(lambda *args: None),
+    )
+
+    response = call_action_endpoint(
+        factory,
+        system_admin(),
+        {
+            "action_id": action["action_id"],
+            "action": "approve",
+            "conversation_id": "conversation-123",
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.data["code"] == "action_failed"
+    assert "database password" not in response.data["detail"]
+    assert len(failed) == 1
+
+
+def test_pending_actions_view_filters_non_pending_actions(api, monkeypatch):
+    factory, _ = api
+    actions = {
+        "pending": {
+            "status": "PENDING",
+            "description": "Confirm attendance change",
+            "target_data": {"employee_id": 7},
+            "proposed_changes": {"status": "ABSENT"},
+            "current_state": {"exists": False},
+            "intent": "attendance_update",
+            "expires_at": "later",
+            "created_at": "now",
+        },
+        "awaiting": {"status": "AWAITING_INFORMATION"},
+    }
+    captured = []
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_session_actions",
+        lambda *args: captured.append(args) or actions,
+    )
+    request = factory.get(
+        "/api/hr-copilot/actions/",
+        {"conversation_id": "conversation-123"},
+    )
+    force_authenticate(request, user=system_admin())
+
+    response = views.HRCopilotPendingActionsView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    assert response.data["pending_actions"][0]["action_id"] == "pending"
+    assert captured[0] == (
+        views.copilot_action_session_id(1, "conversation-123"),
+        1,
+    )
+
+
+def test_write_planner_builds_missing_employee_follow_up_for_present_attendance():
+    today = timezone.localdate()
+    intent = {
+        "intent": "attendance_update",
+        "source": "attendance",
+        "entities": {
+            "date_range": {"start": today.isoformat(), "end": today.isoformat()},
+            "target_status": "PRESENT",
+        },
+    }
+
+    pending = write_action_planner._plan_missing_employee(
+        intent,
+        system_admin(),
+        {"sections": ["C"], "unrestricted": False},
+        "session-123",
+    )
+
+    assert pending["status"] == "AWAITING_INFORMATION"
+    assert pending["action_type"] == "attendance_update"
+    assert pending["validation_errors"] == [
+        "employee_name",
+        "check_in_time",
+        "check_out_time",
+    ]
+    assert pending["requires_confirmation"] is True
+    assert pending["target_data"]["employee_id"] is None
+
+
+def test_write_planner_missing_employee_leave_follow_up_requests_reason():
+    today = timezone.localdate()
+    intent = {
+        "intent": "leave_create",
+        "source": "leave",
+        "entities": {
+            "date_range": {"start": today.isoformat(), "end": today.isoformat()},
+        },
+    }
+
+    pending = write_action_planner._plan_missing_employee(
+        intent, system_admin(), {"unrestricted": True}, "session-456"
+    )
+
+    assert pending["action_type"] == "leave_create"
+    assert pending["validation_errors"] == ["employee_name", "reason"]
+    assert "employee" in pending["description"].casefold()
+
+
+@pytest.mark.parametrize(
+    ("value", "checkout", "expected"),
+    [
+        ("09:30", False, "09:30"),
+        ("9:30 p.m.", True, "21:30"),
+        ("9", False, "09:00"),
+        ("9", True, "21:00"),
+        ("24", True, None),
+        ("noon-ish", False, None),
+    ],
+)
+def test_write_planner_normalizes_times_and_rejects_invalid_values(
+    value, checkout, expected
+):
+    assert write_action_planner._normalize_time(value, checkout) == expected
+
+
+def test_regularization_planner_creates_reviewable_request_with_normalized_times(
+    monkeypatch,
+):
+    today = timezone.localdate()
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: today
+    )
+    attendance_query = MagicMock()
+    attendance_query.filter.return_value.first.return_value = None
+    monkeypatch.setattr(
+        write_action_module,
+        "Attendance",
+        SimpleNamespace(objects=attendance_query),
+    )
+    intent = {
+        "intent": "regularization_create",
+        "source": "attendance",
+        "entities": {
+            "request_type": "FORGOT_CHECK_IN",
+            "reason": "Forgot to check in",
+            "check_in_time": "9",
+        },
+    }
+
+    pending = write_action_planner._plan_regularization_create(
+        intent, system_admin(), {"unrestricted": True}, "session-reg"
+    )
+
+    assert pending["validated"] is True
+    assert pending["target_data"]["employee_id"] == 42
+    assert pending["target_data"]["requested_check_in"] == "09:00"
+    assert pending["proposed_changes"] == {
+        "operation": "create",
+        "request_type": "FORGOT_CHECK_IN",
+    }
+    attendance_query.filter.assert_called_once_with(employee_id=42, date=today)
+
+
+def test_regularization_planner_collects_missing_reason_before_confirmation(
+    monkeypatch,
+):
+    today = timezone.localdate()
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: today
+    )
+    attendance_query = MagicMock()
+    attendance_query.filter.return_value.first.return_value = None
+    monkeypatch.setattr(
+        write_action_module,
+        "Attendance",
+        SimpleNamespace(objects=attendance_query),
+    )
+    intent = {
+        "intent": "regularization_create",
+        "source": "attendance",
+        "entities": {"request_type": "FORGOT_CHECK_IN"},
+    }
+
+    pending = write_action_planner._plan_regularization_create(
+        intent, system_admin(), {"unrestricted": True}, "session-reg-missing"
+    )
+
+    assert pending["validated"] is False
+    assert pending["status"] == "AWAITING_INFORMATION"
+    assert pending["validation_errors"] == ["reason"]
+
+
+def test_leave_review_planner_requires_reason_for_denial_and_previews_approval(
+    monkeypatch,
+):
+    today = timezone.localdate() + timedelta(days=2)
+    leave = SimpleNamespace(
+        id=55,
+        leave_type=SimpleNamespace(name="Annual"),
+        start_date=today,
+        end_date=today,
+        duration_days=1,
+        status="PENDING",
+    )
+    query = MagicMock()
+    query.filter.return_value = query
+    query.select_related.return_value = query
+    query.order_by.return_value = [leave]
+    monkeypatch.setattr(
+        write_action_module,
+        "LeaveRequest",
+        SimpleNamespace(objects=SimpleNamespace(filter=lambda **_: query)),
+    )
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    user = system_admin()
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_leave_review(
+            {
+                "intent": "leave_deny",
+                "entities": {"employee_id": 42, "request_id": 55},
+            },
+            user,
+            {"unrestricted": True},
+            "session-deny",
+        )
+    assert raised.value.code == "review_reason_required"
+
+    pending = write_action_planner._plan_leave_review(
+        {
+            "intent": "leave_approve",
+            "entities": {"employee_id": 42, "request_id": 55},
+        },
+        user,
+        {"unrestricted": True},
+        "session-approve",
+    )
+    assert pending["proposed_changes"]["status"] == "APPROVED"
+    assert "attendance records" in pending["warning_message"]
+
+
+def test_regularization_review_planner_blocks_grouped_requests(monkeypatch):
+    request = SimpleNamespace(
+        id=21,
+        employee_id=42,
+        attendance_date=timezone.localdate() - timedelta(days=1),
+        status="PENDING",
+        days=SimpleNamespace(exists=lambda: True),
+        employee=SimpleNamespace(
+            user=SimpleNamespace(get_full_name=lambda: "Asha Rao", email="asha@example.test")
+        ),
+    )
+    query = MagicMock()
+    query.select_related.return_value = query
+    query.filter.return_value = query
+    query.order_by.return_value = [request]
+    monkeypatch.setattr(
+        write_action_module,
+        "RegularizationRequest",
+        SimpleNamespace(objects=SimpleNamespace(select_related=lambda *_: query)),
+    )
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_regularization_review(
+            {
+                "intent": "regularization_approve",
+                "entities": {"request_id": request.id},
+            },
+            system_admin(),
+            {"unrestricted": True},
+            "session-grouped",
+        )
+
+    assert raised.value.code == "unsupported_grouped_regularization"
+
+
+@pytest.mark.parametrize(
+    ("phrase", "offset"),
+    [
+        ("attendance today", 0),
+        ("attendance yesterday", 1),
+        ("attendance two days ago", 2),
+    ],
+)
+def test_pipeline_applies_supported_relative_dates(phrase, offset):
+    today = timezone.localdate()
+    entities = {}
+
+    pipeline._apply_explicit_date_range(phrase, entities, today)
+
+    expected = (today - timedelta(days=offset)).isoformat()
+    assert entities["date_range"] == {"start": expected, "end": expected}
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("29 September 2026", "2026-09-29"),
+        ("September 29th 2026", "2026-09-29"),
+        ("September 31 2026", None),
+        ("some other date", None),
+    ],
+)
+def test_pipeline_parses_natural_dates_and_rejects_impossible_dates(text, expected):
+    assert pipeline._parse_natural_date_string(
+        text, date(2026, 9, 1)
+    ) == expected
+
+
+def test_pipeline_extracts_email_scope_and_attendance_status_deterministically():
+    entities = {}
+
+    pipeline._apply_deterministic_entities(
+        "Show attendance for PERSON@example.test in C2 as completed",
+        "employee",
+        entities,
+    )
+
+    assert entities["employee_email"] == "person@example.test"
+    assert entities["section"] == "C"
+    assert entities["subsection"] == "C2"
+    assert entities["attendance_status"] == "PRESENT"
+
+
+def test_pipeline_requires_identity_when_a_name_or_email_filter_is_requested():
+    with pytest.raises(CopilotError) as raised:
+        pipeline._apply_deterministic_entities(
+            "Show attendance by email", "attendance", {}
+        )
+
+    assert raised.value.code == "clarification_required"
+
+
+def test_pipeline_marks_live_date_scope_and_write_intent(monkeypatch):
+    today = timezone.localdate().isoformat()
+    monkeypatch.setattr(
+        "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
+        lambda *args, **kwargs: {
+            "intent": "attendance_lookup",
+            "source": "attendance",
+            "entities": {"date_range": {"start": today, "end": today}},
+        },
+    )
+
+    result = pipeline.analyze_question("Show attendance today")
+
+    assert result["action_type"] == "read"
+    assert result["entities"]["temporal_scope"]["type"] == "today"
+    assert result["entities"]["temporal_scope"]["source"] == "llm_resolved"
 
 
 @pytest.mark.parametrize("message", [None, "", "  ", 42, "x" * 2001])
@@ -256,6 +851,7 @@ def test_absence_query_uses_scoped_inference_and_returns_absent_employees(
 ):
     factory, audit_records = api
     captured = {}
+    monkeypatch.setattr("holidays.services.is_working_day", lambda _day: True)
 
     def execute(sql, params):
         captured["sql"] = sql
