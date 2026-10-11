@@ -1,9 +1,9 @@
-from accounts.models import ManagerScope
 from types import SimpleNamespace
 
 import pytest
 from rest_framework.test import APIRequestFactory, force_authenticate
 
+from accounts.models import ManagerScope
 from hr_copilot import views
 from hr_copilot.services.pipeline import CopilotError
 
@@ -60,7 +60,9 @@ def system_admin(**overrides):
 
 
 def call_endpoint(factory, user=None, payload=None):
-    request = factory.post("/api/hr-copilot/query/", payload or {}, format="json")
+    request = factory.post(
+        "/api/hr-copilot/query/", payload or {}, format="json"
+    )
     if user is not None:
         force_authenticate(request, user=user)
     return views.HRCopilotQueryView.as_view()(request)
@@ -76,10 +78,41 @@ def test_query_requires_authentication(api):
 def test_query_requires_system_admin(api):
     factory, audit_records = api
     employee = system_admin(is_system_admin=False)
-    response = call_endpoint(factory, employee, {"message": "How many employees?"})
+    response = call_endpoint(
+        factory, employee, {"message": "How many employees?"}
+    )
     assert response.status_code == 403
     assert response.data["detail"] == "System Admin access is required."
     assert audit_records == []
+
+
+def test_cancel_awaiting_action_returns_its_action_id(api, monkeypatch):
+    factory, _ = api
+    action = {"action_id": "pending-action-123", "intent": {}}
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_awaiting_action",
+        lambda *args: action,
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "cancel_action",
+        lambda *args: action,
+    )
+    monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
+    monkeypatch.setattr(
+        views, "_record_copilot_action_event", lambda **kwargs: None
+    )
+    monkeypatch.setattr(views, "update_action_message", lambda *args: None)
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": "cancel", "conversation_id": "cancel-test"},
+    )
+
+    assert response.status_code == 200
+    assert response.data["action_id"] == action["action_id"]
 
 
 @pytest.mark.parametrize("message", [None, "", "  ", 42, "x" * 2001])
@@ -90,16 +123,26 @@ def test_query_validates_message(api, message):
     assert audit_records == []
 
 
-def test_user_provided_scope_is_ignored_and_server_scope_is_returned(api, monkeypatch):
+def test_user_provided_scope_is_ignored_and_server_scope_is_returned(
+    api, monkeypatch
+):
     factory, audit_records = api
-    monkeypatch.setattr(views, "execute_query", lambda sql, params: (["value"], [(3,)]))
+    monkeypatch.setattr(
+        views, "execute_query", lambda sql, params: (["value"], [(3,)])
+    )
     response = call_endpoint(
         factory,
         system_admin(),
-        {"message": "How many employees are in C2?", "scope": {"sections": ["D"]}},
+        {
+            "message": "How many employees are in C2?",
+            "scope": {"sections": ["D"]},
+        },
     )
     assert response.status_code == 200
-    assert response.data["scope"] == {"sections": ["C"], "subsections": ["C1", "C2"]}
+    assert response.data["scope"] == {
+        "sections": ["C"],
+        "subsections": ["C1", "C2"],
+    }
     assert "e.section IN" in audit_records[0].sql
     assert audit_records[0].scope_result == "passed"
     assert audit_records[0].execution_result == "success"
@@ -107,8 +150,14 @@ def test_user_provided_scope_is_ignored_and_server_scope_is_returned(api, monkey
 
 def test_out_of_scope_question_is_rejected_and_audited(api, monkeypatch):
     factory, audit_records = api
-    monkeypatch.setattr(views, "execute_query", lambda *_: pytest.fail("Must not execute denied query"))
-    response = call_endpoint(factory, system_admin(), {"message": "Show attendance for Section D"})
+    monkeypatch.setattr(
+        views,
+        "execute_query",
+        lambda *_: pytest.fail("Must not execute denied query"),
+    )
+    response = call_endpoint(
+        factory, system_admin(), {"message": "Show attendance for Section D"}
+    )
     assert response.status_code == 403
     assert response.data["query_status"] == "rejected"
     assert response.data["code"] == "scope_denied"
@@ -118,7 +167,9 @@ def test_out_of_scope_question_is_rejected_and_audited(api, monkeypatch):
 def test_unassigned_scope_is_rejected_and_audited(api):
     factory, audit_records = api
     unscoped = system_admin(hr_copilot_sections=[], hr_copilot_subsections=[])
-    response = call_endpoint(factory, unscoped, {"message": "How many employees?"})
+    response = call_endpoint(
+        factory, unscoped, {"message": "How many employees?"}
+    )
     assert response.status_code == 403
     assert response.data["code"] == "scope_unassigned"
     assert audit_records[0].scope_result == "denied"
@@ -127,16 +178,31 @@ def test_unassigned_scope_is_rejected_and_audited(api):
 def test_success_response_obeys_structured_contract(api, monkeypatch):
     factory, audit_records = api
     monkeypatch.setattr(views, "execute_query", lambda *_: (["value"], [(2,)]))
-    response = call_endpoint(factory, system_admin(), {"message": "How many employees are in C1?"})
+    response = call_endpoint(
+        factory, system_admin(), {"message": "How many employees are in C1?"}
+    )
     assert response.status_code == 200
-    assert set(response.data) == {"answer", "intent", "scope", "query_status", "data", "visualization"}
+    assert set(response.data) == {
+        "answer",
+        "intent",
+        "scope",
+        "query_status",
+        "data",
+        "visualization",
+    }
     assert response.data["query_status"] == "executed"
-    assert response.data["data"] == {"columns": ["value"], "rows": [{"value": 2}], "row_count": 1}
+    assert response.data["data"] == {
+        "columns": ["value"],
+        "rows": [{"value": 2}],
+        "row_count": 1,
+    }
     assert audit_records[0].sql.startswith("SELECT")
     assert "query_plan" in audit_records[0].saved_updates[0]
 
 
-def test_absence_query_uses_scoped_inference_and_returns_absent_employees(api, monkeypatch):
+def test_absence_query_uses_scoped_inference_and_returns_absent_employees(
+    api, monkeypatch
+):
     factory, audit_records = api
     captured = {}
 
@@ -146,15 +212,22 @@ def test_absence_query_uses_scoped_inference_and_returns_absent_employees(api, m
         return ["first_name", "last_name"], [("Asha", "Rao")]
 
     monkeypatch.setattr(views, "execute_query", execute)
-    response = call_endpoint(factory, system_admin(), {"message": "Who was absent yesterday?"})
+    response = call_endpoint(
+        factory, system_admin(), {"message": "Who was absent yesterday?"}
+    )
 
     assert response.status_code == 200
     assert response.data["intent"] == "absence_lookup"
-    assert response.data["data"]["rows"] == [{"first_name": "Asha", "last_name": "Rao"}]
+    assert response.data["data"]["rows"] == [
+        {"first_name": "Asha", "last_name": "Rao"}
+    ]
     assert "e.section IN" in captured["sql"]
     assert "e.is_active = TRUE" in captured["sql"]
     assert "NOT EXISTS (SELECT 1 FROM attendance_attendance" in captured["sql"]
-    assert "NOT EXISTS (SELECT 1 FROM leave_management_leaverequest" in captured["sql"]
+    assert (
+        "NOT EXISTS (SELECT 1 FROM leave_management_leaverequest"
+        in captured["sql"]
+    )
     assert audit_records[0].execution_result == "success"
 
 
@@ -165,7 +238,9 @@ def test_sql_validation_rejection_is_audited(api, monkeypatch):
         raise CopilotError("sql_rejected", "Rejected by validator")
 
     monkeypatch.setattr(views, "validate_sql", reject)
-    response = call_endpoint(factory, system_admin(), {"message": "How many employees in C1?"})
+    response = call_endpoint(
+        factory, system_admin(), {"message": "How many employees in C1?"}
+    )
     assert response.status_code == 400
     assert response.data["code"] == "sql_rejected"
     assert audit_records[0].validation_result == "rejected"
@@ -179,32 +254,48 @@ def test_database_errors_are_sanitized_and_audited(api, monkeypatch):
         raise RuntimeError("password=secret database internals")
 
     monkeypatch.setattr(views, "execute_query", fail_query)
-    response = call_endpoint(factory, system_admin(), {"message": "How many employees in C1?"})
+    response = call_endpoint(
+        factory, system_admin(), {"message": "How many employees in C1?"}
+    )
     assert response.status_code == 503
     assert "secret" not in response.data["detail"]
     assert response.data["code"] == "query_failed"
     assert audit_records[0].execution_result == "failed"
 
 
-def test_attendance_intelligence_read_uses_typed_tool_and_metadata(api, monkeypatch):
+def test_attendance_intelligence_read_uses_typed_tool_and_metadata(
+    api, monkeypatch
+):
     factory, audit_records = api
-    monkeypatch.setattr(views, "analyze_question", lambda *args, **kwargs: {
-        "intent": "attendance_intelligence",
-        "source": "attendance",
-        "action_type": "read",
-        "entities": {
-            "attendance_metric": "missing_checkins",
-            "date_range": {"start": "2026-09-30", "end": "2026-09-30"},
+    monkeypatch.setattr(
+        views,
+        "analyze_question",
+        lambda *args, **kwargs: {
+            "intent": "attendance_intelligence",
+            "source": "attendance",
+            "action_type": "read",
+            "entities": {
+                "attendance_metric": "missing_checkins",
+                "date_range": {"start": "2026-09-30", "end": "2026-09-30"},
+            },
         },
-    })
-    monkeypatch.setattr(views.hr_tools, "execute_attendance_intelligence", lambda **kwargs: {
-        "metric": "missing_checkins",
-        "date_range": {"start": "2026-09-30", "end": "2026-09-30"},
-        "assumptions": ["Effective check-in events are used."],
-        "rows": [{"employee_id": 7, "employee_name": "Asha Rao"}],
-    })
-    response = call_endpoint(factory, system_admin(), {"message": "Who has not checked in today?"})
+    )
+    monkeypatch.setattr(
+        views.hr_tools,
+        "execute_attendance_intelligence",
+        lambda **kwargs: {
+            "metric": "missing_checkins",
+            "date_range": {"start": "2026-09-30", "end": "2026-09-30"},
+            "assumptions": ["Effective check-in events are used."],
+            "rows": [{"employee_id": 7, "employee_name": "Asha Rao"}],
+        },
+    )
+    response = call_endpoint(
+        factory, system_admin(), {"message": "Who has not checked in today?"}
+    )
     assert response.status_code == 200
-    assert response.data["data"]["rows"] == [{"employee_id": 7, "employee_name": "Asha Rao"}]
+    assert response.data["data"]["rows"] == [
+        {"employee_id": 7, "employee_name": "Asha Rao"}
+    ]
     assert response.data["data"]["metadata"]["metric"] == "missing_checkins"
     assert audit_records[0].sql == ""

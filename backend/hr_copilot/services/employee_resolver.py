@@ -19,8 +19,14 @@ class EmployeeResolution:
 class EmployeeResolver:
     """Resolve only real employee records; never trust an LLM-provided identity."""
 
-    def resolve_employee(self, *, user=None, name=None, email=None, employee_id=None):
-        supplied = [value for value in (name, email, employee_id) if value not in (None, "")]
+    def resolve_employee(
+        self, *, user=None, name=None, email=None, employee_id=None
+    ):
+        supplied = [
+            value
+            for value in (name, email, employee_id)
+            if value not in (None, "")
+        ]
         if not supplied:
             return EmployeeResolution("missing")
         if len(supplied) > 1:
@@ -33,12 +39,15 @@ class EmployeeResolver:
                 return EmployeeResolution("not_found")
             matches = Employee.objects.filter(pk=employee_id)
         elif email:
-            matches = Employee.objects.filter(user__email__iexact=email.strip())
+            matches = Employee.objects.filter(
+                user__email__iexact=email.strip()
+            )
         else:
             parts = name.split()
             if len(parts) == 1:
                 matches = Employee.objects.filter(
-                    Q(user__first_name__iexact=parts[0]) | Q(user__last_name__iexact=parts[0])
+                    Q(user__first_name__iexact=parts[0])
+                    | Q(user__last_name__iexact=parts[0])
                 )
             else:
                 matches = Employee.objects.filter(
@@ -47,7 +56,9 @@ class EmployeeResolver:
                 )
 
         if user:
-            from accounts.scope_service import filter_employees_by_manager_scope
+            from accounts.scope_service import \
+                filter_employees_by_manager_scope
+
             matches = filter_employees_by_manager_scope(user, matches)
         matching_ids = list(matches.values_list("id", flat=True)[:2])
         if not matching_ids:

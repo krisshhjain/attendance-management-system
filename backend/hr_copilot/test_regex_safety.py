@@ -4,23 +4,22 @@ import time
 
 from django.test import SimpleTestCase
 
-from hr_copilot.services.intent_normalizer import (
-    IntentNormalizer,
-    _is_find_employee_query,
-)
 from hr_copilot.services.conversation import apply_context
-from hr_copilot.services.pipeline import CopilotError, _apply_deterministic_entities
-from hr_copilot.services.regex_safety import (
-    find_email_address,
-    has_ordered_regex_matches,
-)
+from hr_copilot.services.intent_normalizer import (IntentNormalizer,
+                                                   _is_find_employee_query)
+from hr_copilot.services.pipeline import (CopilotError,
+                                          _apply_deterministic_entities)
+from hr_copilot.services.regex_safety import (find_email_address,
+                                              has_ordered_regex_matches)
 from hr_copilot.services.semantic_interpreter import SemanticInterpreter
 
 
 class OrderedRegexMatchingTests(SimpleTestCase):
     def test_email_extraction_preserves_supported_address_shapes(self):
         self.assertEqual(
-            find_email_address("Please check Ananya.Jain+hr@example.co.in today"),
+            find_email_address(
+                "Please check Ananya.Jain+hr@example.co.in today"
+            ),
             "Ananya.Jain+hr@example.co.in",
         )
         self.assertIsNone(find_email_address("no email address here"))
@@ -28,7 +27,9 @@ class OrderedRegexMatchingTests(SimpleTestCase):
         identity = IntentNormalizer._extract_workforce_employee_identity(
             "Which shift is assigned to ananya.jain@example.com?"
         )
-        self.assertEqual(identity, {"employee_email": "ananya.jain@example.com"})
+        self.assertEqual(
+            identity, {"employee_email": "ananya.jain@example.com"}
+        )
 
         entities = {}
         _apply_deterministic_entities(
@@ -54,10 +55,15 @@ class OrderedRegexMatchingTests(SimpleTestCase):
         self.assertTrue(_is_find_employee_query("Please find Ananya Jain\n"))
         self.assertFalse(_is_find_employee_query("find "))
         self.assertFalse(_is_find_employee_query("find Alice!"))
-        inferred = IntentNormalizer._infer_read_intelligence("Find Ananya Jain")
+        inferred = IntentNormalizer._infer_read_intelligence(
+            "Find Ananya Jain"
+        )
         self.assertEqual(
             inferred,
-            ("workforce_intelligence", {"workforce_metric": "employee_search"}),
+            (
+                "workforce_intelligence",
+                {"workforce_metric": "employee_search"},
+            ),
         )
 
         adversarial = "find " + ("Ananya " * 20_000) + "!"
@@ -66,31 +72,55 @@ class OrderedRegexMatchingTests(SimpleTestCase):
         self.assertLess(time.perf_counter() - started, 1.0)
 
     def test_ordered_match_preserves_phrase_order_and_line_boundaries(self):
-        self.assertTrue(has_ordered_regex_matches("write code in Python", r"\bwrite\b", r"\bpython\b"))
-        self.assertFalse(has_ordered_regex_matches("Python, then write", r"\bwrite\b", r"\bpython\b"))
-        self.assertFalse(has_ordered_regex_matches("write this\nPython", r"\bwrite\b", r"\bpython\b"))
+        self.assertTrue(
+            has_ordered_regex_matches(
+                "write code in Python", r"\bwrite\b", r"\bpython\b"
+            )
+        )
+        self.assertFalse(
+            has_ordered_regex_matches(
+                "Python, then write", r"\bwrite\b", r"\bpython\b"
+            )
+        )
+        self.assertFalse(
+            has_ordered_regex_matches(
+                "write this\nPython", r"\bwrite\b", r"\bpython\b"
+            )
+        )
 
-    def test_long_repeated_security_starters_do_not_backtrack_superlinearly(self):
+    def test_long_repeated_security_starters_do_not_backtrack_superlinearly(
+        self,
+    ):
         adversarial = "write " * 20_000
         started = time.perf_counter()
         SemanticInterpreter()._validate_security(adversarial)
         self.assertLess(time.perf_counter() - started, 1.0)
 
         with self.assertRaises(CopilotError):
-            SemanticInterpreter()._validate_security("Please write code in Python")
+            SemanticInterpreter()._validate_security(
+                "Please write code in Python"
+            )
 
-    def test_intent_normalizer_handles_repeated_starters_and_keeps_recognition(self):
+    def test_intent_normalizer_handles_repeated_starters_and_keeps_recognition(
+        self,
+    ):
         adversarial = "compare " * 20_000
         started = time.perf_counter()
-        self.assertIsNone(IntentNormalizer._infer_read_intelligence(adversarial))
+        self.assertIsNone(
+            IntentNormalizer._infer_read_intelligence(adversarial)
+        )
         self.assertLess(time.perf_counter() - started, 1.0)
 
         self.assertEqual(
-            IntentNormalizer._infer_read_intelligence("Compare attendance week over week")[0],
+            IntentNormalizer._infer_read_intelligence(
+                "Compare attendance week over week"
+            )[0],
             "attendance_intelligence",
         )
         self.assertEqual(
-            IntentNormalizer._infer_read_intelligence("Show casual leave balance")[0],
+            IntentNormalizer._infer_read_intelligence(
+                "Show casual leave balance"
+            )[0],
             "leave_regularization_intelligence",
         )
 
@@ -107,7 +137,9 @@ class OrderedRegexMatchingTests(SimpleTestCase):
         IntentNormalizer._extract_attendance_employee_name(query)
         self.assertLess(time.perf_counter() - started, 1.0)
         self.assertEqual(
-            IntentNormalizer._extract_attendance_employee_name("mark Ananya present"),
+            IntentNormalizer._extract_attendance_employee_name(
+                "mark Ananya present"
+            ),
             "Ananya",
         )
 
