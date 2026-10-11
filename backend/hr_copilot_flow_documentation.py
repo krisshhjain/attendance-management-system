@@ -58,7 +58,7 @@ def demonstrate_hr_copilot_flow():
 
     try:
         intent = semantic_interpreter.interpret_query(user_query)
-        print(f"   ✅ LLM Result:")
+        print("   ✅ LLM Result:")
         print(f"      Intent: {intent['intent']}")
         print(f"      Source: {intent['source']}")
         print(f"      Entities: {intent['entities']}")
@@ -126,7 +126,7 @@ def demonstrate_hr_copilot_flow():
 
         try:
             plan = plan_query(intent, scope)
-            print(f"   ✅ Query Plan:")
+            print("   ✅ Query Plan:")
             print(f"      Source: {plan['source']}")
             print(f"      Intent: {plan['intent']}")
             print(f"      Filters: {plan['filters']}")
@@ -146,7 +146,7 @@ def demonstrate_hr_copilot_flow():
 
         try:
             sql, params = build_sql(plan)
-            print(f"   ✅ Generated SQL:")
+            print("   ✅ Generated SQL:")
             print(f"      SQL: {sql[:100]}...")
             print(f"      Params: {params}")
         except Exception as e:
@@ -166,7 +166,7 @@ def demonstrate_hr_copilot_flow():
         try:
             validate_sql(sql)
             columns, rows = execute_query(sql, params)
-            print(f"   ✅ Query Results:")
+            print("   ✅ Query Results:")
             print(f"      Columns: {columns}")
             print(f"      Rows: {len(rows)} records")
             if rows:

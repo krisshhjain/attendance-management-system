@@ -1,6 +1,8 @@
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import ManagerScope
@@ -16,6 +18,7 @@ class FakeAudit:
         self.scope_result = "not_run"
         self.execution_result = "not_run"
         self.error_code = ""
+        self.sql = ""
         self.__dict__.update(values)
         self.saved_updates = []
 
@@ -43,6 +46,50 @@ def api(monkeypatch):
     monkeypatch.setattr(views, "append_message", lambda *args, **kwargs: None)
     monkeypatch.setattr(views, "load_context", lambda *args, **kwargs: {})
     monkeypatch.setattr(views, "save_context", lambda *args, **kwargs: None)
+
+    # These request tests exercise API planning and authorization, not the live
+    # Ollama integration. Keep the provider behind its separate integration
+    # tests and supply deterministic intents here.
+    def analyze_test_question(question, *args, **kwargs):
+        lower = question.casefold()
+        if "absent yesterday" in lower:
+            yesterday = (timezone.localdate() - timedelta(days=1)).isoformat()
+            return {
+                "intent": "absence_lookup",
+                "source": "employee",
+                "action_type": "read",
+                "entities": {
+                    "date_range": {"start": yesterday, "end": yesterday}
+                },
+            }
+
+        if "section d" in lower:
+            intent, source = "attendance_lookup", "attendance"
+            entities = {"section": "D"}
+        else:
+            subsection = "C2" if "c2" in lower else "C1"
+            intent, source = "employee_count", "employee"
+            entities = {"section": "C", "subsection": subsection}
+
+        return {
+            "intent": intent,
+            "source": source,
+            "action_type": "read",
+            "entities": entities,
+        }
+
+    monkeypatch.setattr(views, "analyze_question", analyze_test_question)
+
+    def manager_scope_records(manager, is_active):
+        assert is_active is True
+        return [
+            SimpleNamespace(scope_type=ManagerScope.SECTION, value=section)
+            for section in manager.hr_copilot_sections
+        ]
+
+    monkeypatch.setattr(
+        ManagerScope.objects, "filter", manager_scope_records
+    )
     return factory, audit_records
 
 
@@ -50,6 +97,7 @@ def system_admin(**overrides):
     values = {
         "id": 1,
         "is_authenticated": True,
+        "is_active": True,
         "is_system_admin": True,
         "is_superuser": False,
         "hr_copilot_sections": ["C"],
@@ -141,7 +189,7 @@ def test_user_provided_scope_is_ignored_and_server_scope_is_returned(
     assert response.status_code == 200
     assert response.data["scope"] == {
         "sections": ["C"],
-        "subsections": ["C1", "C2"],
+        "subsections": None,
     }
     assert "e.section IN" in audit_records[0].sql
     assert audit_records[0].scope_result == "passed"
@@ -183,13 +231,16 @@ def test_success_response_obeys_structured_contract(api, monkeypatch):
     )
     assert response.status_code == 200
     assert set(response.data) == {
+        "response_type",
         "answer",
         "intent",
         "scope",
         "query_status",
+        "conversation_id",
         "data",
         "visualization",
     }
+    assert response.data["response_type"] == "result"
     assert response.data["query_status"] == "executed"
     assert response.data["data"] == {
         "columns": ["value"],

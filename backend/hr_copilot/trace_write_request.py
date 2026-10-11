@@ -68,7 +68,7 @@ def trace_write_request():
     print("\nStep 3: Analyze Question (Qwen + Normalization)")
     try:
         intent = analyze_question(question, context, session_id=session_id)
-        print(f"  SUCCESS: Intent analyzed")
+        print("  SUCCESS: Intent analyzed")
         print(f"    Intent: {intent.get('intent')}")
         print(f"    Source: {intent.get('source')}")
         print(f"    Action type: {intent.get('action_type')}")
@@ -83,7 +83,7 @@ def trace_write_request():
     print("\nStep 4: Apply Context")
     try:
         intent = apply_context(question, intent, context)
-        print(f"  SUCCESS: Context applied")
+        print("  SUCCESS: Context applied")
     except Exception as e:
         print(f"  ERROR: Context application failed - {e}")
         traceback.print_exc()
@@ -93,7 +93,7 @@ def trace_write_request():
     print("\nStep 5: Derive User Scope")
     try:
         scope = derive_scope(user)
-        print(f"  SUCCESS: Scope derived")
+        print("  SUCCESS: Scope derived")
         print(f"    Unrestricted: {scope.get('unrestricted')}")
         print(f"    Sections: {scope.get('sections')}")
         print(f"    Subsections: {scope.get('subsections')}")
@@ -126,7 +126,7 @@ def trace_write_request():
         pending_action = write_action_planner.plan_write_action(
             intent, user, session_id
         )
-        print(f"  SUCCESS: Write action planned")
+        print("  SUCCESS: Write action planned")
         print(f"    Action ID: {pending_action.get('action_id')}")
         print(f"    Action type: {pending_action.get('action_type')}")
         print(f"    Description: {pending_action.get('description')}")

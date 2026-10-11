@@ -90,7 +90,7 @@ def test_complete_write_flow():
                 action_id = response.data.get("action_id")
                 pending_action = response.data.get("pending_action")
 
-                print(f"\nPending Action Details:")
+                print("\nPending Action Details:")
                 print(f"  Action ID: {action_id}")
                 print(f"  Description: {pending_action.get('description')}")
                 print(

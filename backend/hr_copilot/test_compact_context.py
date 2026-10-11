@@ -81,11 +81,11 @@ def test_compact_context():
         print("=" * 60)
 
         try:
-            print(f"\n--- Session State Before Query ---")
+            print("\n--- Session State Before Query ---")
             state_before = session_memory.get_session_state(session_id)
             print(f"State: {state_before.to_dict()}")
 
-            print(f"\n--- Intent Extraction ---")
+            print("\n--- Intent Extraction ---")
 
             # Monkey patch to measure context size
             original_structured_output = provider.structured_output
@@ -121,13 +121,13 @@ def test_compact_context():
             finally:
                 provider.structured_output = original_structured_output
 
-            print(f"\n--- Session State After Query ---")
+            print("\n--- Session State After Query ---")
             state_after = session_memory.get_session_state(session_id)
             print(f"State: {state_after.to_dict()}")
 
             # Test response generation with minimal test data
             if intent:
-                print(f"\n--- Response Generation Test ---")
+                print("\n--- Response Generation Test ---")
                 test_data = [
                     {"name": "Test Employee", "status": "PRESENT", "value": 1}
                 ]
@@ -220,25 +220,25 @@ def test_compact_context():
             m["total_tokens_est"] for m in all_measurements
         ) / len(all_measurements)
 
-        print(f"\nContext Size Analysis:")
+        print("\nContext Size Analysis:")
         print(f"  Maximum: {max_chars} chars (~{max_tokens} tokens)")
         print(f"  Average: {avg_chars:.0f} chars (~{avg_tokens:.0f} tokens)")
         print(f"  Total LLM calls: {len(all_measurements)}")
 
         # Check if we're under typical context limits
         if max_tokens <= 4000:
-            print(f"  ✓ All contexts under 4K token limit")
+            print("  ✓ All contexts under 4K token limit")
         elif max_tokens <= 8000:
-            print(f"  ⚠ Contexts under 8K token limit (safe for most models)")
+            print("  ⚠ Contexts under 8K token limit (safe for most models)")
         else:
-            print(f"  ✗ Some contexts exceed 8K tokens (may cause issues)")
+            print("  ✗ Some contexts exceed 8K tokens (may cause issues)")
 
     print(
         f"\nQuery Success Rate: {successful_queries}/{len(queries)} ({successful_queries / len(queries) * 100:.1f}%)"
     )
 
     # Show context evolution
-    print(f"\nSession Memory Evolution:")
+    print("\nSession Memory Evolution:")
     for i, result in enumerate(results, 1):
         state = result.get("session_state", {})
         if state:
@@ -248,8 +248,8 @@ def test_compact_context():
             print(f"  After Query {i}: (no state)")
 
     # Calculate approximate context reduction
-    print(f"\nContext Reduction Estimate:")
-    print(f"  Before: Large system prompts with full examples (~2000+ chars)")
+    print("\nContext Reduction Estimate:")
+    print("  Before: Large system prompts with full examples (~2000+ chars)")
     print(
         f"  After: Compact prompts with session context (~{avg_chars:.0f} chars average)"
     )
