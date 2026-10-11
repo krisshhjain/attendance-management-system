@@ -27,7 +27,7 @@ def test_ollama_provider_sends_json_intent_request(monkeypatch):
     monkeypatch.setenv("HR_COPILOT_LLM_TIMEOUT_SECONDS", "20")
     calls = []
 
-    def fake_urlopen(request, timeout):
+    def fake_open(request, timeout):
         calls.append((request, timeout))
         return response_for(
             {
@@ -37,7 +37,7 @@ def test_ollama_provider_sends_json_intent_request(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(providers, "urlopen", fake_urlopen)
+    monkeypatch.setattr(providers, "_open_local_request", fake_open)
     result = llm.get_structured_intent("How many employees in C?")
     assert result == {
         "intent": "employee_count",
@@ -58,7 +58,7 @@ def test_provider_accepts_absence_intent_as_employee_query(monkeypatch):
     yesterday = "2026-09-23"
     monkeypatch.setattr(
         providers,
-        "urlopen",
+        "_open_local_request",
         lambda *_args, **_kwargs: response_for(
             {
                 "intent": "absence_lookup",
@@ -112,7 +112,9 @@ def test_provider_accepts_absence_intent_as_employee_query(monkeypatch):
 def test_invalid_provider_output_is_rejected(monkeypatch, output):
     monkeypatch.setenv("HR_COPILOT_LLM_URL", "http://localhost:11434")
     monkeypatch.setattr(
-        providers, "urlopen", lambda *_args, **_kwargs: response_for(output)
+        providers,
+        "_open_local_request",
+        lambda *_args, **_kwargs: response_for(output),
     )
     with pytest.raises(CopilotError):
         llm.get_structured_intent("question")
@@ -122,7 +124,7 @@ def test_provider_network_failure_returns_controlled_error(monkeypatch):
     monkeypatch.setenv("HR_COPILOT_LLM_URL", "http://localhost:11434")
     monkeypatch.setattr(
         providers,
-        "urlopen",
+        "_open_local_request",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(URLError("offline")),
     )
     with pytest.raises(CopilotError) as raised:
@@ -134,7 +136,9 @@ def test_provider_network_failure_returns_controlled_error(monkeypatch):
 def test_malformed_provider_json_is_rejected(monkeypatch):
     monkeypatch.setenv("HR_COPILOT_LLM_URL", "http://localhost:11434")
     monkeypatch.setattr(
-        providers, "urlopen", lambda *_args, **_kwargs: io.BytesIO(b"not-json")
+        providers,
+        "_open_local_request",
+        lambda *_args, **_kwargs: io.BytesIO(b"not-json"),
     )
     with pytest.raises(CopilotError) as raised:
         llm.get_structured_intent("question")

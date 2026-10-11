@@ -7,12 +7,30 @@ import re
 from dataclasses import dataclass
 from urllib.error import URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import (
+    HTTPRedirectHandler,
+    Request,
+    build_opener,
+)
 
 logger = logging.getLogger(__name__)
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "host.docker.internal"}
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "qwen3-8b-q4km-local"
+
+
+class _RejectRedirectsHandler(HTTPRedirectHandler):
+    """Prevent a local endpoint from forwarding requests elsewhere."""
+
+    def redirect_request(
+        self, request, file_pointer, code, message, headers, url
+    ):
+        return None
+
+
+def _open_local_request(request, timeout):
+    opener = build_opener(_RejectRedirectsHandler())
+    return opener.open(request, timeout=timeout)
 
 
 class LLMProviderError(Exception):
@@ -83,7 +101,8 @@ class LocalOllamaQwenProvider:
             or parsed.password
         ):
             raise LLMProviderConfigurationError(
-                "The HR Copilot LLM provider must use a local Ollama HTTP endpoint."
+                "The HR Copilot LLM provider must use a local Ollama "
+                "HTTP endpoint."
             )
         if not self.model or len(self.model) > 200:
             raise LLMProviderConfigurationError(
@@ -114,7 +133,9 @@ class LocalOllamaQwenProvider:
             method="POST" if data else "GET",
         )
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
+            with _open_local_request(
+                request, timeout=self.timeout_seconds
+            ) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (URLError, TimeoutError, ValueError, OSError) as error:
             logger.warning("Local Ollama request failed: %s", error)

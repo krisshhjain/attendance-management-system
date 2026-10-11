@@ -1,5 +1,9 @@
 import io
 import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import pytest
 
 from hr_copilot.services import providers
 
@@ -13,11 +17,11 @@ def test_local_provider_uses_configured_model_and_generation_options(
 ):
     calls = []
 
-    def fake_urlopen(request, timeout):
+    def fake_open(request, timeout):
         calls.append((request, timeout))
         return response_for({"message": {"content": '{"intent": "unknown"}'}})
 
-    monkeypatch.setattr(providers, "urlopen", fake_urlopen)
+    monkeypatch.setattr(providers, "_open_local_request", fake_open)
     provider = providers.LocalOllamaQwenProvider(
         base_url="http://127.0.0.1:11434/api/chat",
         model="qwen3-8b-q4km-local",
@@ -39,7 +43,7 @@ def test_local_provider_uses_configured_model_and_generation_options(
 def test_health_requires_local_model_to_be_listed(monkeypatch):
     monkeypatch.setattr(
         providers,
-        "urlopen",
+        "_open_local_request",
         lambda *_args, **_kwargs: response_for(
             {
                 "models": [{"name": "qwen3-8b-q4km-local:latest"}],
@@ -64,3 +68,59 @@ def test_cloud_provider_endpoints_are_not_allowed():
         pass
     else:
         raise AssertionError("A cloud endpoint must not be accepted.")
+
+
+def test_local_provider_rejects_redirects_to_other_hosts():
+    forwarded_requests = []
+
+    class DestinationHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            forwarded_requests.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    destination = ThreadingHTTPServer(
+        ("127.0.0.1", 0), DestinationHandler
+    )
+    destination_thread = threading.Thread(
+        target=destination.serve_forever, daemon=True
+    )
+    destination_thread.start()
+
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(307)
+            self.send_header("Location", self.server.destination_url)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    redirector = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    redirector.destination_url = (
+        f"http://127.0.0.1:{destination.server_port}/receive"
+    )
+    redirect_thread = threading.Thread(
+        target=redirector.serve_forever, daemon=True
+    )
+    redirect_thread.start()
+
+    try:
+        provider = providers.LocalOllamaQwenProvider(
+            base_url=f"http://127.0.0.1:{redirector.server_port}",
+            timeout_seconds=2,
+        )
+        with pytest.raises(providers.LLMProviderError):
+            provider.generate("sensitive prompt")
+    finally:
+        redirector.shutdown()
+        destination.shutdown()
+        redirect_thread.join(timeout=2)
+        destination_thread.join(timeout=2)
+        redirector.server_close()
+        destination.server_close()
+
+    assert forwarded_requests == []
