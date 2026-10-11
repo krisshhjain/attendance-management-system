@@ -70,7 +70,19 @@ jobs:
         POSTGRES_HOST: 127.0.0.1
         POSTGRES_PORT: 5432
       run: |
-        python -m coverage run --rcfile=.coveragerc manage.py test
+        python -m coverage run --rcfile=.coveragerc manage.py test --keepdb --noinput
+
+    - name: Run isolated HR Copilot pytest coverage
+      working-directory: backend
+      env:
+        DJANGO_SECRET_KEY: ci-only-not-a-deployment-secret
+        POSTGRES_DB: test_attendance_db
+        POSTGRES_USER: attendance_user
+        POSTGRES_PASSWORD: ci-only-test-password
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: 5432
+      run: |
+        python -m coverage run --append --rcfile=.coveragerc ../.github/scripts/run_backend_pytest.py hr_copilot/test_api.py hr_copilot/test_llm.py hr_copilot/test_providers.py
         python -m coverage report --rcfile=.coveragerc
         python -m coverage xml --rcfile=.coveragerc -o coverage.xml
         python ../.github/scripts/normalize_coverage_xml.py coverage.xml backend
