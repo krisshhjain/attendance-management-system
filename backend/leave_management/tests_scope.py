@@ -103,7 +103,9 @@ class LeaveScopeTests(TestCase):
         )
 
         # Requests
-        date = timezone.localdate() + timedelta(days=5)
+        date = timezone.localdate() + timedelta(days=1)
+        while date.weekday() >= 5:
+            date += timedelta(days=1)
         self.req_intern_c = LeaveRequest.objects.create(
             employee=self.intern_c,
             leave_type=self.leave_type,

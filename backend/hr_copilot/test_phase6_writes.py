@@ -274,7 +274,9 @@ class Phase6WriteTests(TestCase):
         )
 
     def test_leave_create_uses_exact_leave_type_and_service_rules(self):
-        target = timezone.localdate() + timedelta(days=5)
+        target = timezone.localdate() + timedelta(days=1)
+        while target.weekday() >= 5:
+            target += timedelta(days=1)
         result = self.execute(
             self.intent(
                 "leave_create",
