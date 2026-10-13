@@ -123,3 +123,44 @@ def test_context_reset_removes_follow_up_facts(monkeypatch):
     )
     manager.clear_session("conversation-reset")
     assert deleted == ["hr_copilot_session:conversation-reset"]
+
+
+def test_context_matches_employee_name_without_overriding_an_explicit_email():
+    context = {"current_employee_id": 17, "current_employee_name": "Asha Rao"}
+    matched = conversation.apply_context(
+        "Show Asha's attendance", {"entities": {"employee_name": "Asha"}}, context
+    )
+    assert matched["entities"] == {"employee_id": 17}
+
+    explicit = conversation.apply_context(
+        "Show Asha's attendance for asha@example.test",
+        {"entities": {"employee_name": "Asha"}},
+        context,
+    )
+    assert explicit["entities"] == {"employee_name": "Asha"}
+
+
+def test_follow_up_context_carries_request_and_scoped_filters():
+    result = conversation.apply_context(
+        "What about that request for her?",
+        {"entities": {}},
+        {
+            "current_employee_id": 17,
+            "current_request_id": 81,
+            "current_date": "2026-10-01",
+            "current_date_end": "2026-10-07",
+            "last_intent": "leave_lookup",
+            "current_section": "C",
+        },
+    )
+    assert result["entities"]["employee_id"] == 17
+    assert result["entities"]["date_range"] == {
+        "start": "2026-10-01", "end": "2026-10-07"
+    }
+    relative = conversation.apply_context("What about yesterday?", {"entities": {}}, {"last_intent": "attendance_lookup"})
+    assert relative["entities"]["temporal_expression"] == "yesterday"
+
+    narrowed = conversation.apply_context(
+        "Only the same people", {"entities": {}}, {"current_section": "C"}
+    )
+    assert narrowed["entities"]["section"] == "C"

@@ -2465,3 +2465,41 @@ def test_attendance_intelligence_read_uses_typed_tool_and_metadata(
     ]
     assert response.data["data"]["metadata"]["metric"] == "missing_checkins"
     assert audit_records[0].sql == ""
+
+
+def test_regularization_planner_rejects_invalid_times_before_creating_action(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 14)
+    )
+    attendance_query = MagicMock()
+    attendance_query.filter.return_value.first.return_value = None
+    monkeypatch.setattr(
+        write_action_module,
+        "Attendance",
+        SimpleNamespace(objects=attendance_query),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_regularization_create(
+            {
+                "intent": "regularization_create",
+                "entities": {
+                    "request_type": "FORGOT_CHECK_IN",
+                    "reason": "Missed check-in",
+                    "check_in_time": "not-a-time",
+                },
+            },
+            system_admin(),
+            {"unrestricted": True},
+            "invalid-regularization-time",
+        )
+
+    assert raised.value.code == "invalid_regularization_time"
+    attendance_query.filter.return_value.first.assert_called_once()
