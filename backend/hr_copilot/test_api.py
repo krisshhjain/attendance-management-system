@@ -2691,3 +2691,83 @@ def test_conversation_context_preserves_explicit_identity_and_scoped_follow_up()
     assert follow_up["entities"]["date_range"] == {
         "start": "2026-10-01", "end": "2026-10-07"
     }
+
+def _awaiting_write_draft(action_type, target_data, missing=None):
+    return {
+        "action_id": "awaiting-action",
+        "action_type": action_type,
+        "intent": action_type,
+        "target_data": target_data,
+        "proposed_changes": {"status": "PRESENT"},
+        "validation_errors": list(missing or []),
+        "current_state": {},
+    }
+
+
+def test_attendance_follow_up_waits_for_missing_employee_without_executing(api, monkeypatch):
+    factory, _ = api
+    draft = _awaiting_write_draft(
+        "attendance_update",
+        {"employee_id": None, "employee_name": None, "date": "2026-10-14", "target_status": "ABSENT"},
+        ["employee_name"],
+    )
+    updated = {}
+    monkeypatch.setattr(views.pending_action_manager, "get_awaiting_action", lambda *_: draft)
+    monkeypatch.setattr(views, "extract_pending_action_fields", lambda *_: {})
+    monkeypatch.setattr(views, "extract_pending_action_fields", lambda *_: {})
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "update_awaiting_action",
+        lambda _id, _user, _session, values: updated.update(values) or {**draft, **values},
+    )
+    response = call_endpoint(
+        factory, system_admin(), {"message": "continue", "conversation_id": "missing-target"}
+    )
+    assert response.status_code == 200
+    assert response.data["query_status"] == "awaiting_information"
+    assert "employee" in response.data["answer"].lower()
+    assert updated["validation_errors"] == ["employee_name"]
+
+
+def test_query_cancels_session_action_without_executing_it(api, monkeypatch):
+    factory, _ = api
+    action = {"action_id": "session-cancel", "intent": "attendance_update", "conversation_id": "session-cancel"}
+    cancelled = []
+    monkeypatch.setattr(views.pending_action_manager, "get_session_actions", lambda *_: {"session-cancel": action})
+    monkeypatch.setattr(views.pending_action_manager, "cancel_action", lambda *args: cancelled.append(args) or action)
+    monkeypatch.setattr(views, "record_event", lambda **_: None)
+    monkeypatch.setattr(views, "_record_copilot_action_event", lambda **_: None)
+    monkeypatch.setattr(views, "update_action_message", lambda *args: None)
+    monkeypatch.setattr(views.write_action_executor, "execute_approved_action", lambda *_: pytest.fail("cancel must not execute"))
+
+    response = call_endpoint(
+        factory, system_admin(), {"message": "cancel", "conversation_id": "session-cancel"}
+    )
+    assert response.status_code == 200
+    assert response.data["query_status"] == "cancelled"
+    assert cancelled == [(views.copilot_action_session_id(1, "session-cancel"), "session-cancel", 1)]
+
+
+def test_query_marks_failed_action_when_confirmation_execution_is_denied(api, monkeypatch):
+    factory, _ = api
+    action = {"action_id": "session-fail", "intent": "attendance_update", "conversation_id": "session-fail"}
+    failures = []
+    monkeypatch.setattr(views.pending_action_manager, "get_session_actions", lambda *_: {"session-fail": action})
+    monkeypatch.setattr(views.pending_action_manager, "approve_action", lambda *_: action)
+    monkeypatch.setattr(
+        views.write_action_executor, "execute_approved_action",
+        lambda *_: (_ for _ in ()).throw(CopilotError("scope_denied", "Scope changed", 403)),
+    )
+    monkeypatch.setattr(views.pending_action_manager, "mark_failed", lambda *args: failures.append(args))
+    monkeypatch.setattr(views, "record_event", lambda **_: None)
+    monkeypatch.setattr(views.HRCopilotActionApprovalView, "_record_failure", staticmethod(lambda *args: None))
+    monkeypatch.setattr(views, "_record_copilot_action_event", lambda **_: None)
+    monkeypatch.setattr(views, "update_action_message", lambda *args: None)
+
+    response = call_endpoint(
+        factory, system_admin(), {"message": "confirm", "conversation_id": "session-fail"}
+    )
+    assert response.status_code == 403
+    assert response.data["query_status"] == "rejected"
+    assert response.data["code"] == "scope_denied"
+    assert len(failures) == 1
