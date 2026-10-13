@@ -314,3 +314,34 @@ class LeaveScopeTests(TestCase):
             "/media/leave_attachments/saved.pdf", response.data["file_url"]
         )
         save_file.assert_called_once()
+
+    def test_leave_duration_estimate_rejects_missing_and_malformed_dates(self):
+        self.client.force_authenticate(user=self.intern_c.user)
+
+        missing = self.client.post(
+            "/api/leave/estimate-duration/", {"start_date": "2026-10-12"}
+        )
+        malformed = self.client.post(
+            "/api/leave/estimate-duration/",
+            {"start_date": "yesterday", "end_date": "2026-10-12"},
+        )
+
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            missing.data["error"], "start_date and end_date are required."
+        )
+        self.assertEqual(malformed.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            malformed.data["error"], "Invalid date format. Expected YYYY-MM-DD."
+        )
+
+    def test_leave_duration_estimate_returns_working_day_total(self):
+        self.client.force_authenticate(user=self.intern_c.user)
+
+        response = self.client.post(
+            "/api/leave/estimate-duration/",
+            {"start_date": "2026-10-12", "end_date": "2026-10-13"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["duration_days"], 2.0)

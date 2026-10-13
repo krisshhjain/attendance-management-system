@@ -76,3 +76,25 @@ class EmployeeViewScopeCoverageTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.data["error"], "Employee not found.")
+
+    def test_admin_password_reset_validates_and_requires_change_at_login(self):
+        admin = User.objects.create_superuser(
+            email="password-reset-admin@example.test", password="AdminOld!42"
+        )
+        self.client.force_authenticate(admin)
+        url = f"/api/admin/employees/{self.employee.id}/change-password/"
+        prior_password_hash = self.employee_user.password
+
+        rejected = self.client.post(url, {"new_password": "short"})
+        self.assertEqual(rejected.status_code, 400)
+        self.employee_user.refresh_from_db()
+        self.assertEqual(self.employee_user.password, prior_password_hash)
+
+        new_password = "Q7!mR4#vP9$zT2"
+        changed = self.client.post(url, {"new_password": new_password})
+
+        self.assertEqual(changed.status_code, 200, changed.data)
+        self.employee_user.refresh_from_db()
+        self.employee.refresh_from_db()
+        self.assertTrue(self.employee_user.check_password(new_password))
+        self.assertTrue(self.employee.must_change_password)

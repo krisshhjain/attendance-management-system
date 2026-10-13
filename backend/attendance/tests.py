@@ -18,7 +18,8 @@ from attendance.geofence import (GEOFENCE_RADIUS_METERS, MAX_ACCURACY_METERS,
                                  WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE,
                                  calculate_haversine_distance)
 from attendance.models import (Attendance, AttendanceCorrection,
-                               AttendanceEvent, RegularizationRequest, Shift,
+                               AttendanceEvent, OfficeLocation,
+                               RegularizationRequest, Shift,
                                RegularizationQuotaPolicy, attendance_day_end,
                                calculate_working_duration,
                                get_effective_attendance_events)
@@ -4158,6 +4159,70 @@ class AdminForceCheckoutTests(APITestCase):
             AttendanceEvent.objects.filter(employee=self.employee).count(),
             2,
         )
+
+
+class AttendanceAdminScopeAndLocationTests(APITestCase):
+    def test_system_admin_cannot_force_checkout_employee_outside_scope(self):
+        admin = User.objects.create_user(
+            email="force-scope-admin@example.test", is_system_admin=True
+        )
+        ManagerScope.objects.create(
+            manager=admin, scope_type="SECTION", value="C"
+        )
+        target_user = User.objects.create_user(
+            email="force-scope-target@example.test"
+        )
+        target = Employee.objects.create(
+            user=target_user,
+            department="Marketing",
+            employment_type="PERMANENT",
+            date_joined=timezone.localdate(),
+            section="D",
+        )
+        self.client.force_authenticate(admin)
+
+        response = self.client.post(
+            "/api/admin/force-checkout/",
+            {"employee": target_user.email},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["error"], "You do not have access to this employee.")
+        self.assertFalse(AttendanceEvent.objects.filter(employee=target).exists())
+
+    def test_authenticated_employee_cannot_mutate_office_locations(self):
+        user = User.objects.create_user(email="location-employee@example.test")
+        employee = Employee.objects.create(
+            user=user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=timezone.localdate(),
+        )
+        location = OfficeLocation.objects.create(
+            name="HQ", latitude=12.9, longitude=77.6
+        )
+        self.client.force_authenticate(user)
+
+        created = self.client.post(
+            "/api/attendance/locations/",
+            {"name": "Branch", "latitude": 12.8, "longitude": 77.5},
+            format="json",
+        )
+        updated = self.client.put(
+            f"/api/attendance/locations/{location.id}/",
+            {"name": "Changed"},
+            format="json",
+        )
+        deleted = self.client.delete(
+            f"/api/attendance/locations/{location.id}/"
+        )
+
+        self.assertEqual(created.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(updated.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(deleted.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(OfficeLocation.objects.count(), 1)
+        self.assertTrue(Employee.objects.filter(pk=employee.pk).exists())
 
 
 class ShiftAssignmentTests(APITestCase):

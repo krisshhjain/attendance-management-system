@@ -8,6 +8,7 @@ from django.utils import timezone
 from accounts.models import User
 from attendance.models import Attendance
 from employees.models import Employee
+from holidays.models import Holiday
 from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
 from leave_management.services import (approve_leave_request,
                                        calculate_employee_leave_balances,
@@ -359,3 +360,82 @@ class LeaveManagementTestCase(TestCase):
                 attachment="",
             )
         self.assertIn("Supporting documentation is required", str(document_error.exception))
+
+    def test_leave_policy_enforces_notice_and_consecutive_day_limits(self):
+        self.casual_policy.min_notice_days = 5
+        self.casual_policy.save(update_fields=["min_notice_days"])
+        start = timezone.localdate() + timedelta(days=2)
+        while start.weekday() >= 5:
+            start += timedelta(days=1)
+
+        with self.assertRaises(ValidationError) as notice_error:
+            validate_leave_request(
+                self.employee,
+                self.casual_leave,
+                start,
+                start,
+                reason="Personal",
+            )
+        self.assertIn("Minimum notice period", str(notice_error.exception))
+
+        self.casual_policy.min_notice_days = 0
+        self.casual_policy.max_consecutive_days = 1
+        self.casual_policy.save(
+            update_fields=["min_notice_days", "max_consecutive_days"]
+        )
+        start += timedelta(days=(7 - start.weekday()) % 7)
+        end = start + timedelta(days=1)
+        with self.assertRaises(ValidationError) as duration_error:
+            validate_leave_request(
+                self.employee,
+                self.casual_leave,
+                start,
+                end,
+                reason="Personal",
+            )
+        self.assertIn("Maximum consecutive days", str(duration_error.exception))
+
+    def test_denial_without_reviewer_remarks_preserves_pending_request(self):
+        target = timezone.localdate() + timedelta(days=3)
+        while target.weekday() >= 5:
+            target += timedelta(days=1)
+        request = LeaveRequest.objects.create(
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=target,
+            end_date=target,
+            duration_days=Decimal("1.0"),
+            reason="Personal",
+            status="PENDING",
+        )
+
+        with self.assertRaises(ValidationError) as raised:
+            deny_leave_request(request, self.admin_user, "  ")
+
+        self.assertIn("Reviewer remarks are required", str(raised.exception))
+        request.refresh_from_db()
+        self.assertEqual(request.status, "PENDING")
+        self.assertFalse(Attendance.objects.filter(leave_request=request).exists())
+
+    def test_approval_rechecks_dates_after_a_holiday_is_added(self):
+        target = timezone.localdate() + timedelta(days=7)
+        while target.weekday() >= 5:
+            target += timedelta(days=1)
+        request = LeaveRequest.objects.create(
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=target,
+            end_date=target,
+            duration_days=Decimal("1.0"),
+            reason="Personal",
+            status="PENDING",
+        )
+        Holiday.objects.create(date=target, name="New company holiday")
+
+        with self.assertRaises(ValidationError) as raised:
+            approve_leave_request(request, self.admin_user)
+
+        self.assertIn("no working days", str(raised.exception))
+        request.refresh_from_db()
+        self.assertEqual(request.status, "PENDING")
+        self.assertFalse(Attendance.objects.filter(leave_request=request).exists())

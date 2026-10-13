@@ -1820,6 +1820,182 @@ def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
     event_create.assert_not_called()
 
 
+def test_force_checkout_appends_event_only_for_an_open_interval(monkeypatch):
+    target_date = date(2026, 10, 14)
+    employee = SimpleNamespace(get_effective_shift=lambda: "morning-shift")
+    attendance = SimpleNamespace(
+        employee=employee, recompute_from_events=MagicMock()
+    )
+    attendance_query = MagicMock()
+    attendance_query.select_related.return_value.get.return_value = attendance
+    open_event = SimpleNamespace(event_type="CHECK_IN")
+    events_query = MagicMock()
+    events_query.order_by.return_value = [open_event]
+    created_event = SimpleNamespace(id=91)
+    event_create = MagicMock(return_value=created_event)
+    monkeypatch.setattr(
+        write_executor_module,
+        "Attendance",
+        SimpleNamespace(objects=attendance_query),
+    )
+    monkeypatch.setattr(
+        write_executor_module,
+        "AttendanceEvent",
+        SimpleNamespace(
+            objects=SimpleNamespace(
+                filter=lambda **_: events_query, create=event_create
+            )
+        ),
+    )
+
+    result = write_action_executor._execute_force_checkout(
+        {
+            "target_data": {
+                "employee_id": 42,
+                "employee_name": "Asha Rao",
+                "date": target_date.isoformat(),
+            }
+        },
+        system_admin(),
+    )
+
+    assert result["success"] is True
+    assert result["event_id"] == 91
+    event_create.assert_called_once()
+    assert event_create.call_args.kwargs["event_type"] == "CHECK_OUT"
+    assert event_create.call_args.kwargs["source"] == "ADMIN"
+    attendance.recompute_from_events.assert_called_once_with()
+
+
+@pytest.mark.parametrize("entities", [{}, {"employee_id": 42}])
+def test_regularization_review_requires_an_unambiguous_target(
+    monkeypatch, entities
+):
+    query = MagicMock()
+    query.filter.return_value = query
+    monkeypatch.setattr(
+        write_action_module,
+        "RegularizationRequest",
+        SimpleNamespace(
+            objects=SimpleNamespace(select_related=lambda *_: query)
+        ),
+    )
+    query.order_by.return_value = []
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_regularization_review(
+            {
+                "intent": "regularization_approve",
+                "entities": entities,
+            },
+            system_admin(),
+            {"unrestricted": True},
+            "regularization-review",
+        )
+
+    assert raised.value.code == (
+        "request_required" if not entities else "regularization_not_found"
+    )
+
+
+def test_leave_cancel_requires_a_linked_employee_profile():
+    class UserWithoutEmployee:
+        id = 7
+
+        @property
+        def employee(self):
+            raise write_action_module.Employee.DoesNotExist
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_leave_cancel(
+            {"intent": "leave_cancel", "entities": {}},
+            UserWithoutEmployee(),
+            {"unrestricted": True},
+            "leave-cancel-no-profile",
+        )
+
+    assert raised.value.code == "no_employee_profile"
+
+
+def test_employee_profile_query_returns_tool_data(api, monkeypatch):
+    factory, _ = api
+    employee_data = [{"name": "Asha Rao", "department": "Engineering"}]
+    monkeypatch.setattr(views, "record_event", lambda **_: None)
+    monkeypatch.setattr(
+        views,
+        "analyze_question",
+        lambda *_args, **_kwargs: {
+            "intent": "employee_lookup",
+            "source": "employee",
+            "action_type": "read",
+            "entities": {},
+        },
+    )
+    monkeypatch.setattr(
+        views,
+        "plan_query",
+        lambda *_args: {
+            "intent": "employee_lookup",
+            "source": "employee",
+            "filters": {},
+            "scope": {"unrestricted": True},
+            "limit": 100,
+            "employee": {"status": "resolved", "employee_id": 42},
+        },
+    )
+    monkeypatch.setattr(
+        views.hr_tools,
+        "get_employee_profile",
+        lambda **kwargs: employee_data,
+    )
+    monkeypatch.setattr(views, "generate_natural_answer", lambda *_a, **_k: "Profile found.")
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": "Show Asha Rao's profile", "conversation_id": "employee-profile"},
+    )
+
+    assert response.status_code == 200
+    assert response.data["data"]["rows"] == employee_data
+    assert response.data["data"]["columns"] == ["name", "department"]
+
+
+def test_pending_actions_view_returns_safe_error_when_store_fails(api, monkeypatch):
+    factory, _ = api
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_user_actions",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("store unavailable")),
+    )
+    request = factory.get("/api/hr-copilot/actions/")
+    force_authenticate(request, user=system_admin())
+
+    response = views.HRCopilotPendingActionsView.as_view()(request)
+
+    assert response.status_code == 500
+    assert response.data["pending_actions"] == []
+    assert response.data["count"] == 0
+    assert "store unavailable" in response.data["detail"]
+
+
+def test_pipeline_rejects_department_ambiguity_before_query_planning(monkeypatch):
+    monkeypatch.setattr(
+        "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
+        lambda *_args, **_kwargs: {
+            "intent": "employee_lookup",
+            "source": "employee",
+            "entities": {},
+            "missing_information": ["department"],
+        },
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        pipeline.analyze_question("Show department statistics")
+
+    assert raised.value.code == "department_not_found"
+
+
 def test_executor_rejects_cancelling_an_already_executed_action(monkeypatch):
     action = SimpleNamespace(status="EXECUTED", cancel=lambda: pytest.fail("executed action was cancelled"))
     query = SimpleNamespace(first=lambda: action)
