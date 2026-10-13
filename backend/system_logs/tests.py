@@ -1442,6 +1442,15 @@ class SystemLogAPITests(TestCase):
             [item["id"] for item in numeric_actor.data],
             [self.employee_user.id],
         )
+        long_actor_search = self.get_as(
+            self.superuser,
+            f"/api/system-logs/actors/?search={'x' * 101}",
+        )
+        self.assertEqual(long_actor_search.status_code, 400)
+        self.assertEqual(
+            long_actor_search.data["detail"],
+            "search must be 100 characters or fewer.",
+        )
 
         csv_response = self.get_as(
             self.superuser,

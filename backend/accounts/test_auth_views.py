@@ -64,3 +64,20 @@ class SystemAdminLoginViewTests(TestCase):
                 message__contains=self.manager.email,
             ).exists()
         )
+
+    def test_change_password_rejects_an_incorrect_current_password(self):
+        self.client.force_authenticate(user=self.manager)
+
+        response = self.client.post(
+            "/api/auth/change-password/",
+            {
+                "current_password": "wrong-current-password",
+                "new_password": "Secure-New-123!abc",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("incorrect", str(response.data["current_password"]))
+        self.manager.refresh_from_db()
+        self.assertTrue(self.manager.check_password("Correct-pass-123"))
