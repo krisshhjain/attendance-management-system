@@ -81,6 +81,7 @@ class Phase6WriteTests(TestCase):
 
     def execute(self, intent):
         session = f"hr-copilot-user-{self.admin.id}-phase6"
+        session = "attendance-create-stale-confirmation"
         pending = write_action_planner.plan_write_action(
             intent, self.admin, session
         )
@@ -168,6 +169,105 @@ class Phase6WriteTests(TestCase):
         self.assertEqual(
             set(events.values_list("event_type", flat=True)),
             {"CHECK_IN", "CHECK_OUT"},
+        )
+
+    def test_attendance_create_uses_confirmed_create_execution_path(self):
+        target = timezone.localdate()
+        intent = self.intent(
+            "attendance_create",
+            {
+                "employee_id": self.employee.id,
+                "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+                "target_status": "PRESENT",
+                "check_in_time": "09:00",
+                "check_out_time": "18:00",
+            },
+        )
+        session = f"hr-copilot-user-{self.admin.id}-attendance-create"
+        pending = write_action_planner.plan_write_action(intent, self.admin, session)
+
+        self.assertEqual(pending["action_type"], "attendance_create")
+        self.assertTrue(pending["requires_confirmation"])
+        self.assertFalse(pending["current_state"]["exists"])
+        action_id = pending_action_manager.store_pending_action(session, pending)
+        approved = pending_action_manager.approve_action(session, action_id, self.admin.id)
+        result = write_action_executor.execute_approved_action(approved, self.admin)
+        pending_action_manager.mark_executed(action_id, self.admin.id, session, result)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["operation"], "created")
+        self.assertEqual(result["status"], "PRESENT")
+        self.assertEqual(
+            set(AttendanceEvent.objects.filter(
+                employee=self.employee, timestamp__date=target
+            ).values_list("event_type", flat=True)),
+            {"CHECK_IN", "CHECK_OUT"},
+        )
+        self.assertTrue(AttendanceEvent.objects.filter(
+            employee=self.employee, timestamp__date=target,
+            correction__isnull=False,
+        ).exists())
+
+    def test_attendance_create_rejects_duplicate_and_out_of_scope_employee(self):
+        target = timezone.localdate()
+        Attendance.objects.create(employee=self.employee, date=target, status="ABSENT")
+        duplicate = self.intent(
+            "attendance_create",
+            {"employee_id": self.employee.id,
+             "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+             "target_status": "PRESENT", "check_in_time": "09:00", "check_out_time": "18:00"},
+        )
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(duplicate, self.admin, "duplicate-create")
+        self.assertEqual(error.exception.code, "attendance_exists")
+
+        outside_user = get_user_model().objects.create_user(
+            email="phase6-outside-create@example.test"
+        )
+        outside = Employee.objects.create(
+            user=outside_user,
+            department="Finance",
+            employment_type="PERMANENT",
+            date_joined=target - timedelta(days=10),
+            section="D",
+            subsection="D1",
+        )
+        unauthorized = self.intent(
+            "attendance_create",
+            {"employee_id": outside.id,
+             "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+             "target_status": "ABSENT"},
+        )
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(unauthorized, self.admin, "outside-create")
+        self.assertEqual(error.exception.code, "scope_denied")
+        self.assertEqual(error.exception.status, 403)
+
+    def test_attendance_create_rechecks_duplicates_after_confirmation(self):
+        target = timezone.localdate()
+        pending = write_action_planner.plan_write_action(
+            self.intent(
+                "attendance_create",
+                {"employee_id": self.employee.id,
+                 "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+                 "target_status": "ABSENT"},
+            ),
+            self.admin,
+            session,
+        )
+        action_id = pending_action_manager.store_pending_action(session, pending)
+        approved = pending_action_manager.approve_action(
+            session, action_id, self.admin.id
+        )
+        Attendance.objects.create(employee=self.employee, date=target, status="PRESENT")
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_executor.execute_approved_action(approved, self.admin)
+
+        self.assertEqual(error.exception.code, "attendance_exists")
+        self.assertEqual(
+            Attendance.objects.get(employee=self.employee, date=target).status,
+            "PRESENT",
         )
 
     def test_attendance_update_outside_manager_scope_is_rejected(self):
