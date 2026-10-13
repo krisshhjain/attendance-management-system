@@ -448,6 +448,83 @@ def test_pending_actions_view_filters_non_pending_actions(api, monkeypatch):
     )
 
 
+def test_action_failure_persists_scoped_audit_and_event(monkeypatch):
+    user = system_admin()
+    pending = SimpleNamespace(
+        intent="attendance_update",
+        action_type="attendance_update",
+        description="Update Asha Rao's attendance",
+        current_state={"status": "INCOMPLETE"},
+        authorization_scope={"sections": ["C"]},
+        approved_at=None,
+        audit_records=SimpleNamespace(
+            order_by=lambda *_: SimpleNamespace(
+                first=lambda: SimpleNamespace(id=733)
+            )
+        ),
+    )
+    lookup_calls = []
+    audit_rows = []
+    events = []
+    monkeypatch.setattr(
+        views,
+        "CopilotPendingAction",
+        SimpleNamespace(
+            objects=SimpleNamespace(
+                get=lambda **kwargs: lookup_calls.append(kwargs) or pending
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        views,
+        "CopilotActionAudit",
+        SimpleNamespace(
+            objects=SimpleNamespace(
+                create=lambda **kwargs: audit_rows.append(kwargs)
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        views,
+        "_record_copilot_action_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    request = SimpleNamespace(
+        META={"REMOTE_ADDR": "192.0.2.10", "HTTP_USER_AGENT": "test-agent"}
+    )
+
+    views.HRCopilotActionApprovalView._record_failure(
+        user, "action-733", "session-733", "x" * 2100, request
+    )
+
+    assert lookup_calls == [
+        {"action_id": "action-733", "user": user, "session_id": "session-733"}
+    ]
+    assert len(audit_rows) == 1
+    assert audit_rows[0]["error_message"] == "x" * 2000
+    assert audit_rows[0]["previous_state"] == {"status": "INCOMPLETE"}
+    assert audit_rows[0]["authorization_scope"] == {"sections": ["C"]}
+    assert audit_rows[0]["ip_address"] == "192.0.2.10"
+    assert events[0]["event_type"] == "COPILOT_ACTION_FAILED"
+    assert events[0]["metadata"] == {"action_audit_id": 733}
+
+
+def test_action_failure_audit_storage_error_is_best_effort(monkeypatch):
+    monkeypatch.setattr(
+        views,
+        "CopilotPendingAction",
+        SimpleNamespace(
+            objects=SimpleNamespace(
+                get=lambda **_: (_ for _ in ()).throw(RuntimeError("db down"))
+            )
+        ),
+    )
+
+    views.HRCopilotActionApprovalView._record_failure(
+        system_admin(), "action-missing", "session-missing", "failure", None
+    )
+
+
 def test_write_planner_builds_missing_employee_follow_up_for_present_attendance():
     today = timezone.localdate()
     intent = {
@@ -756,6 +833,83 @@ def test_pipeline_marks_live_date_scope_and_write_intent(monkeypatch):
     assert result["action_type"] == "read"
     assert result["entities"]["temporal_scope"]["type"] == "today"
     assert result["entities"]["temporal_scope"]["source"] == "llm_resolved"
+
+
+@pytest.mark.parametrize(
+    ("intent", "code"),
+    [
+        (
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {},
+                "ambiguities": ["employee_identity"],
+            },
+            "employee_ambiguous",
+        ),
+        (
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {},
+                "missing_information": ["employee_identity"],
+            },
+            "employee_not_found",
+        ),
+        (
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {},
+                "missing_information": ["department"],
+            },
+            "department_not_found",
+        ),
+    ],
+)
+def test_pipeline_rejects_ambiguous_or_unresolved_required_entities(
+    monkeypatch, intent, code
+):
+    monkeypatch.setattr(
+        "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
+        lambda *args, **kwargs: intent,
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        pipeline.analyze_question("Find the employee")
+
+    assert raised.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("date_range", "code"),
+    [
+        (None, "clarification_required"),
+        (
+            {"start": "2026-10-01", "end": "2026-10-02"},
+            "unsupported_absence_range",
+        ),
+        (
+            {"start": timezone.localdate().isoformat(), "end": timezone.localdate().isoformat()},
+            "incomplete_absence_period",
+        ),
+    ],
+)
+def test_absence_inference_requires_one_completed_past_day(date_range, code):
+    entities = {"date_range": date_range} if date_range else {}
+
+    with pytest.raises(CopilotError) as raised:
+        pipeline._validate_absence_date_range(entities)
+
+    assert raised.value.code == code
+
+
+def test_absence_inference_accepts_a_completed_past_day():
+    yesterday = (timezone.localdate() - timedelta(days=1)).isoformat()
+
+    pipeline._validate_absence_date_range(
+        {"date_range": {"start": yesterday, "end": yesterday}}
+    )
 
 
 @pytest.mark.parametrize("message", [None, "", "  ", 42, "x" * 2001])
