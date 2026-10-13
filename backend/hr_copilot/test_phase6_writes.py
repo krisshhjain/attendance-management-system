@@ -1,5 +1,6 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -622,3 +623,95 @@ class Phase6WriteTests(TestCase):
             )
 
         self.assertEqual(error.exception.code, "employee_not_found")
+
+    def test_planner_rejects_read_intents_and_unimplemented_writes(self):
+        with self.assertRaises(CopilotError) as read_error:
+            write_action_planner.plan_write_action(
+                {"intent": "employee_lookup", "action_type": "read"},
+                self.admin,
+                "phase6-read-is-not-write",
+            )
+
+        self.assertEqual(read_error.exception.code, "invalid_action")
+
+        with self.assertRaises(CopilotError) as unsupported_error:
+            write_action_planner.plan_write_action(
+                {"intent": "future_write", "action_type": "write"},
+                self.admin,
+                "phase6-unsupported-write",
+            )
+
+        self.assertEqual(unsupported_error.exception.code, "unsupported_write")
+
+    def test_attendance_planner_requires_date_and_status_before_confirmation(self):
+        base = {
+            "employee_id": self.employee.id,
+            "date_range": {
+                "start": timezone.localdate().isoformat(),
+                "end": timezone.localdate().isoformat(),
+            },
+        }
+        missing_date = self.intent(
+            "attendance_update",
+            {"employee_id": self.employee.id, "target_status": "ABSENT"},
+        )
+        missing_status = self.intent("attendance_update", base)
+
+        for intent, expected_code in (
+            (missing_date, "attendance_date_required"),
+            (missing_status, "missing_status"),
+        ):
+            with self.subTest(expected_code=expected_code):
+                with self.assertRaises(CopilotError) as error:
+                    write_action_planner.plan_write_action(
+                        intent, self.admin, f"phase6-required-{expected_code}"
+                    )
+                self.assertEqual(error.exception.code, expected_code)
+
+    def test_attendance_status_inference_requests_times_before_confirmation(self):
+        today = timezone.localdate().isoformat()
+        intent = self.intent(
+            "attendance_update",
+            {
+                "employee_id": self.employee.id,
+                "date_range": {"start": today, "end": today},
+            },
+        )
+        intent["original_query"] = "Mark Asha Rao present today"
+
+        pending = write_action_planner.plan_write_action(
+            intent, self.admin, "phase6-inferred-present"
+        )
+
+        self.assertEqual(pending["target_data"]["target_status"], "PRESENT")
+        self.assertFalse(pending["validated"])
+        self.assertEqual(
+            pending["validation_errors"], ["check_in_time", "check_out_time"]
+        )
+        self.assertEqual(pending["status"], "AWAITING_INFORMATION")
+
+    @patch("holidays.services.attendance_required", return_value=False)
+    @patch(
+        "holidays.services.get_day_classification",
+        return_value={"day_type": "WEEKEND"},
+    )
+    def test_attendance_planner_does_not_mark_non_required_day_absent(
+        self, _day_classification, _attendance_required
+    ):
+        today = timezone.localdate().isoformat()
+        intent = self.intent(
+            "attendance_update",
+            {
+                "employee_id": self.employee.id,
+                "date_range": {"start": today, "end": today},
+                "target_status": "ABSENT",
+            },
+        )
+
+        with self.assertRaises(CopilotError) as error:
+            write_action_planner.plan_write_action(
+                intent, self.admin, "phase6-absence-nonworking-day"
+            )
+
+        self.assertEqual(error.exception.code, "attendance_not_required")
+        self.assertEqual(error.exception.status, 400)
