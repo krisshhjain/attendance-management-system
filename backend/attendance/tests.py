@@ -950,6 +950,62 @@ class RegularizationWorkflowTests(APITestCase):
             0,
         )
 
+    @patch(
+        "attendance.views.regularization_quota_usage",
+        return_value={
+            "weekly_used": 0,
+            "weekly_limit": 1,
+            "monthly_used": 0,
+            "monthly_limit": 4,
+        },
+    )
+    @patch("attendance.views.is_working_day", return_value=True)
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    def test_grouped_request_rejects_date_in_an_existing_pending_request(
+        self, _mock_localdate, _mock_working_day, mock_quota
+    ):
+        pending = RegularizationRequest.objects.create(
+            employee=self.employee,
+            attendance_date=date(2026, 10, 12),
+            request_type="FORGOT_CHECK_IN",
+            requested_check_in=timezone.make_aware(
+                datetime.combine(date(2026, 10, 12), datetime_time(9, 0))
+            ),
+            reason="Existing request for the date.",
+        )
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {
+                "period_type": "WEEK",
+                "days": [
+                    {
+                        "attendance_date": "2026-10-12",
+                        "request_type": "FORGOT_CHECK_IN",
+                        "requested_check_in": "2026-10-12T09:30:00+05:30",
+                        "reason": "The original request needs a correction.",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["error"],
+            "A pending request already includes one or more selected dates.",
+        )
+        self.assertTrue(
+            RegularizationRequest.objects.filter(pk=pending.pk, status="PENDING").exists()
+        )
+        self.assertFalse(
+            RegularizationRequest.objects.filter(
+                employee=self.employee, period_type="WEEK"
+            ).exists()
+        )
+        mock_quota.assert_called_once()
+
     @patch("attendance.views.is_working_day", return_value=True)
     @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
     def test_grouped_regularization_rejects_checkout_before_checkin(
