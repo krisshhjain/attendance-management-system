@@ -751,6 +751,75 @@ class Phase6WriteTests(TestCase):
         )
         self.assertEqual(pending["status"], "AWAITING_INFORMATION")
 
+    def test_attendance_status_fallbacks_use_the_original_request(self):
+        target = timezone.localdate().isoformat()
+        for phrase, expected_status in (
+            ("Mark Asha Rao absent today", "ABSENT"),
+            ("Mark Asha Rao incomplete today", "INCOMPLETE"),
+            ("Put Asha Rao on leave today", "LEAVE"),
+        ):
+            with self.subTest(expected_status=expected_status):
+                intent = self.intent(
+                    "attendance_update",
+                    {
+                        "employee_id": self.employee.id,
+                        "date_range": {"start": target, "end": target},
+                        "reason": "Approved personal leave",
+                    },
+                )
+                intent["original_query"] = phrase
+
+                pending = write_action_planner.plan_write_action(
+                    intent, self.admin, f"phase6-status-fallback-{expected_status}"
+                )
+
+                self.assertEqual(
+                    pending["target_data"]["target_status"], expected_status
+                )
+
+    def test_leave_approval_failure_keeps_request_pending(self):
+        target = timezone.localdate() + timedelta(days=1)
+        while target.weekday() >= 5:
+            target += timedelta(days=1)
+        created = self.execute(
+            self.intent(
+                "leave_create",
+                {
+                    "employee_id": self.employee.id,
+                    "date_range": {
+                        "start": target.isoformat(),
+                        "end": target.isoformat(),
+                    },
+                    "duration_days": 1,
+                    "reason": "Personal appointment",
+                    "leave_type": self.leave_type.code,
+                },
+            )
+        )
+        request = LeaveRequest.objects.get(pk=created["leave_request_id"])
+        pending = write_action_planner.plan_write_action(
+            self.intent(
+                "leave_approve",
+                {"employee_id": self.employee.id, "request_id": request.id},
+            ),
+            self.admin,
+            "phase6-leave-approval-failure",
+        )
+
+        with patch(
+            "leave_management.services.approve_leave_request",
+            side_effect=RuntimeError("private service error"),
+        ):
+            with self.assertRaises(CopilotError) as error:
+                write_action_executor.execute_approved_action(pending, self.admin)
+
+        request.refresh_from_db()
+        self.assertEqual(error.exception.code, "leave_review_failed")
+        self.assertEqual(request.status, "PENDING")
+        self.assertFalse(
+            Attendance.objects.filter(employee=self.employee, date=target).exists()
+        )
+
     @patch("holidays.services.attendance_required", return_value=False)
     @patch(
         "holidays.services.get_day_classification",

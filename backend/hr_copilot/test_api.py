@@ -627,6 +627,53 @@ def test_ambiguous_employee_follow_up_keeps_action_pending_and_requests_email(
     assert response.data["pending_action"]["validation_errors"] == ["employee_email"]
 
 
+def test_employee_scope_denial_does_not_update_pending_action(api, monkeypatch):
+    factory, _ = api
+    monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
+    draft = {
+        "action_id": "out-of-scope-action",
+        "action_type": "attendance_update",
+        "intent": "attendance_update",
+        "target_data": {"employee_id": None},
+        "proposed_changes": {"status": "ABSENT"},
+        "validation_errors": ["employee_name"],
+        "current_state": {},
+    }
+    updates = []
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_awaiting_action",
+        lambda *args: draft,
+    )
+    monkeypatch.setattr(
+        views,
+        "extract_pending_action_fields",
+        lambda *_: {"employee_name": "Out of scope"},
+    )
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *args: (_ for _ in ()).throw(
+            CopilotError("scope_denied", "Employee is outside manager scope", 403)
+        ),
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "update_awaiting_action",
+        lambda *args: updates.append(args),
+    )
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": "Out of scope", "conversation_id": "conversation-scope"},
+    )
+
+    assert response.status_code == 403
+    assert response.data["query_status"] == "rejected"
+    assert updates == []
+
+
 @pytest.mark.parametrize(
     ("value", "checkout", "expected"),
     [
@@ -855,6 +902,45 @@ def test_pipeline_calendar_month_ranges_handle_year_boundary():
 
     assert this_month["date_range"] == {"start": "2026-01-01", "end": "2026-01-03"}
     assert last_month["date_range"] == {"start": "2025-12-01", "end": "2025-12-31"}
+
+
+def test_pipeline_this_week_starts_on_monday():
+    today = date(2026, 10, 14)
+    entities = {}
+
+    pipeline._apply_explicit_date_range("this week", entities, today)
+
+    assert entities["date_range"] == {"start": "2026-10-12", "end": "2026-10-14"}
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("attendance on 14 October 2026", {"start": "2026-10-14", "end": "2026-10-14"}),
+        ("attendance from 2026-10-12 to 2026-10-14", {"start": "2026-10-12", "end": "2026-10-14"}),
+    ],
+)
+def test_pipeline_applies_natural_and_iso_date_ranges(question, expected):
+    entities = {}
+
+    pipeline._apply_explicit_date_range(question, entities, date(2026, 10, 14))
+
+    assert entities["date_range"] == expected
+
+
+@pytest.mark.parametrize(
+    ("question", "code"),
+    [
+        ("attendance on 2026-02-30", "invalid_date"),
+        ("attendance 2026-10-12 2026-10-13 2026-10-14", "invalid_date_range"),
+        ("attendance from 2026-10-14 to 2026-10-12", "invalid_date_range"),
+    ],
+)
+def test_pipeline_rejects_malformed_iso_ranges(question, code):
+    with pytest.raises(CopilotError) as error:
+        pipeline._apply_explicit_date_range(question, {}, date(2026, 10, 14))
+
+    assert error.value.code == code
 
 
 @pytest.mark.parametrize(
