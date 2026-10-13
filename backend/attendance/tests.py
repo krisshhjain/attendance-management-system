@@ -1040,6 +1040,44 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("at least one corrected time is required", response.data["error"])
 
+    @patch(
+        "attendance.views.regularization_quota_usage",
+        return_value={
+            "weekly_used": 1,
+            "weekly_limit": 1,
+            "monthly_used": 1,
+            "monthly_limit": 4,
+        },
+    )
+    @patch("attendance.views.is_working_day", return_value=True)
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    def test_grouped_regularization_returns_weekly_quota_details(
+        self, _mock_localdate, _mock_working_day, mock_quota
+    ):
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {
+                "period_type": "WEEK",
+                "days": [
+                    {
+                        "attendance_date": "2026-10-12",
+                        "request_type": "FORGOT_CHECK_IN",
+                        "requested_check_in": "2026-10-12T09:00:00+05:30",
+                        "reason": "The check-in event was missed.",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["weekly_used"], 1)
+        self.assertEqual(response.data["weekly_limit"], 1)
+        self.assertIn("calendar week", response.data["detail"])
+        mock_quota.assert_called_once()
+
     @patch("attendance.views.is_working_day", return_value=True)
     @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
     def test_grouped_regularization_rejects_naive_time_on_another_date(

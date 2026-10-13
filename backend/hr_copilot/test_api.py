@@ -1587,6 +1587,77 @@ def test_executor_rejects_unsupported_action_type_before_audit_write(monkeypatch
 
 
 @pytest.mark.parametrize(
+    ("intent", "data", "expected"),
+    [
+        ({"intent": "absence_count"}, [], "No absent employees were found for that date and authorized scope."),
+        ({"intent": "employee_lookup", "entities": {"is_active": False}}, [], "No inactive employees were found in your authorized scope."),
+        ({"intent": "absence_count"}, [{"value": 1}], "1 employee was absent on that date."),
+        ({"intent": "absence_count"}, [{"value": 3}], "3 employees were absent on that date."),
+        ({"intent": "employee_lookup", "source": "employee"}, [{"value": 2}], "2 employees matched your question."),
+        (
+            {"intent": "employee_lookup", "source": "employee"},
+            [{"name": "Asha Rao", "is_active": False, "employment_type": "FULL_TIME", "department": "HR", "section": "C", "subsection": "C1"}],
+            "Asha Rao is an inactive full_time employee in HR, Section C, Subsection C1.",
+        ),
+        (
+            {"intent": "attendance_lookup", "source": "attendance", "entities": {"employee_id": 7}},
+            [{"first_name": "Asha", "last_name": "Rao", "date": "2026-10-12", "status": "HALF_DAY"}],
+            "Asha Rao was Half day on 2026-10-12.",
+        ),
+        ({"intent": "employee_lookup", "source": "employee"}, [{"category": "section", "value": "C"}], "I found 1 result group(s). See the data below for details."),
+    ],
+)
+def test_pipeline_generates_answers_for_common_result_shapes(intent, data, expected):
+    assert pipeline.generate_answer(intent, data) == expected
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("yesterday", date(2026, 10, 13)),
+        ("tomorrow", date(2026, 10, 15)),
+        ("two days ago", date(2026, 10, 12)),
+        ("next quarter", date(2026, 10, 14)),
+    ],
+)
+def test_write_planner_resolves_supported_and_unknown_relative_dates(
+    monkeypatch, expression, expected
+):
+    monkeypatch.setattr(write_action_module.timezone, "localdate", lambda: date(2026, 10, 14))
+    assert write_action_planner._resolve_target_date({"temporal_expression": expression}) == expected
+
+
+@pytest.mark.parametrize(
+    ("status", "reason", "expected_detail"),
+    [
+        ("LEAVE", "Family care", "; check-in cleared; check-out cleared; reason: Family care"),
+        ("ABSENT", "ignored", "; check-in cleared; check-out cleared"),
+        ("REMOTE", "", "Status: REMOTE"),
+    ],
+)
+def test_attendance_description_matches_status_semantics(status, reason, expected_detail):
+    result = write_action_planner._attendance_description(
+        "Asha Rao", date(2026, 10, 14), status, "09:00", "17:00", reason
+    )
+    assert expected_detail in result
+
+
+def test_executor_rejects_cancelling_an_already_executed_action(monkeypatch):
+    action = SimpleNamespace(status="EXECUTED", cancel=lambda: pytest.fail("executed action was cancelled"))
+    query = SimpleNamespace(first=lambda: action)
+    monkeypatch.setattr(
+        write_executor_module.CopilotPendingAction,
+        "objects",
+        SimpleNamespace(filter=lambda **_: query),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_executor_module.pending_action_manager.cancel_action("session", "action", 1)
+
+    assert raised.value.code == "action_not_cancellable"
+
+
+@pytest.mark.parametrize(
     ("intent", "code"),
     [
         (
