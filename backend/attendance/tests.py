@@ -3058,23 +3058,32 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(events.count(), 1)
         self.assertEqual(events.first().event_type, "CHECK_OUT")
 
-    @patch("django.utils.timezone.localdate")
-    def test_second_checkin_after_checkout(self, mock_localdate):
+    @patch("attendance.views.timezone")
+    def test_second_checkin_after_checkout(self, mock_view_timezone):
         """Second check-in after checkout is allowed and creates new event."""
-        target_date = datetime.now(timezone.get_current_timezone()).date()
-        mock_localdate.return_value = target_date
+        target_date = ATTENDANCE_TEST_WORKDAY
+        mock_view_timezone.localdate.return_value = target_date
+        start = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(9, 0)),
+            timezone.get_current_timezone(),
+        )
+        mock_view_timezone.now.side_effect = [
+            start,
+            start + timedelta(minutes=10),
+            start + timedelta(minutes=15),
+        ]
         # Check in
         self.client.post(
             "/api/attendance/check-in/", self.valid_location, format="json"
         )
         # Check out (with 6 min gap to pass cooldown)
-        past_time = timezone.now() - timedelta(minutes=6)
+        past_time = start + timedelta(minutes=4)
         # Manually update the check-in time to be 6 min ago
         AttendanceEvent.objects.filter(
             employee=self.employee, event_type="CHECK_IN"
         ).update(timestamp=past_time)
         Attendance.objects.filter(
-            employee=self.employee, date=timezone.localdate()
+            employee=self.employee, date=target_date
         ).update(check_in=past_time)
 
         self.client.post(
@@ -3088,7 +3097,7 @@ class EventBasedAttendanceTests(APITestCase):
 
         # Should have 3 events now
         events = AttendanceEvent.objects.filter(
-            employee=self.employee, timestamp__date=timezone.localdate()
+            employee=self.employee, timestamp__date=target_date
         ).order_by("timestamp")
         self.assertEqual(events.count(), 3)
         self.assertEqual(events[0].event_type, "CHECK_IN")
@@ -3097,7 +3106,7 @@ class EventBasedAttendanceTests(APITestCase):
 
         # Attendance should show first check-in and the existing check-out
         attendance = Attendance.objects.get(
-            employee=self.employee, date=timezone.localdate()
+            employee=self.employee, date=target_date
         )
         self.assertEqual(attendance.check_in, events[0].timestamp)
         self.assertEqual(attendance.check_out, events[1].timestamp)
