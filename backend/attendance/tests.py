@@ -5825,3 +5825,95 @@ class AttendanceShiftConfigurationValidationTests(APITestCase):
         self.assertIsNone(response.data["shift"])
         self.assertTrue(response.data["requires_configuration"])
         self.assertIsNone(employee.get_effective_shift())
+
+class AttendanceAdminValidationCoverageTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="attendance-validation.admin@example.test",
+            password="password123",
+            is_superuser=True,
+        )
+        self.client.force_authenticate(self.admin)
+        self.employee_user = User.objects.create_user(
+            email="attendance-validation.employee@example.test",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            user=self.employee_user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=date(2026, 1, 1),
+        )
+
+    def test_reset_rejects_missing_reason_before_lookup(self):
+        response = self.client.post(
+            "/api/admin/attendance/reset/", {"employee": self.employee_user.email}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("required", response.data["error"])
+
+    def test_reset_reports_missing_today_record(self):
+        response = self.client.post(
+            "/api/admin/attendance/reset/",
+            {"employee": self.employee_user.email, "reason": "Device correction"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("No attendance record", response.data["error"])
+
+    def test_edit_requires_fields_and_rejects_non_iso_date(self):
+        path = "/api/admin/attendance/edit/"
+        missing = self.client.post(path, {}, format="json")
+        self.assertEqual(missing.status_code, 400)
+        self.assertIn("required", missing.data["error"])
+        invalid_date = self.client.post(
+            path,
+            {"employee": self.employee_user.email, "date": "14/10/2026", "reason": "Correction", "status": "PRESENT"},
+            format="json",
+        )
+        self.assertEqual(invalid_date.status_code, 400)
+        self.assertIn("YYYY-MM-DD", invalid_date.data["error"])
+
+    def test_force_checkout_requires_a_target_selector(self):
+        response = self.client.post("/api/admin/force-checkout/", {}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Must provide", response.data["error"])
+
+    def test_future_regularization_date_is_rejected(self):
+        self.client.force_authenticate(self.employee_user)
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {"attendance_date": (timezone.localdate() + timedelta(days=1)).isoformat(), "request_type": "FORGOT_CHECK_IN", "reason": "Missed check-in", "requested_check_in": "2026-10-15T09:00:00+05:30"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cannot be in the future", response.data["error"])
+
+    def test_regularization_requires_the_requested_time_for_each_request_type(self):
+        self.client.force_authenticate(self.employee_user)
+        today = timezone.localdate().isoformat()
+        for request_type, expected in (
+            ("FORGOT_CHECK_IN", "requested check-in time is required"),
+            ("FORGOT_CHECK_OUT", "requested check-out time is required"),
+            ("INCORRECT_ATTENDANCE", "At least one requested check-in or check-out time is required"),
+        ):
+            with self.subTest(request_type=request_type):
+                response = self.client.post(
+                    "/api/attendance/regularization/",
+                    {"attendance_date": today, "request_type": request_type, "reason": "Correct attendance"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(expected.lower(), response.data["error"].lower())
+
+    def test_admin_all_shifts_serializes_legacy_shift_fields(self):
+        Shift.objects.create(
+            name="Legacy all shift", code="LEGACY-ALL", start_time=datetime_time(8, 30),
+            end_time=datetime_time(16, 30), employment_type="", is_active=True,
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/attendance/admin/shift/all/")
+        self.assertEqual(response.status_code, 200)
+        legacy = next(item for item in response.data["shifts"] if item["code"] == "LEGACY-ALL")
+        self.assertEqual(legacy["employment_type"], None)
+        self.assertEqual(legacy["start_time"], "08:30")
