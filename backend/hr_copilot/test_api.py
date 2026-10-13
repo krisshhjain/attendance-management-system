@@ -674,6 +674,53 @@ def test_employee_scope_denial_does_not_update_pending_action(api, monkeypatch):
     assert updates == []
 
 
+def test_ambiguous_write_intent_creates_email_clarification(api, monkeypatch):
+    factory, audit_records = api
+    today = timezone.localdate().isoformat()
+    intent = {
+        "intent": "attendance_update",
+        "source": "attendance",
+        "action_type": "write",
+        "original_query": "Mark Asha Rao absent today",
+        "entities": {
+            "employee_name": "Asha Rao",
+            "date_range": {"start": today, "end": today},
+            "target_status": "ABSENT",
+        },
+    }
+    stored = []
+    monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
+    monkeypatch.setattr(views, "analyze_question", lambda *args, **kwargs: intent)
+    monkeypatch.setattr(
+        write_action_planner,
+        "plan_write_action",
+        lambda *args: (_ for _ in ()).throw(
+            CopilotError("employee_ambiguous", "More than one employee matched")
+        ),
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "store_pending_action",
+        lambda session, action: stored.append(action) or "stored-action-id",
+    )
+    monkeypatch.setattr(
+        views, "_record_copilot_action_event", lambda **kwargs: None
+    )
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": "Mark Asha Rao absent today", "conversation_id": "ambiguous-write"},
+    )
+
+    assert response.status_code == 200
+    assert response.data["response_type"] == "clarification"
+    assert response.data["query_status"] == "awaiting_information"
+    assert response.data["pending_action"]["validation_errors"] == ["employee_email"]
+    assert len(stored) == 1
+    assert audit_records[0].execution_result == "awaiting_information"
+
+
 @pytest.mark.parametrize(
     ("value", "checkout", "expected"),
     [
@@ -941,6 +988,67 @@ def test_pipeline_rejects_malformed_iso_ranges(question, code):
         pipeline._apply_explicit_date_range(question, {}, date(2026, 10, 14))
 
     assert error.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("intent_name", "metric_key", "tool_name", "metric"),
+    [
+        (
+            "leave_regularization_intelligence",
+            "intelligence_metric",
+            "execute_leave_regularization_intelligence",
+            "leave_usage",
+        ),
+        (
+            "workforce_intelligence",
+            "workforce_metric",
+            "execute_workforce_intelligence",
+            "shift_assignments",
+        ),
+    ],
+)
+def test_specialized_intelligence_uses_scoped_typed_tool(
+    api, monkeypatch, intent_name, metric_key, tool_name, metric
+):
+    factory, audit_records = api
+    result = {
+        "metric": metric,
+        "date_range": {"start": "2026-10-01", "end": "2026-10-14"},
+        "assumptions": ["Only active employees in the manager scope are included."],
+        "rows": [{"employee_id": 7, "employee_name": "Asha Rao"}],
+    }
+    intent = {
+        "intent": intent_name,
+        "source": "employee",
+        "action_type": "read",
+        "entities": {metric_key: metric},
+    }
+    plan = {
+        "intent": intent_name,
+        "source": "employee",
+        metric_key: metric,
+        "filters": {},
+        "employee": {"employee_id": None},
+    }
+    monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
+    monkeypatch.setattr(views, "analyze_question", lambda *args, **kwargs: intent)
+    monkeypatch.setattr(views, "plan_query", lambda *args: plan)
+    monkeypatch.setattr(
+        views.hr_tools, tool_name, lambda **kwargs: result
+    )
+    monkeypatch.setattr(views, "generate_natural_answer", lambda *args, **kwargs: "Report ready.")
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": f"Show {metric}", "conversation_id": f"{intent_name}-tool"},
+    )
+
+    assert response.status_code == 200
+    assert response.data["data"]["rows"] == result["rows"]
+    assert response.data["data"]["metadata"]["metric"] == metric
+    assert response.data["data"]["metadata"]["assumptions"] == result["assumptions"]
+    assert audit_records[0].execution_result == "success"
 
 
 @pytest.mark.parametrize(
