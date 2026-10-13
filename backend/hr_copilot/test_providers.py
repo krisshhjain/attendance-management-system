@@ -61,6 +61,41 @@ def test_health_requires_local_model_to_be_listed(monkeypatch):
     }
 
 
+def test_health_reports_missing_model_without_claiming_provider_available(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        providers,
+        "_open_local_request",
+        lambda *_args, **_kwargs: response_for(
+            {"models": [{"name": "another-model:latest"}]}
+        ),
+    )
+    provider = providers.LocalOllamaQwenProvider(model="qwen3-8b-q4km-local")
+
+    health = provider.health()
+
+    assert health.available is False
+    assert health.detail == "The configured local Qwen model is not installed."
+
+
+@pytest.mark.parametrize("content", ["not json", "[]"])
+def test_structured_output_rejects_malformed_or_non_object_model_output(
+    monkeypatch, content
+):
+    monkeypatch.setattr(
+        providers,
+        "_open_local_request",
+        lambda *_args, **_kwargs: response_for(
+            {"message": {"content": content}}
+        ),
+    )
+    provider = providers.LocalOllamaQwenProvider()
+
+    with pytest.raises(providers.LLMProviderError, match="invalid structured output"):
+        provider.structured_output([{"role": "user", "content": "question"}])
+
+
 def test_cloud_provider_endpoints_are_not_allowed():
     try:
         providers.LocalOllamaQwenProvider(base_url="https://example.com")

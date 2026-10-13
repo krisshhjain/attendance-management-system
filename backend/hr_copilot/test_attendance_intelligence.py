@@ -156,6 +156,40 @@ class AttendanceIntelligenceTests(TestCase):
             "without a following check-out", result["rows"][0]["explanation"]
         )
 
+    def test_incomplete_explanation_reports_closed_attendance_without_repair(self):
+        self.event(self.employee, self.today, 9, "CHECK_IN")
+        self.event(self.employee, self.today, 17, "CHECK_OUT")
+        self.recompute(self.employee, self.today)
+
+        result = attendance_intelligence.incomplete_explanation(
+            scope=self.scope,
+            target_date=self.today,
+            user=self.admin,
+            target_employee_id=self.employee.id,
+        )
+
+        self.assertEqual(result["rows"][0]["status"], "PRESENT")
+        self.assertFalse(result["rows"][0]["needs_regularization"])
+        self.assertIn("not incomplete", result["rows"][0]["explanation"])
+
+    def test_working_hours_requires_an_accessible_target_employee(self):
+        with self.assertRaises(CopilotError) as missing:
+            attendance_intelligence.working_hours(
+                user=self.admin, scope=self.scope, start=self.today, end=self.today
+            )
+        self.assertEqual(missing.exception.code, "employee_required")
+
+        with self.assertRaises(CopilotError) as denied:
+            attendance_intelligence.working_hours(
+                user=self.admin,
+                scope=self.scope,
+                start=self.today,
+                end=self.today,
+                target_employee_id=self.other.id,
+            )
+        self.assertEqual(denied.exception.code, "scope_denied")
+        self.assertEqual(denied.exception.status, 403)
+
     def test_absence_streaks_summary_and_week_comparison(self):
         end = self.today - timedelta(days=1)
         start = end - timedelta(days=6)

@@ -235,3 +235,17 @@ def test_attendance_write_inference_ignores_reads_and_unrecognized_statuses():
     assert normalizer._infer_attendance_write("Mark Asha Rao present today")[
         "target_status"
     ] == "PRESENT"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Mark Asha Rao absent on 2026-02-30",
+        "Set Asha Rao present on 31 February 2026",
+    ],
+)
+def test_attendance_write_rejects_impossible_calendar_dates(query):
+    with pytest.raises(CopilotError) as raised:
+        IntentNormalizer()._infer_attendance_write(query)
+
+    assert raised.value.code == "invalid_date"

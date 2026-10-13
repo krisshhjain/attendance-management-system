@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -9,8 +9,10 @@ from django.utils import timezone
 from accounts.models import ManagerScope
 from attendance.models import RegularizationRequest
 from employees.models import Employee
-from hr_copilot.services.leave_regularization_intelligence import \
-    leave_regularization_intelligence
+from hr_copilot.services.leave_regularization_intelligence import (
+    _date_range,
+    leave_regularization_intelligence,
+)
 from hr_copilot.services.pipeline import CopilotError, analyze_question
 from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
 
@@ -82,6 +84,28 @@ class LeaveRegularizationIntelligenceTests(TestCase):
             reason="Personal",
             status=status,
         )
+
+    def test_date_range_validation_fails_closed_and_defaults_to_calendar_year(
+        self,
+    ):
+        with self.assertRaises(CopilotError) as malformed:
+            _date_range({"date_range": {"start": "not-a-date"}})
+        self.assertEqual(malformed.exception.code, "invalid_date_range")
+
+        with self.assertRaises(CopilotError) as reversed_range:
+            _date_range(
+                {
+                    "date_range": {
+                        "start": "2026-10-20",
+                        "end": "2026-10-19",
+                    }
+                }
+            )
+        self.assertEqual(reversed_range.exception.code, "invalid_date_range")
+
+        start, end = _date_range({}, default_year=True)
+        self.assertEqual(start, date(start.year, 1, 1))
+        self.assertEqual(end, date(start.year, 12, 31))
 
     def test_leave_balance_uses_application_calculator(self):
         self.leave(self.employee, "APPROVED", 2)

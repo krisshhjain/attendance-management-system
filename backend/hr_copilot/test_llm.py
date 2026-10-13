@@ -414,3 +414,39 @@ def test_grounding_validator_rejects_unverified_facts():
 
     assert raised.value.code == "ungrounded_llm_response"
     assert raised.value.status == 503
+
+
+@pytest.mark.parametrize(
+    ("intent", "data", "expected"),
+    [
+        ({"intent": "absence_count"}, [], "No absent employees found for the specified criteria."),
+        ({"entities": {"is_active": False}}, [], "No inactive employees found."),
+        ({"intent": "attendance_intelligence", "entities": {"attendance_metric": "period_comparison"}}, [], "Here is the attendance comparison for the current and previous week."),
+        ({"source": "employee"}, [{"first_name": "Asha", "last_name": "Rao", "department": "People", "is_active": False, "employment_type": "CONTRACT"}], "Asha Rao is an inactive contract in People, Section , Subsection ."),
+        ({"source": "attendance"}, [{"first_name": "Asha", "last_name": "Rao", "date": "2026-10-13", "status": "INCOMPLETE_REVIEW"}], "Asha Rao was incomplete review on 2026-10-13."),
+    ],
+)
+def test_deterministic_responses_cover_empty_comparison_and_profiles(intent, data, expected):
+    assert llm._generate_deterministic_answer(intent, data) == expected
+
+
+def test_compaction_limits_generic_and_summary_data_without_private_fields():
+    generic = [{"email": f"{i}@example.test", "private": "secret"} for i in range(8)]
+    assert llm._compact_result_data(generic, {}) == [
+        {"email": f"{i}@example.test"} for i in range(5)
+    ]
+
+    summaries = [{"category": str(i), "private": "secret"} for i in range(25)]
+    compacted_summaries = llm._compact_result_data(summaries, {})
+    assert len(compacted_summaries) == 20
+    assert compacted_summaries[0] == summaries[0]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["The employee has 12 leave days.", "Everything is approved."],
+)
+def test_grounding_validator_rejects_claims_for_empty_results(answer):
+    with pytest.raises(CopilotError) as raised:
+        llm._validate_grounded_answer(answer, [])
+    assert raised.value.code == "ungrounded_llm_response"

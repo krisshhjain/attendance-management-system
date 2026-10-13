@@ -1697,6 +1697,129 @@ def test_pipeline_validates_departments_and_resolves_student_category(monkeypatc
     assert raised.value.code == "department_not_found"
 
 
+def test_pipeline_requires_two_comparison_groups_before_building_a_plan():
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": "comparison",
+                "source": "employee",
+                "entities": {"comparison_subsections": ["C1"]},
+            },
+            {"unrestricted": True, "sections": [], "subsections": []},
+            system_admin(),
+        )
+
+    assert raised.value.code == "clarification_required"
+    assert "two sections" in raised.value.message
+
+
+def test_attendance_update_rejects_nonexistent_status_before_reading_state(
+    monkeypatch,
+):
+    today = timezone.localdate()
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: today
+    )
+    attendance_query = MagicMock()
+    monkeypatch.setattr(
+        write_action_module,
+        "Attendance",
+        SimpleNamespace(objects=attendance_query),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_attendance_update(
+            {
+                "intent": "attendance_update",
+                "entities": {
+                    "temporal_expression": "today",
+                    "target_status": "REMOTE",
+                },
+            },
+            system_admin(),
+            {"unrestricted": True},
+            "invalid-status",
+        )
+
+    assert raised.value.code == "invalid_status"
+    attendance_query.filter.assert_not_called()
+
+
+def test_attendance_update_rejects_checkout_before_checkin(monkeypatch):
+    today = timezone.localdate()
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: today
+    )
+    monkeypatch.setattr(
+        write_action_module,
+        "Attendance",
+        SimpleNamespace(objects=MagicMock()),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_attendance_update(
+            {
+                "intent": "attendance_update",
+                "entities": {
+                    "temporal_expression": "today",
+                    "target_status": "PRESENT",
+                    "check_in_time": "17:00",
+                    "check_out_time": "9:00",
+                },
+            },
+            system_admin(),
+            {"unrestricted": True},
+            "invalid-times",
+        )
+
+    assert raised.value.code == "invalid_attendance_time"
+
+
+def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
+    employee = SimpleNamespace(get_effective_shift=lambda: None)
+    attendance = SimpleNamespace(employee=employee)
+    attendance_query = MagicMock()
+    attendance_query.select_related.return_value.get.return_value = attendance
+    events_query = MagicMock()
+    events_query.order_by.return_value = []
+    event_create = MagicMock()
+    monkeypatch.setattr(
+        write_executor_module,
+        "Attendance",
+        SimpleNamespace(objects=attendance_query),
+    )
+    monkeypatch.setattr(
+        write_executor_module,
+        "AttendanceEvent",
+        SimpleNamespace(objects=SimpleNamespace(filter=lambda **_: events_query, create=event_create)),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_executor._execute_force_checkout(
+            {
+                "target_data": {
+                    "employee_id": 42,
+                    "employee_name": "Asha Rao",
+                    "date": "2026-10-14",
+                }
+            },
+            system_admin(),
+        )
+
+    assert raised.value.code == "no_active_checkin"
+    event_create.assert_not_called()
+
+
 def test_executor_rejects_cancelling_an_already_executed_action(monkeypatch):
     action = SimpleNamespace(status="EXECUTED", cancel=lambda: pytest.fail("executed action was cancelled"))
     query = SimpleNamespace(first=lambda: action)
