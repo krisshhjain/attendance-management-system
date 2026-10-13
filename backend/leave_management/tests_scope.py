@@ -1,5 +1,7 @@
 from datetime import timedelta
+from unittest.mock import patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
@@ -253,7 +255,6 @@ class LeaveScopeTests(TestCase):
             ).status_code,
             403,
         )
-
         self.client.force_authenticate(user=self.empty_manager)
         self.assertEqual(
             len(self.client.get("/api/leave/admin/requests/").data), 0
@@ -264,3 +265,52 @@ class LeaveScopeTests(TestCase):
             ).status_code,
             403,
         )
+
+    def test_attachment_upload_validates_file_presence_type_and_size(self):
+        self.client.force_authenticate(user=self.manager_a)
+
+        missing = self.client.post("/api/leave/upload/", {}, format="multipart")
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(missing.data["error"], "No file provided.")
+
+        invalid_type = self.client.post(
+            "/api/leave/upload/",
+            {"file": SimpleUploadedFile("payload.exe", b"content")},
+            format="multipart",
+        )
+        self.assertEqual(invalid_type.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("File type not allowed", invalid_type.data["error"])
+
+        oversized = self.client.post(
+            "/api/leave/upload/",
+            {
+                "file": SimpleUploadedFile(
+                    "large.pdf", b"x" * (5 * 1024 * 1024 + 1)
+                )
+            },
+            format="multipart",
+        )
+        self.assertEqual(oversized.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(oversized.data["error"], "File size exceeds 5MB limit.")
+
+    @patch(
+        "leave_management.views.default_storage.save",
+        return_value="leave_attachments/saved.pdf",
+    )
+    def test_attachment_upload_returns_safe_storage_path(self, save_file):
+        self.client.force_authenticate(user=self.manager_a)
+        upload = SimpleUploadedFile("medical.PDF", b"document")
+
+        response = self.client.post(
+            "/api/leave/upload/", {"file": upload}, format="multipart"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["original_name"], "medical.PDF")
+        self.assertEqual(
+            response.data["file_path"], "leave_attachments/saved.pdf"
+        )
+        self.assertIn(
+            "/media/leave_attachments/saved.pdf", response.data["file_url"]
+        )
+        save_file.assert_called_once()

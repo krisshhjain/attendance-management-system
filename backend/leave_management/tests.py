@@ -300,3 +300,62 @@ class LeaveManagementTestCase(TestCase):
         self.assertFalse(
             Attendance.objects.filter(leave_request=approved).exists()
         )
+
+    def test_validation_rejects_inactive_employee_and_inactive_leave_type(self):
+        self.employee.is_active = False
+        with self.assertRaises(ValidationError) as employee_error:
+            validate_leave_request(
+                self.employee,
+                self.casual_leave,
+                date(2026, 9, 28),
+                date(2026, 9, 28),
+            )
+        self.assertIn("Inactive employee", str(employee_error.exception))
+
+        self.employee.is_active = True
+        self.sick_leave.is_active = False
+        with self.assertRaises(ValidationError) as type_error:
+            validate_leave_request(
+                self.employee,
+                self.sick_leave,
+                date(2026, 9, 28),
+                date(2026, 9, 28),
+            )
+        self.assertIn("currently inactive", str(type_error.exception))
+
+    def test_validation_rejects_weekends_half_days_and_missing_documents(self):
+        weekend = timezone.localdate() + timedelta(days=1)
+        while weekend.weekday() != 5:
+            weekend += timedelta(days=1)
+        with self.assertRaises(ValidationError) as weekend_error:
+            validate_leave_request(
+                self.employee,
+                self.casual_leave,
+                weekend,
+                weekend + timedelta(days=1),
+            )
+        self.assertIn("no working days", str(weekend_error.exception))
+
+        self.sick_leave.allow_half_day = False
+        workday = weekend + timedelta(days=2)
+        with self.assertRaises(ValidationError) as half_day_error:
+            validate_leave_request(
+                self.employee,
+                self.sick_leave,
+                workday,
+                workday,
+                day_type="FIRST_HALF",
+            )
+        self.assertIn("Half-day leave is not allowed", str(half_day_error.exception))
+
+        self.sick_leave.allow_half_day = True
+        self.sick_leave.requires_document = True
+        with self.assertRaises(ValidationError) as document_error:
+            validate_leave_request(
+                self.employee,
+                self.sick_leave,
+                workday,
+                workday,
+                attachment="",
+            )
+        self.assertIn("Supporting documentation is required", str(document_error.exception))

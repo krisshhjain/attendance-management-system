@@ -12,7 +12,7 @@ from attendance.models import Attendance, AttendanceEvent, Shift
 from employees.models import Employee
 from holidays.models import Holiday
 from hr_copilot.services.attendance_intelligence import attendance_intelligence
-from hr_copilot.services.pipeline import analyze_question, build_sql
+from hr_copilot.services.pipeline import CopilotError, analyze_question, build_sql
 
 
 class AttendanceIntelligenceTests(TestCase):
@@ -285,3 +285,53 @@ class AttendanceIntelligenceTests(TestCase):
             intent["entities"]["date_range"]["start"],
             timezone.localdate().isoformat(),
         )
+
+    def test_execute_rejects_unsupported_metric_before_database_access(self):
+        with self.assertRaises(CopilotError) as raised:
+            attendance_intelligence.execute(
+                metric="private_employee_data",
+                scope=self.scope,
+                user=self.admin,
+                filters={},
+            )
+
+        self.assertEqual(raised.exception.code, "unsupported_metric")
+
+    def test_today_only_metric_rejects_a_past_date(self):
+        yesterday = self.today - timedelta(days=1)
+
+        with self.assertRaises(CopilotError) as raised:
+            attendance_intelligence.execute(
+                metric="missing_checkins",
+                scope=self.scope,
+                user=self.admin,
+                filters={
+                    "date_range": {
+                        "start": yesterday.isoformat(),
+                        "end": yesterday.isoformat(),
+                    }
+                },
+            )
+
+        self.assertEqual(raised.exception.code, "invalid_date_range")
+
+    def test_execute_routes_summary_through_scoped_summary_query(self):
+        expected = {"metric": "summary", "rows": []}
+        with patch.object(
+            attendance_intelligence, "summary", return_value=expected
+        ) as summary:
+            result = attendance_intelligence.execute(
+                metric="summary",
+                scope=self.scope,
+                user=self.admin,
+                filters={
+                    "date_range": {
+                        "start": self.today.isoformat(),
+                        "end": self.today.isoformat(),
+                    }
+                },
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(summary.call_args.kwargs["scope"], self.scope)
+        self.assertEqual(summary.call_args.kwargs["start"], self.today)

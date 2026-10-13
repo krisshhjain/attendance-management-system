@@ -82,7 +82,7 @@ jobs:
         POSTGRES_HOST: 127.0.0.1
         POSTGRES_PORT: 5432
       run: |
-        python -m coverage run --append --rcfile=.coveragerc ../.github/scripts/run_backend_pytest.py hr_copilot/test_api.py hr_copilot/test_llm.py hr_copilot/test_providers.py
+        python -m coverage run --append --rcfile=.coveragerc ../.github/scripts/run_backend_pytest.py hr_copilot/test_api.py hr_copilot/test_llm.py hr_copilot/test_providers.py hr_copilot/test_intent_normalization.py
         python -m coverage report --rcfile=.coveragerc
         python -m coverage xml --rcfile=.coveragerc -o coverage.xml
         python -m coverage json --rcfile=.coveragerc -o coverage.json

@@ -181,3 +181,57 @@ def test_unsupported_write_intent_is_rejected_before_execution(intent_name):
         IntentNormalizer().normalize_intent(
             {"intent": intent_name, "entities": {}}
         )
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected"),
+    [
+        ("today", "2026-10-14"),
+        ("yesterday", "2026-10-13"),
+        ("tomorrow", "2026-10-15"),
+        ("29th September 2026", "2026-09-29"),
+        ("September 29", "2026-09-29"),
+        ("29/09/2026", "2026-09-29"),
+    ],
+)
+def test_attendance_date_extraction_handles_supported_calendar_phrasing(
+    monkeypatch, phrase, expected
+):
+    monkeypatch.setattr(
+        "django.utils.timezone.localdate", lambda: datetime(2026, 10, 14).date()
+    )
+
+    assert IntentNormalizer._extract_attendance_date(phrase) == expected
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_status"),
+    [
+        ("Mark Asha Rao absent today", "ABSENT"),
+        ("Make Asha Rao present yesterday", "PRESENT"),
+        ("Set Asha Rao on leave tomorrow", "LEAVE"),
+        ("Record attendance for Asha Rao today", "PRESENT"),
+    ],
+)
+def test_attendance_write_inference_preserves_status_identity_and_date(
+    monkeypatch, query, expected_status
+):
+    monkeypatch.setattr(
+        "django.utils.timezone.localdate", lambda: datetime(2026, 10, 14).date()
+    )
+
+    entities = IntentNormalizer()._infer_attendance_write(query)
+
+    assert entities["target_status"] == expected_status
+    assert entities["employee_name"] == "Asha Rao"
+    assert entities["date_range"]["start"] == entities["date_range"]["end"]
+
+
+def test_attendance_write_inference_ignores_reads_and_unrecognized_statuses():
+    normalizer = IntentNormalizer()
+
+    assert normalizer._infer_attendance_write("Who was absent yesterday?") is None
+    assert normalizer._infer_attendance_write("Mark Asha Rao on vacation today") is None
+    assert normalizer._infer_attendance_write("Mark Asha Rao present today")[
+        "target_status"
+    ] == "PRESENT"

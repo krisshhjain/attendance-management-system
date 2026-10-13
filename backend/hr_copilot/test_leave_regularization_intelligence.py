@@ -204,3 +204,38 @@ class LeaveRegularizationIntelligenceTests(TestCase):
         self.assertEqual(
             intent["entities"]["intelligence_metric"], "leave_balance"
         )
+
+    def test_unknown_metric_fails_closed(self):
+        with self.assertRaises(CopilotError) as raised:
+            leave_regularization_intelligence.execute(
+                metric="payroll_export",
+                scope=self.scope,
+                user=self.admin,
+                filters={},
+            )
+
+        self.assertEqual(raised.exception.code, "invalid_intelligence_metric")
+
+    def test_leave_balance_requires_an_employee_for_a_manager_query(self):
+        with self.assertRaises(CopilotError) as raised:
+            leave_regularization_intelligence.execute(
+                metric="leave_balance",
+                scope=self.scope,
+                user=self.admin,
+                filters={},
+            )
+
+        self.assertEqual(raised.exception.code, "employee_required")
+
+    def test_employee_id_outside_manager_scope_is_denied(self):
+        with self.assertRaises(CopilotError) as raised:
+            leave_regularization_intelligence.execute(
+                metric="leave_requests",
+                scope=self.scope,
+                user=self.admin,
+                filters={},
+                employee_id=self.other.id,
+            )
+
+        self.assertEqual(raised.exception.code, "scope_denied")
+        self.assertEqual(raised.exception.status, 403)

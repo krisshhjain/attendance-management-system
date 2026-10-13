@@ -1078,6 +1078,46 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertIn("calendar week", response.data["detail"])
         mock_quota.assert_called_once()
 
+    @patch("attendance.views.regularization_quota_usage")
+    @patch("attendance.views.is_working_day", return_value=True)
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 1))
+    def test_grouped_month_request_cannot_cross_calendar_month(
+        self, _mock_localdate, _mock_working_day, mock_quota
+    ):
+        mock_quota.return_value = {
+            "weekly_used": 0,
+            "weekly_limit": 1,
+            "monthly_used": 0,
+            "monthly_limit": 4,
+        }
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {
+                "period_type": "MONTH",
+                "days": [
+                    {
+                        "attendance_date": "2026-09-30",
+                        "request_type": "FORGOT_CHECK_IN",
+                        "requested_check_in": "2026-09-30T09:00:00+05:30",
+                        "reason": "Missed check-in.",
+                    },
+                    {
+                        "attendance_date": "2026-10-01",
+                        "request_type": "FORGOT_CHECK_IN",
+                        "requested_check_in": "2026-10-01T09:00:00+05:30",
+                        "reason": "Missed check-in.",
+                    },
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("same month", response.data["error"])
+        mock_quota.assert_not_called()
+
     @patch("attendance.views.is_working_day", return_value=True)
     @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
     def test_grouped_regularization_rejects_naive_time_on_another_date(

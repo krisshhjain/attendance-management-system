@@ -55,6 +55,51 @@ def test_ollama_provider_sends_json_intent_request(monkeypatch):
     ]
 
 
+def test_intent_provider_receives_compact_session_and_explicit_context(monkeypatch):
+    monkeypatch.setenv("HR_COPILOT_LLM_URL", "http://localhost:11434")
+    monkeypatch.setattr(
+        llm.session_memory,
+        "get_compact_context",
+        lambda _session: {"last_department": "Engineering", "employee_id": 8},
+    )
+    calls = []
+
+    def fake_open(request, timeout):
+        calls.append(request)
+        return response_for(
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {"employee_id": 8},
+            }
+        )
+
+    monkeypatch.setattr(providers, "_open_local_request", fake_open)
+
+    result = llm.get_structured_intent(
+        "Show that employee", session_id="session-8", context={"section": "C"}
+    )
+
+    assert result["entities"]["employee_id"] == 8
+    prompt = json.loads(calls[0].data)["messages"][0]["content"]
+    assert '"last_department":"Engineering"' in prompt
+    assert '"section":"C"' in prompt
+
+
+def test_non_object_provider_result_returns_safe_invalid_intent(monkeypatch):
+    class EmptyProvider:
+        def structured_output(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(llm, "get_llm_provider", lambda: EmptyProvider())
+
+    with pytest.raises(CopilotError) as raised:
+        llm.get_structured_intent("How many employees?")
+
+    assert raised.value.code == "invalid_intent"
+    assert raised.value.status == 503
+
+
 def test_provider_accepts_absence_intent_as_employee_query(monkeypatch):
     monkeypatch.setenv("HR_COPILOT_LLM_URL", "http://localhost:11434")
     yesterday = "2026-09-23"

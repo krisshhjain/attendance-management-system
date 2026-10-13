@@ -222,6 +222,25 @@ def test_conversation_endpoint_blocks_non_admins_before_loading_history(api, mon
     assert response.data["detail"] == "System Admin access is required."
 
 
+def test_admin_can_read_only_the_requested_conversation(api, monkeypatch):
+    factory, _ = api
+    history = [{"role": "user", "content": "Show Section C attendance"}]
+    loaded = []
+    monkeypatch.setattr(
+        views,
+        "load_messages",
+        lambda user, conversation: loaded.append((user.id, conversation)) or history,
+    )
+    request = factory.get("/api/hr-copilot/conversations/chat-c-17/")
+    force_authenticate(request, user=system_admin())
+
+    response = views.HRCopilotConversationView.as_view()(request, "chat-c-17")
+
+    assert response.status_code == 200
+    assert response.data == {"conversation_id": "chat-c-17", "messages": history}
+    assert loaded == [(1, "chat-c-17")]
+
+
 def test_cancel_awaiting_action_returns_its_action_id(api, monkeypatch):
     factory, _ = api
     action = {"action_id": "pending-action-123", "intent": {}}
@@ -1630,6 +1649,7 @@ def test_write_planner_resolves_supported_and_unknown_relative_dates(
 @pytest.mark.parametrize(
     ("status", "reason", "expected_detail"),
     [
+        ("PRESENT", "", "; check-in 09:00; check-out 17:00"),
         ("LEAVE", "Family care", "; check-in cleared; check-out cleared; reason: Family care"),
         ("ABSENT", "ignored", "; check-in cleared; check-out cleared"),
         ("REMOTE", "", "Status: REMOTE"),
@@ -1640,6 +1660,41 @@ def test_attendance_description_matches_status_semantics(status, reason, expecte
         "Asha Rao", date(2026, 10, 14), status, "09:00", "17:00", reason
     )
     assert expected_detail in result
+
+
+def test_pipeline_validates_departments_and_resolves_student_category(monkeypatch):
+    monkeypatch.setattr(
+        pipeline.Employee,
+        "objects",
+        SimpleNamespace(
+            values_list=lambda *_args, **_kwargs: SimpleNamespace(
+                distinct=lambda: ["Engineering", "Student Department"]
+            )
+        ),
+    )
+
+    student_plan = pipeline.plan_query(
+        {
+            "intent": "employee_lookup",
+            "source": "employee",
+            "entities": {"department": "__STUDENT_DEPARTMENT__"},
+        },
+        {"unrestricted": True, "sections": [], "subsections": []},
+        system_admin(),
+    )
+    assert student_plan["filters"]["department"] == "Student Department"
+
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {"department": "Unknown"},
+            },
+            {"unrestricted": True, "sections": [], "subsections": []},
+            system_admin(),
+        )
+    assert raised.value.code == "department_not_found"
 
 
 def test_executor_rejects_cancelling_an_already_executed_action(monkeypatch):
@@ -1655,6 +1710,35 @@ def test_executor_rejects_cancelling_an_already_executed_action(monkeypatch):
         write_executor_module.pending_action_manager.cancel_action("session", "action", 1)
 
     assert raised.value.code == "action_not_cancellable"
+
+
+def test_executor_marks_expired_pending_action_and_records_event(monkeypatch):
+    action = SimpleNamespace(
+        is_expired=True,
+        status="PENDING",
+        action_id="expired-action-17",
+        user=system_admin(),
+        save=MagicMock(),
+    )
+    monkeypatch.setattr(
+        write_executor_module.CopilotPendingAction,
+        "objects",
+        SimpleNamespace(get=lambda **_: action),
+    )
+    events = []
+    monkeypatch.setattr(
+        write_executor_module, "record_event", lambda **kwargs: events.append(kwargs)
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_executor_module.pending_action_manager.get_pending_action(
+            "session-c", "expired-action-17", 1
+        )
+
+    assert raised.value.code == "action_expired"
+    assert action.status == "EXPIRED"
+    action.save.assert_called_once_with(update_fields=["status"])
+    assert events[0]["event_type"] == "COPILOT_ACTION_EXPIRED"
 
 
 @pytest.mark.parametrize(
