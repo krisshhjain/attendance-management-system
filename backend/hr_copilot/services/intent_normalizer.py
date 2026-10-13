@@ -542,15 +542,15 @@ class IntentNormalizer:
         patterns = (
             (
                 r"\b(?:please\s+)?(?:mark|make|set|change|update|correct|add)\s+",
-                r"\s+(?:['’]s\s+)?(?:as\s+)?(?:present|absent|leave|incomplete|attendance|check[ -]?in|check[ -]?out)\b",
+                r"\s+(?:['’]s\s+)?(?:as\s+)?(?:on\s+)?(?:present|absent|leave|incomplete|attendance|check[ -]?in|check[ -]?out)\b",
             ),
             (
                 r"\b(?:attendance|check[ -]?in|check[ -]?out)\s+(?:for|of)\s+",
-                r"\s+(?:on|for|as|to|with)\b|[,.!?]|$",
+                r"\s+(?:on|for|as|to|with|today|yesterday|tomorrow)\b|[,.!?]|$",
             ),
             (
                 r"\b(?:add|record)\s+attendance\s+for\s+",
-                r"\s+(?:on|for|as)\b|[,.!?]|$",
+                r"\s+(?:on|for|as|today|yesterday|tomorrow)\b|[,.!?]|$",
             ),
         )
         for start_pattern, end_pattern in patterns:
