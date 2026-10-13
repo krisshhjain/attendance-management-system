@@ -450,3 +450,121 @@ def test_grounding_validator_rejects_claims_for_empty_results(answer):
     with pytest.raises(CopilotError) as raised:
         llm._validate_grounded_answer(answer, [])
     assert raised.value.code == "ungrounded_llm_response"
+
+
+@pytest.mark.parametrize(
+    ("placement", "extra", "expected_code"),
+    [
+        ("top", {"missing_information": 7}, "normalization_failed"),
+        ("top", {"confidence": "certain"}, "invalid_intent"),
+        ("entity", {"date_range": {"start": "2026-10-14", "end": "2026-10-13"}}, "invalid_intent"),
+        ("entity", {"date_range": {"start": "2026-02-30", "end": "2026-03-01"}}, "invalid_intent"),
+        ("entity", {"comparison_subsections": ["C1", "bad-section"]}, "invalid_intent"),
+        ("entity", {"comparison_subsections": ["C1"] * 11}, "invalid_intent"),
+        ("entity", {"attendance_metric": "payroll_export"}, "invalid_intent"),
+        ("entity", {"intelligence_metric": "salary_history"}, "invalid_intent"),
+        ("entity", {"workforce_metric": "credentials"}, "invalid_intent"),
+    ],
+)
+def test_structured_intent_rejects_malformed_or_unsupported_entities(
+    monkeypatch, placement, extra, expected_code
+):
+    output = {
+        "intent": "employee_count",
+        "source": "employee",
+        "entities": {},
+    }
+    if placement == "entity":
+        output["entities"].update(extra)
+    else:
+        output.update(extra)
+    monkeypatch.setattr(
+        providers,
+        "_open_local_request",
+        lambda *_args, **_kwargs: response_for(output),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        llm.get_structured_intent("How many employees?")
+
+    assert raised.value.code == expected_code
+    assert raised.value.status == 503
+
+
+def test_compaction_reduces_employee_and_leave_results_to_safe_fields():
+    employee = llm._compact_result_data(
+        [
+            {
+                "first_name": "Asha",
+                "last_name": "Rao",
+                "email": "asha@example.test",
+                "department": "Engineering",
+                "salary": 999999,
+            }
+        ],
+        {"source": "employee"},
+    )
+    assert employee == [
+        {
+            "name": "Asha Rao",
+            "email": "asha@example.test",
+            "department": "Engineering",
+            "employment_type": None,
+            "section": None,
+            "subsection": None,
+            "is_active": None,
+        }
+    ]
+
+    leaves = [
+        {
+            "first_name": "Asha",
+            "last_name": "Rao",
+            "leave_type": "Annual",
+            "start_date": "2026-10-20",
+            "end_date": "2026-10-20",
+            "status": "APPROVED",
+            "reason": "private reason",
+        }
+        for _ in range(12)
+    ]
+    compacted = llm._compact_result_data(leaves, {"source": "leave"})
+    assert len(compacted) == 10
+    assert compacted[0] == {
+        "first_name": "Asha",
+        "last_name": "Rao",
+        "leave_type": "Annual",
+        "start_date": "2026-10-20",
+        "end_date": "2026-10-20",
+        "status": "APPROVED",
+    }
+
+
+def test_deterministic_formatter_uses_comparison_data_and_falls_back_for_partial_profile():
+    comparison = llm.generate_natural_answer(
+        "Compare periods",
+        {"entities": {"attendance_metric": "period_comparison"}},
+        [{"current": 3, "previous": 2}],
+    )
+    assert "current" in comparison
+    assert "previous" in comparison
+
+    assert (
+        llm._generate_deterministic_answer(
+            {"source": "employee"}, [{"first_name": "Asha", "last_name": "Rao"}]
+        )
+        is None
+    )
+    assert (
+        llm._generate_deterministic_answer(
+            {"source": "attendance"}, [{"first_name": "Asha", "last_name": "Rao"}]
+        )
+        is None
+    )
+
+
+def test_grounding_validator_allows_facts_present_in_result_rows():
+    llm._validate_grounded_answer(
+        "Asha Rao has 3 approved leave days.",
+        [{"first_name": "Asha", "last_name": "Rao", "value": 3, "status": "approved"}],
+    )

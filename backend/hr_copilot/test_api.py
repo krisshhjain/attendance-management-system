@@ -1917,6 +1917,77 @@ def test_leave_cancel_requires_a_linked_employee_profile():
     assert raised.value.code == "no_employee_profile"
 
 
+def test_regularization_review_requires_a_request_id_when_matches_are_ambiguous(
+    monkeypatch,
+):
+    query = MagicMock()
+    query.filter.return_value = query
+    query.order_by.return_value = [object(), object()]
+    monkeypatch.setattr(
+        write_action_module,
+        "RegularizationRequest",
+        SimpleNamespace(objects=SimpleNamespace(select_related=lambda *_: query)),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_regularization_review(
+            {
+                "intent": "regularization_approve",
+                "entities": {"employee_id": 42},
+            },
+            system_admin(),
+            {"unrestricted": True},
+            "ambiguous-regularization",
+        )
+
+    assert raised.value.code == "regularization_ambiguous"
+
+
+def test_regularization_rejection_plan_waits_for_reason_and_keeps_confirmation(
+    monkeypatch,
+):
+    request = SimpleNamespace(
+        id=81,
+        employee_id=42,
+        attendance_date=date(2026, 10, 13),
+        status="PENDING",
+        days=SimpleNamespace(exists=lambda: False),
+        employee=SimpleNamespace(
+            user=SimpleNamespace(
+                get_full_name=lambda: "Asha Rao", email="asha@example.test"
+            )
+        ),
+    )
+    query = MagicMock()
+    query.filter.return_value = query
+    query.order_by.return_value = [request]
+    monkeypatch.setattr(
+        write_action_module,
+        "RegularizationRequest",
+        SimpleNamespace(objects=SimpleNamespace(select_related=lambda *_: query)),
+    )
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+
+    pending = write_action_planner._plan_regularization_review(
+        {
+            "intent": "regularization_reject",
+            "entities": {"request_id": 81},
+        },
+        system_admin(),
+        {"unrestricted": True},
+        "reject-needs-reason",
+    )
+
+    assert pending["status"] == "AWAITING_INFORMATION"
+    assert pending["validation_errors"] == ["reason"]
+    assert pending["requires_confirmation"] is True
+    assert pending["proposed_changes"]["status"] == "REJECTED"
+
+
 def test_employee_profile_query_returns_tool_data(api, monkeypatch):
     factory, _ = api
     employee_data = [{"name": "Asha Rao", "department": "Engineering"}]
@@ -1994,6 +2065,95 @@ def test_pipeline_rejects_department_ambiguity_before_query_planning(monkeypatch
         pipeline.analyze_question("Show department statistics")
 
     assert raised.value.code == "department_not_found"
+
+
+def test_pipeline_fails_closed_when_an_explicit_employee_id_cannot_resolve(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        pipeline.employee_resolver,
+        "resolve_employee",
+        lambda **_: SimpleNamespace(
+            as_dict=lambda: {"status": "not_found", "employee_id": None}
+        ),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {"employee_id": 987654},
+            },
+            {"unrestricted": True, "sections": [], "subsections": []},
+            system_admin(),
+        )
+
+    assert raised.value.code == "employee_not_found"
+
+
+def test_pipeline_rejects_unresolved_employee_target_for_shift_intelligence(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        pipeline.employee_resolver,
+        "resolve_employee",
+        lambda **_: SimpleNamespace(
+            as_dict=lambda: {"status": "ambiguous", "employee_id": None}
+        ),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": "workforce_intelligence",
+                "source": "employee",
+                "entities": {
+                    "workforce_metric": "shift_assignments",
+                    "employee_name": "Asha Rao",
+                },
+            },
+            {"unrestricted": True, "sections": [], "subsections": []},
+            system_admin(),
+        )
+
+    assert raised.value.code == "employee_ambiguous"
+
+
+def test_pipeline_rechecks_resolved_employee_against_current_manager_scope(
+    monkeypatch,
+):
+    employee = SimpleNamespace(id=42)
+    monkeypatch.setattr(
+        pipeline.employee_resolver,
+        "resolve_employee",
+        lambda **_: SimpleNamespace(
+            as_dict=lambda: {"status": "resolved", "employee_id": 42}
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline.Employee,
+        "objects",
+        SimpleNamespace(filter=lambda **_: SimpleNamespace(first=lambda: employee)),
+    )
+    monkeypatch.setattr(
+        "accounts.scope_service.employee_in_manager_scope",
+        lambda *_: False,
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {"employee_email": "asha@example.test"},
+            },
+            {"unrestricted": False, "sections": ["C"], "subsections": []},
+            system_admin(),
+        )
+
+    assert raised.value.code == "scope_denied"
+    assert raised.value.status == 403
 
 
 def test_executor_rejects_cancelling_an_already_executed_action(monkeypatch):

@@ -563,6 +563,23 @@ def test_absence_count_uses_distinct_active_employee_count():
     assert params == [intent["entities"]["date_range"]["start"]] * 4
 
 
+def test_absence_sql_rejects_an_invalid_date_before_database_execution():
+    plan = {
+        "source": "employee",
+        "intent": "absence_lookup",
+        "filters": {
+            "date_range": {"start": "not-a-date", "end": "not-a-date"}
+        },
+        "scope": {"sections": [], "subsections": [], "unrestricted": True},
+        "limit": 100,
+    }
+
+    with pytest.raises(CopilotError) as raised:
+        build_sql(plan)
+
+    assert raised.value.code == "invalid_date_range"
+
+
 def test_absence_question_requires_completed_past_date_when_planned():
     intent = {"intent": "absence_lookup", "source": "employee", "entities": {}}
     with pytest.raises(CopilotError) as raised:
