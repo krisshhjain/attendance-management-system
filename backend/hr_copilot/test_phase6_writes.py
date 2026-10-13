@@ -245,6 +245,7 @@ class Phase6WriteTests(TestCase):
 
     def test_attendance_create_rechecks_duplicates_after_confirmation(self):
         target = timezone.localdate()
+        session = f"hr-copilot-user-{self.admin.id}-attendance-create-stale"
         pending = write_action_planner.plan_write_action(
             self.intent(
                 "attendance_create",
