@@ -1,4 +1,5 @@
 from django.test import TestCase
+from rest_framework.exceptions import ValidationError
 
 from .geofence import validate_attendance_geofence
 from .models import OfficeLocation
@@ -67,6 +68,9 @@ class DynamicGeofenceTests(TestCase):
         self.assertFalse(invalid_longitude.is_valid())
         self.assertIn("-180 and 180", str(invalid_longitude.errors["longitude"]))
         self.assertFalse(empty_name.is_valid())
-        self.assertIn("cannot be empty", str(empty_name.errors["name"]))
+        self.assertIn("may not be blank", str(empty_name.errors["name"]))
+        with self.assertRaises(ValidationError) as error:
+            empty_name.validate_name(None)
+        self.assertIn("cannot be empty", str(error.exception))
         self.assertTrue(valid_location.is_valid(), valid_location.errors)
         self.assertEqual(valid_location.validated_data["name"], "Valid office")
