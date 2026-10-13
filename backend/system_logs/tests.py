@@ -1410,8 +1410,10 @@ class SystemLogAPITests(TestCase):
             "actor_role=UNKNOWN",
             "date_from=not-a-date",
             "date_from=2026-10-01&date_to=2026-09-01",
+            f"search={'x' * 201}",
             "page=0",
             "page_size=101",
+            "page_size=not-a-number",
             "ordering=message",
         )
         for query in invalid_queries:
@@ -1430,6 +1432,15 @@ class SystemLogAPITests(TestCase):
                 item["email"] == self.employee_user.email
                 for item in actors.data
             )
+        )
+        numeric_actor = self.get_as(
+            self.superuser,
+            f"/api/system-logs/actors/?search={self.employee_user.id}",
+        )
+        self.assertEqual(numeric_actor.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in numeric_actor.data],
+            [self.employee_user.id],
         )
 
         csv_response = self.get_as(
@@ -1452,3 +1463,46 @@ class SystemLogAPITests(TestCase):
         self.assertEqual(xlsx_response.status_code, 200)
         self.assertIn("system-logs.xlsx", xlsx_response["Content-Disposition"])
         self.assertTrue(xlsx_response.content.startswith(b"PK"))
+
+        invalid_export = self.get_as(
+            self.superuser,
+            "/api/system-logs/export/?export_format=json",
+        )
+        self.assertEqual(invalid_export.status_code, 400)
+        self.assertEqual(invalid_export.data["detail"], "format must be csv or xlsx.")
+        invalid_filter = self.get_as(
+            self.superuser,
+            "/api/system-logs/export/?export_format=csv&category=unknown",
+        )
+        self.assertEqual(invalid_filter.status_code, 400)
+
+    def test_delete_requires_date_and_removes_only_through_requested_day(self):
+        today = timezone.localdate()
+        tomorrow = today + timedelta(days=1)
+        old_log = self.create_log(
+            timestamp=timezone.make_aware(datetime.combine(today, time(9)))
+        )
+        keep_log = self.create_log(
+            timestamp=timezone.make_aware(datetime.combine(tomorrow, time(9)))
+        )
+        self.client.force_authenticate(user=self.superuser)
+        self.client.force_authenticate(user=self.manager)
+        forbidden = self.client.delete(
+            f"/api/system-logs/?until_date={today.isoformat()}"
+        )
+        self.assertEqual(forbidden.status_code, 403)
+        self.client.force_authenticate(user=self.superuser)
+
+        missing_date = self.client.delete("/api/system-logs/")
+        invalid_date = self.client.delete(
+            "/api/system-logs/?until_date=not-a-date"
+        )
+        deleted = self.client.delete(
+            f"/api/system-logs/?until_date={today.isoformat()}"
+        )
+
+        self.assertEqual(missing_date.status_code, 400)
+        self.assertEqual(invalid_date.status_code, 400)
+        self.assertEqual(deleted.status_code, 200)
+        self.assertFalse(SystemLog.objects.filter(pk=old_log.pk).exists())
+        self.assertTrue(SystemLog.objects.filter(pk=keep_log.pk).exists())
