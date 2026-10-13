@@ -19,7 +19,8 @@ from attendance.geofence import (GEOFENCE_RADIUS_METERS, MAX_ACCURACY_METERS,
                                  calculate_haversine_distance)
 from attendance.models import (Attendance, AttendanceCorrection,
                                AttendanceEvent, RegularizationRequest, Shift,
-                               attendance_day_end, calculate_working_duration,
+                               RegularizationQuotaPolicy, attendance_day_end,
+                               calculate_working_duration,
                                get_effective_attendance_events)
 from employees.models import Employee, FaceProfile
 
@@ -168,6 +169,12 @@ class ManagerEmployeeAttendanceScopeTests(APITestCase):
 
 class RegularizationWorkflowTests(APITestCase):
     def setUp(self):
+        # Keep quota assertions independent of any policy persisted in a local
+        # developer database; production defaults are one request per week and
+        # four per month.
+        RegularizationQuotaPolicy.objects.update_or_create(
+            pk=1, defaults={"weekly_limit": 1, "monthly_limit": 4}
+        )
         self.attendance_date = timezone.localdate()
         while self.attendance_date.weekday() >= 5:
             self.attendance_date -= timedelta(days=1)
@@ -912,6 +919,66 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertIn(
             "multi-day requests are only allowed for dates in the current calendar week",
             str(res.data),
+        )
+
+    @patch("attendance.views.is_working_day", return_value=True)
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    def test_grouped_regularization_rejects_duplicate_dates_before_writing(
+        self, _mock_localdate, _mock_working_day
+    ):
+        self.client.force_authenticate(user=self.employee_user)
+        row = {
+            "attendance_date": "2026-10-12",
+            "request_type": "FORGOT_CHECK_IN",
+            "requested_check_in": "2026-10-12T09:00:00+05:30",
+            "reason": "The check-in event was missed.",
+        }
+
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {"period_type": "WEEK", "days": [row, dict(row)]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "A date can only be included once.")
+        self.assertEqual(
+            RegularizationRequest.objects.filter(
+                employee=self.employee, period_type="WEEK"
+            ).count(),
+            0,
+        )
+
+    @patch("attendance.views.is_working_day", return_value=True)
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    def test_grouped_regularization_rejects_checkout_before_checkin(
+        self, _mock_localdate, _mock_working_day
+    ):
+        self.client.force_authenticate(user=self.employee_user)
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {
+                "period_type": "WEEK",
+                "days": [
+                    {
+                        "attendance_date": "2026-10-12",
+                        "request_type": "INCORRECT_ATTENDANCE",
+                        "requested_check_in": "2026-10-12T10:00:00+05:30",
+                        "requested_check_out": "2026-10-12T09:00:00+05:30",
+                        "reason": "The times need correction.",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("check-out must be after check-in", response.data["error"])
+        self.assertEqual(
+            RegularizationRequest.objects.filter(
+                employee=self.employee, period_type="WEEK"
+            ).count(),
+            0,
         )
 
     @patch("django.utils.timezone.now")

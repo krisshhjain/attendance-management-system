@@ -8,9 +8,12 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import ManagerScope
 from hr_copilot import views
-from hr_copilot.services import pipeline, write_actions as write_action_module
+from hr_copilot.services import (pipeline,
+                                 write_actions as write_action_module,
+                                 write_executor as write_executor_module)
 from hr_copilot.services.pipeline import CopilotError
 from hr_copilot.services.write_actions import write_action_planner
+from hr_copilot.services.write_executor import write_action_executor
 
 
 class FakeAudit:
@@ -152,6 +155,21 @@ def test_query_requires_system_admin(api):
     )
     assert response.status_code == 403
     assert response.data["detail"] == "System Admin access is required."
+    assert audit_records == []
+
+
+@pytest.mark.parametrize("message", [None, "", "   ", "x" * 2001, []])
+def test_query_rejects_invalid_or_oversized_message_before_auditing(api, message):
+    factory, audit_records = api
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": message, "conversation_id": "invalid-query"},
+    )
+
+    assert response.status_code == 400
+    assert response.data["detail"] == "Enter a question of up to 2,000 characters."
     assert audit_records == []
 
 
@@ -1106,6 +1124,132 @@ def test_pipeline_marks_live_date_scope_and_write_intent(monkeypatch):
     assert result["action_type"] == "read"
     assert result["entities"]["temporal_scope"]["type"] == "today"
     assert result["entities"]["temporal_scope"]["source"] == "llm_resolved"
+
+
+def test_pipeline_marks_write_intents_as_approval_required(monkeypatch):
+    monkeypatch.setattr(
+        "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
+        lambda *args, **kwargs: {
+            "intent": "attendance_create",
+            "source": "attendance",
+            "entities": {},
+        },
+    )
+
+    result = pipeline.analyze_question("Create attendance")
+
+    assert result["action_type"] == "write"
+    assert result["requires_approval"] is True
+
+
+@pytest.mark.parametrize(
+    ("intent_name", "expected_phrase"),
+    [
+        ("attendance_intelligence", "attendance metric"),
+        ("leave_regularization_intelligence", "leave or regularization information"),
+        ("workforce_intelligence", "workforce information"),
+    ],
+)
+def test_pipeline_requires_a_metric_for_specialized_queries(intent_name, expected_phrase):
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": intent_name,
+                "source": "attendance" if intent_name == "attendance_intelligence" else "employee",
+                "entities": {},
+            },
+            {"sections": ["C"], "subsections": [], "unrestricted": False},
+            system_admin(),
+        )
+
+    assert raised.value.code == "clarification_required"
+    assert expected_phrase in raised.value.message.lower()
+
+
+def test_write_planner_rejects_unsupported_regularization_type_before_lookup(monkeypatch):
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 12)
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_regularization_create(
+            {
+                "intent": "regularization_create",
+                "entities": {"request_type": "UNSUPPORTED", "reason": "Fix record"},
+            },
+            system_admin(),
+            {"unrestricted": True},
+            "unsupported-type",
+        )
+
+    assert raised.value.code == "invalid_request_type"
+
+
+def test_write_planner_requires_valid_shift_and_explicit_employee_status(monkeypatch):
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_module,
+        "Shift",
+        SimpleNamespace(objects=SimpleNamespace(filter=lambda **_: SimpleNamespace(first=lambda: None))),
+    )
+
+    with pytest.raises(CopilotError) as shift_error:
+        write_action_planner._plan_shift_assignment(
+            {"intent": "employee_shift_assign", "entities": {"shift_name": "Night"}},
+            system_admin(),
+            {"unrestricted": True},
+            "missing-shift",
+        )
+    assert shift_error.value.code == "shift_not_found"
+
+    with pytest.raises(CopilotError) as status_error:
+        write_action_planner._plan_employee_status(
+            {"intent": "employee_status_update", "entities": {"employee_id": 42}},
+            system_admin(),
+            {"unrestricted": True},
+            "missing-status",
+        )
+    assert status_error.value.code == "status_required"
+
+
+def test_executor_rejects_unvalidated_action_before_authorization_or_write():
+    with pytest.raises(CopilotError) as raised:
+        write_action_executor.execute_approved_action(
+            {"validated": False}, system_admin()
+        )
+
+    assert raised.value.code == "action_not_validated"
+
+
+def test_executor_revalidates_current_employee_scope(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "derive_scope",
+        lambda _user: {"unrestricted": False, "sections": ["C"], "subsections": ["C1"]},
+    )
+    monkeypatch.setattr(
+        write_executor_module.Employee,
+        "objects",
+        SimpleNamespace(get=lambda **_: SimpleNamespace(section="D", subsection="D1")),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_executor._revalidate_authorization(
+            {"target_data": {"employee_id": 42}, "authorization_scope": {"sections": ["C"]}},
+            system_admin(),
+        )
+
+    assert raised.value.code == "scope_denied"
+    assert raised.value.status == 403
 
 
 @pytest.mark.parametrize(

@@ -16,6 +16,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 
 METRICS = (
@@ -69,7 +70,10 @@ def github_artifact_coverage(root: Path, repo: str, pr: str, output_dir: Path) -
         if artifact is None:
             result["reason"] = "Successful run has no unexpired backend-coverage artifact"
             return result
-        destination = output_dir / "github-artifacts"
+        # Each invocation needs a clean extraction directory. gh refuses to
+        # overwrite existing artifact entries, which made later triage runs
+        # fail after the first successful download.
+        destination = output_dir / "github-artifacts" / f"{run['id']}-{uuid.uuid4().hex}"
         destination.mkdir(parents=True, exist_ok=True)
         proc = subprocess.run(["gh", "run", "download", str(run["id"]), "--repo", repo,
                                "--name", "backend-coverage", "--dir", str(destination)],
@@ -267,7 +271,13 @@ def local_summary(path: Path, root: Path, changed: dict[str, set[int]]) -> dict:
 def apply_sonar_file_metrics(local: dict, sonar: dict) -> None:
     if not local.get("available"):
         return
-    metrics = {item["path"]: {entry.get("metric"): entry.get("value")
+    def metric_value(entry: dict) -> str | None:
+        periods = entry.get("periods") or []
+        if periods:
+            return periods[0].get("value")
+        return entry.get("value")
+
+    metrics = {item["path"]: {entry.get("metric"): metric_value(entry)
                                for entry in item.get("measures", [])}
                for item in sonar.get("files", [])}
     for file in local["files"]:
@@ -354,7 +364,8 @@ def main() -> int:
             pass
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     lines = ["# Coverage triage", "", f"- Head: `{report['head']}`", f"- Base: `{args.base}`", f"- GitHub coverage artifact: `{github.get('status')}`", f"- Sonar PR measures: `{sonar.get('status')}`"]
-    measures = {entry.get("metric"): entry.get("value") for entry in sonar.get("measures", [])}
+    measures = {entry.get("metric"): (entry.get("periods") or [{}])[0].get("value", entry.get("value"))
+                for entry in sonar.get("measures", [])}
     if measures:
         lines.extend([f"- Sonar new coverage: {measures.get('new_coverage', 'unavailable')}%", f"- New uncovered lines: {measures.get('new_uncovered_lines', 'unavailable')}"])
     if sonar_gate.get("status") == "available":
@@ -363,7 +374,7 @@ def main() -> int:
     if local.get("available"):
         lines.extend(["", "## Priority target gaps", ""])
         for item in local["files"][:15]:
-            lines.append(f"- `{item['path']}`: impact {item['uncovered_new_code_impact']}, Sonar uncovered lines/conditions {item['sonar_new_uncovered_lines']}/{item['sonar_new_uncovered_conditions']}; {item['missing_statement_count']} missing statements, {item['missing_branch_count']} missing branch arcs; {len(item['missing_changed_statements'])} missed changed statements and {len(item['missing_changed_branches'])} missed changed branch arcs; business-logic score {item['reachable_business_logic_score']}")
+            lines.append(f"- `{item['path']}`: impact {item['uncovered_new_code_impact']}, Sonar uncovered lines/conditions {item['sonar_new_uncovered_lines']}/{item['sonar_new_uncovered_conditions']}; {item['missing_statement_count']} missing statements, {item['missing_branch_count']} missing branch arcs; missed changed statements `{item['missing_changed_statements']}`; missed changed branch arcs `{item['missing_changed_branches']}`.")
     lines.extend(["", f"> {report['mapping_caveat']}", ""])
     (args.output_dir / "coverage-triage.md").write_text("\n".join(lines), encoding="utf-8")
     print(f"Wrote coverage triage reports to {args.output_dir}")
