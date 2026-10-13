@@ -89,10 +89,30 @@ def github_artifact_coverage(root: Path, repo: str, pr: str, output_dir: Path) -
         return result
 
 
-def github_sonar_gate(root: Path, repo: str, head: str | None) -> dict:
+def github_sonar_gate(root: Path, repo: str, pr: str, head: str | None) -> dict:
     if not head:
         return {"status": "unavailable", "reason": "PR head SHA unavailable"}
     try:
+        comments = gh_json([f"repos/{repo}/issues/{pr}/comments?per_page=100"], root)
+        sonar_comments = [item for item in comments if "sonar" in item.get("user", {}).get("login", "").lower()
+                          and ("quality gate" in item.get("body", "").lower()
+                               or "coverage on new code" in item.get("body", "").lower())]
+        sonar_comments.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+        if sonar_comments:
+            item = sonar_comments[0]
+            body = item.get("body", "")
+            coverage = None
+            import re
+
+            match = re.search(r"(\d+(?:\.\d+)?)%\s+Coverage on New Code", body, re.IGNORECASE)
+            if match:
+                coverage = match.group(1)
+            state = "failed" if re.search(r"Quality Gate failed", body, re.IGNORECASE) else "passed" if re.search(r"Quality Gate passed", body, re.IGNORECASE) else "unknown"
+            return {"status": "available", "source": "sonarqubecloud PR comment",
+                    "conclusion": state, "new_coverage": coverage,
+                    "completed_at": item.get("created_at"),
+                    "revision": (re.search(r"sqra:qg_revision=([a-f0-9]+)", body).group(1)
+                                 if re.search(r"sqra:qg_revision=([a-f0-9]+)", body) else None)}
         data = gh_json([f"repos/{repo}/commits/{head}/check-runs?per_page=100"], root)
         checks = [item for item in data.get("check_runs", [])
                   if "sonar" in item.get("name", "").lower() or "quality gate" in item.get("name", "").lower()]
@@ -295,7 +315,7 @@ def main() -> int:
     sonar = {"status": "skipped", "reason": "--no-sonar"} if args.no_sonar else sonar_measures(args.sonar_url, args.project, args.pull_request, os.environ.get("SONAR_TOKEN") or None)
     apply_sonar_file_metrics(local, sonar)
     head = github.get("head") or subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, text=True, capture_output=True).stdout.strip()
-    sonar_gate = github_sonar_gate(root, args.repo, head) if sonar.get("status") == "unavailable" else {"status": "not_needed"}
+    sonar_gate = github_sonar_gate(root, args.repo, args.pull_request, head) if sonar.get("status") == "unavailable" else {"status": "not_needed"}
     report = {
         "organization": args.organization,
         "base": args.base,
