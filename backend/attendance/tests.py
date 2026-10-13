@@ -1238,6 +1238,78 @@ class RegularizationWorkflowTests(APITestCase):
         req.refresh_from_db()
         self.assertEqual(req.status, "APPROVED")
 
+    def test_admin_approval_rejects_final_times_outside_request_date(self):
+        self.client.force_authenticate(user=self.admin_user)
+        wrong_date = self.attendance_date + timedelta(days=1)
+
+        response = self.client.post(
+            f"/api/attendance/admin/regularization/{self.request.id}/approve/",
+            {
+                "check_in": f"{wrong_date.isoformat()}T09:00:00+05:30",
+                "check_out": f"{wrong_date.isoformat()}T17:00:00+05:30",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("must be on the attendance date", response.data["error"])
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "PENDING")
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, source="ADMIN"
+            ).count(),
+            0,
+        )
+
+    def test_admin_approval_rejects_final_checkout_before_checkin(self):
+        self.client.force_authenticate(user=self.admin_user)
+
+        response = self.client.post(
+            f"/api/attendance/admin/regularization/{self.request.id}/approve/",
+            {
+                "check_in": f"{self.attendance_date.isoformat()}T17:00:00+05:30",
+                "check_out": f"{self.attendance_date.isoformat()}T09:00:00+05:30",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("must be after final check-in", response.data["error"])
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "PENDING")
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, source="ADMIN"
+            ).count(),
+            0,
+        )
+
+    def test_admin_cannot_approve_regularization_outside_manager_scope(self):
+        from accounts.models import ManagerScope
+
+        ManagerScope.objects.filter(manager=self.admin_user).delete()
+        ManagerScope.objects.create(
+            manager=self.admin_user,
+            scope_type="DEPARTMENT",
+            value="Finance",
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+        response = self.client.post(
+            f"/api/attendance/admin/regularization/{self.request.id}/approve/",
+            {
+                "check_in": self.check_in.isoformat(),
+                "check_out": self.check_out.isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("do not have permission", response.data["error"])
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, "PENDING")
+
 
 class AttendanceGeofenceTests(APITestCase):
     def setUp(self):
