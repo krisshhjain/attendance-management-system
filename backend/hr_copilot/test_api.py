@@ -798,10 +798,11 @@ def test_ambiguous_employee_follow_up_keeps_action_pending_and_requests_email(
     assert response.data["pending_action"]["validation_errors"] == ["employee_email"]
 
 
-def test_leave_follow_up_resolves_employee_and_attaches_configured_leave_type(
-    api, monkeypatch
+@pytest.mark.parametrize("leave_type_configured", [True, False])
+def test_leave_follow_up_handles_configured_leave_type(
+    api, monkeypatch, leave_type_configured
 ):
-    factory, _ = api
+    factory, audit_records = api
     today = timezone.localdate().isoformat()
     draft = {
         "action_id": "leave-follow-up",
@@ -817,7 +818,11 @@ def test_leave_follow_up_resolves_employee_and_attaches_configured_leave_type(
         "validation_errors": ["employee_name"],
         "current_state": {},
     }
-    leave_type = SimpleNamespace(id=17, name="Annual leave")
+    leave_type = (
+        SimpleNamespace(id=17, name="Annual leave")
+        if leave_type_configured
+        else None
+    )
     updated_actions = []
     updated = {
         **draft,
@@ -826,9 +831,11 @@ def test_leave_follow_up_resolves_employee_and_attaches_configured_leave_type(
             **draft["target_data"],
             "employee_id": 42,
             "employee_name": "Asha Rao",
-            "leave_type_id": leave_type.id,
+            "leave_type_id": leave_type.id if leave_type else None,
         },
-        "proposed_changes": {"leave_type": leave_type.name},
+        "proposed_changes": {
+            "leave_type": leave_type.name if leave_type else None
+        },
         "validation_errors": [],
         "status": "PENDING",
         "description": f"Confirm Asha Rao's leave on {today}: Medical appointment",
@@ -870,13 +877,21 @@ def test_leave_follow_up_resolves_employee_and_attaches_configured_leave_type(
         {"message": "Asha Rao", "conversation_id": "leave-follow-up-chat"},
     )
 
-    assert response.status_code == 200
-    assert response.data["query_status"] == "pending_approval"
-    assert response.data["pending_action"]["target_data"]["leave_type_id"] == 17
-    assert response.data["pending_action"]["proposed_changes"]["leave_type"] == "Annual leave"
-    assert "Confirm Asha Rao's leave" in response.data["answer"]
-    assert len(updated_actions) == 1
-    assert updated_actions[0][3]["validated"] is True
+    if leave_type_configured:
+        assert response.status_code == 200
+        assert response.data["query_status"] == "pending_approval"
+        assert response.data["pending_action"]["target_data"]["leave_type_id"] == 17
+        assert response.data["pending_action"]["proposed_changes"]["leave_type"] == "Annual leave"
+        assert "Confirm Asha Rao's leave" in response.data["answer"]
+        assert len(updated_actions) == 1
+        assert updated_actions[0][3]["validated"] is True
+        assert audit_records[0].execution_result == "not_run"
+    else:
+        assert response.status_code == 400
+        assert response.data["code"] == "no_leave_types"
+        assert response.data["query_status"] == "rejected"
+        assert updated_actions == []
+        assert audit_records[0].execution_result == "rejected"
 
 
 def test_employee_scope_denial_does_not_update_pending_action(api, monkeypatch):
