@@ -9,7 +9,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import ManagerScope
 from hr_copilot import views
-from hr_copilot.services import (pipeline,
+from hr_copilot.services import (conversation, pipeline,
                                  write_actions as write_action_module,
                                  write_executor as write_executor_module)
 from hr_copilot.services.pipeline import CopilotError
@@ -2503,3 +2503,191 @@ def test_regularization_planner_rejects_invalid_times_before_creating_action(
 
     assert raised.value.code == "invalid_regularization_time"
     attendance_query.filter.return_value.first.assert_called_once()
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM employees_employee LIMIT 1",
+        "SELECT id FROM auth_group LIMIT 1",
+        "SELECT id FROM employees_employee LIMIT 1001",
+        "DELETE FROM employees_employee",
+    ],
+)
+def test_pipeline_rejects_unsafe_sql_shapes(sql):
+    with pytest.raises(CopilotError) as raised:
+        pipeline.validate_sql(sql)
+    assert raised.value.code == "sql_rejected"
+
+
+def test_pipeline_builds_comparison_and_trend_templates_with_scoped_parameters():
+    comparison = {
+        "source": "attendance",
+        "intent": "comparison",
+        "filters": {"comparison_subsections": ["C1", "C2"]},
+        "scope": {"sections": ["C"], "subsections": ["C1"], "unrestricted": False},
+        "limit": 100,
+    }
+    sql, params = pipeline.build_sql(comparison)
+    assert "GROUP BY e.subsection" in sql
+    assert "e.section IN" in sql
+    assert params == ["C", "C1", "C1", "C2"]
+
+    trend = {
+        "source": "attendance",
+        "intent": "attendance_trend",
+        "filters": {},
+        "scope": {"sections": ["C"], "subsections": ["C1"], "unrestricted": False},
+        "limit": 50,
+    }
+    sql, params = pipeline.build_sql(trend)
+    assert "GROUP BY a.date, a.status" in sql
+    assert params == ["C", "C1", 50]
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_message"),
+    [
+        ("Show attendance by name", "employee's name"),
+        ("Show attendance by email", "email address"),
+        ("Show attendance for employee", "name or email address"),
+        ("Show employees in Section", "which section"),
+        ("Show employees in subsection?", "which subsection"),
+        ("Show employees in department?", "which department"),
+    ],
+)
+def test_pipeline_requests_missing_identity_and_scope_filters(question, expected_message):
+    with pytest.raises(CopilotError) as raised:
+        pipeline._apply_deterministic_entities(question, "attendance", {})
+    assert raised.value.code == "clarification_required"
+    assert expected_message in raised.value.message.lower()
+
+
+def test_regularization_planner_rejects_checkout_before_checkin(monkeypatch):
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 14)
+    )
+    query = MagicMock()
+    query.filter.return_value.first.return_value = None
+    monkeypatch.setattr(write_action_module, "Attendance", SimpleNamespace(objects=query))
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_regularization_create(
+            {
+                "intent": "regularization_create",
+                "entities": {
+                    "request_type": "INCORRECT_ATTENDANCE",
+                    "reason": "Times reversed",
+                    "check_in_time": "17:00",
+                    "check_out_time": "09:00",
+                },
+            },
+            system_admin(), {"unrestricted": True}, "reversed-times",
+        )
+    assert raised.value.code == "invalid_regularization_time"
+
+
+def test_regularization_review_filters_by_attendance_date_range(monkeypatch):
+    request = SimpleNamespace(
+        id=81, employee_id=42, attendance_date=date(2026, 10, 13), status="PENDING",
+        days=SimpleNamespace(exists=lambda: False),
+        employee=SimpleNamespace(user=SimpleNamespace(get_full_name=lambda: "Asha Rao", email="asha@example.test")),
+    )
+    query = MagicMock()
+    query.filter.return_value = query
+    query.order_by.return_value = [request]
+    monkeypatch.setattr(
+        write_action_module, "RegularizationRequest",
+        SimpleNamespace(objects=SimpleNamespace(select_related=lambda *_: query)),
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    pending = write_action_planner._plan_regularization_review(
+        {
+            "intent": "regularization_approve",
+            "entities": {
+                "employee_id": 42,
+                "date_range": {"start": "2026-10-13", "end": "2026-10-13"},
+            },
+        }, system_admin(), {"unrestricted": True}, "review-date-range",
+    )
+    assert pending["target_data"]["request_id"] == 81
+    query.filter.assert_any_call(attendance_date__range=("2026-10-13", "2026-10-13"))
+
+
+def test_write_target_resolution_rejects_ambiguous_employee(monkeypatch):
+    monkeypatch.setattr(
+        write_action_module.employee_resolver, "resolve_employee",
+        lambda **_: SimpleNamespace(status="ambiguous", employee_id=None),
+    )
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._resolve_target_employee(
+            {"employee_name": "Asha Rao"}, system_admin(), {"unrestricted": True}
+        )
+    assert raised.value.code == "employee_ambiguous"
+
+
+def test_write_target_resolution_rejects_missing_self_profile(monkeypatch):
+    def missing(**_):
+        raise write_action_module.Employee.DoesNotExist
+    manager = SimpleNamespace(
+        select_related=lambda *_: SimpleNamespace(get=missing)
+    )
+    monkeypatch.setattr(write_action_module, "Employee", type(
+        "EmployeeWithoutProfile", (), {"objects": manager, "DoesNotExist": Exception}
+    ))
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._resolve_target_employee(
+            {}, system_admin(is_system_admin=False), {"unrestricted": True}
+        )
+    assert raised.value.code == "employee_required"
+
+
+def test_missing_employee_attendance_plan_requires_an_explicit_date():
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_missing_employee(
+            {"intent": "attendance_update", "entities": {}},
+            system_admin(), {"unrestricted": True}, "missing-date",
+        )
+    assert raised.value.code == "attendance_date_required"
+
+
+def test_pipeline_rejects_query_that_differs_from_approved_plan():
+    plan = {
+        "source": "employee", "intent": "employee_count", "filters": {},
+        "scope": {"sections": [], "subsections": [], "unrestricted": True},
+        "limit": 10,
+    }
+    with pytest.raises(CopilotError) as raised:
+        pipeline.validate_sql("SELECT id FROM employees_employee LIMIT 10", plan)
+    assert raised.value.code == "sql_rejected"
+
+
+def test_conversation_context_preserves_explicit_identity_and_scoped_follow_up():
+    context = {"current_employee_id": 17, "current_employee_name": "Asha Rao"}
+    matched = conversation.apply_context(
+        "Show Asha's attendance", {"entities": {"employee_name": "Asha"}}, context
+    )
+    assert matched["entities"] == {"employee_id": 17}
+    explicit = conversation.apply_context(
+        "Show attendance for asha@example.test",
+        {"entities": {"employee_name": "Asha"}}, context,
+    )
+    assert explicit["entities"] == {"employee_name": "Asha"}
+
+    follow_up = conversation.apply_context(
+        "What about that request for her?", {"entities": {}},
+        {"current_employee_id": 17, "current_request_id": 81,
+         "current_date": "2026-10-01", "current_date_end": "2026-10-07",
+         "last_intent": "leave_lookup"},
+    )
+    assert follow_up["entities"]["employee_id"] == 17
+    assert follow_up["entities"]["request_id"] == 81
+    assert follow_up["entities"]["date_range"] == {
+        "start": "2026-10-01", "end": "2026-10-07"
+    }

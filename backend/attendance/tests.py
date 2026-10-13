@@ -5753,3 +5753,75 @@ class AdminResetAttendanceHistoryTests(APITestCase):
         self.assertEqual(
             AttendanceEvent.objects.filter(employee=self.employee).count(), 2
         )
+
+class AttendanceShiftConfigurationValidationTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="shift-config.admin@example.test",
+            password="password123",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(self.admin)
+
+    def test_bulk_assignment_requires_target_filter(self):
+        response = self.client.post(reverse("admin-bulk-assign-shift"), {}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("at least one target filter", response.data["error"])
+        self.assertEqual(Employee.objects.filter(shift__isnull=False).count(), 0)
+
+    def test_shift_configuration_rejects_missing_name_and_malformed_time(self):
+        base = reverse("admin-shift-configure")
+        missing_name = self.client.post(
+            base,
+            {"employment_type": "PERMANENT", "shifts": [{"name": "", "start_time": "09:00", "end_time": "17:00"}]},
+            format="json",
+        )
+        self.assertEqual(missing_name.status_code, 400)
+        self.assertIn("name is required", missing_name.data["error"])
+        bad_time = self.client.post(
+            base,
+            {"employment_type": "CONTRACT", "shifts": [{"name": "Night", "start_time": "bad", "end_time": "17:00"}]},
+            format="json",
+        )
+        self.assertEqual(bad_time.status_code, 400)
+        self.assertIn("invalid time format", bad_time.data["error"])
+        self.assertFalse(Shift.objects.filter(name="Night").exists())
+
+    def test_shift_configuration_rejects_duplicate_active_code(self):
+        Shift.objects.create(
+            name="Existing", code="DUPL", start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0), employment_type="CONTRACT", is_active=True,
+        )
+        response = self.client.post(
+            reverse("admin-shift-configure"),
+            {"employment_type": "PERMANENT", "shifts": [{"name": "Replacement", "code": "dupl", "start_time": "09:00", "end_time": "17:00"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already in use", response.data["error"])
+        self.assertFalse(Shift.objects.filter(name="Replacement").exists())
+
+    def test_shift_configuration_lists_legacy_shifts_separately(self):
+        Shift.objects.create(
+            name="Legacy", code="LEG", start_time=datetime_time(8, 0),
+            end_time=datetime_time(16, 0), employment_type="", is_active=True,
+        )
+        response = self.client.get(reverse("admin-shift-configure"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["configuration"]["UNASSIGNED"][0]["code"], "LEG")
+
+    def test_employee_without_configured_shift_gets_configuration_guidance(self):
+        user = User.objects.create_user(
+            email="shift-config.employee@example.test", password="password123"
+        )
+        employee = Employee.objects.create(
+            user=user, department="Engineering", employment_type="PERMANENT",
+            date_joined=date(2026, 1, 1),
+        )
+        self.client.force_authenticate(user)
+        response = self.client.get(reverse("my-shift"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["shift"])
+        self.assertTrue(response.data["requires_configuration"])
+        self.assertIsNone(employee.get_effective_shift())
