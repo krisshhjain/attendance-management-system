@@ -981,6 +981,91 @@ class RegularizationWorkflowTests(APITestCase):
             0,
         )
 
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    def test_grouped_regularization_requires_a_period_and_day_list(
+        self, _mock_localdate
+    ):
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {"period_type": "YEAR", "days": []},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Choose a period", response.data["error"])
+
+    @patch("attendance.views.is_working_day", return_value=True)
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    def test_grouped_regularization_requires_type_and_reason(
+        self, _mock_localdate, _mock_working_day
+    ):
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {
+                "period_type": "WEEK",
+                "days": [{"attendance_date": "2026-10-12"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("request type and reason are required", response.data["error"])
+
+    @patch("attendance.views.is_working_day", return_value=True)
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    def test_grouped_regularization_requires_at_least_one_corrected_time(
+        self, _mock_localdate, _mock_working_day
+    ):
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {
+                "period_type": "WEEK",
+                "days": [
+                    {
+                        "attendance_date": "2026-10-12",
+                        "request_type": "INCORRECT_ATTENDANCE",
+                        "reason": "The recorded times are wrong.",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("at least one corrected time is required", response.data["error"])
+
+    @patch("attendance.views.is_working_day", return_value=True)
+    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    def test_grouped_regularization_rejects_naive_time_on_another_date(
+        self, _mock_localdate, _mock_working_day
+    ):
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.post(
+            "/api/attendance/regularization/",
+            {
+                "period_type": "WEEK",
+                "days": [
+                    {
+                        "attendance_date": "2026-10-12",
+                        "request_type": "FORGOT_CHECK_IN",
+                        "requested_check_in": "2026-10-13T09:00:00",
+                        "reason": "The check-in event was missed.",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("check-in must fall on that date", response.data["error"])
+
     @patch("django.utils.timezone.now")
     @patch("django.utils.timezone.localdate")
     def test_phase1_approval_revalidation(self, mock_localdate, mock_now):

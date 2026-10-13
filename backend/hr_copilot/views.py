@@ -119,9 +119,6 @@ class HRCopilotQueryView(APIView):
         conversation_id = request.data.get("conversation_id") or str(
             uuid.uuid4()
         )
-        # Keep memory and pending actions isolated per conversation. A
-        # user-wide key caused facts from one chat to leak into another chat.
-        session_id = copilot_action_session_id(user.id, conversation_id)
 
         if (
             not isinstance(question, str)
@@ -143,6 +140,9 @@ class HRCopilotQueryView(APIView):
                 },
                 status=400,
             )
+        # Keep memory and pending actions isolated per conversation. A
+        # user-wide key caused facts from one chat to leak into another chat.
+        session_id = copilot_action_session_id(user.id, conversation_id)
 
         audit = CopilotQueryAudit.objects.create(
             user=user, question=question.strip()

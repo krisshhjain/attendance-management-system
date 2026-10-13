@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -30,6 +31,11 @@ class FakeAudit:
 
     def save(self, update_fields=None):
         self.saved_updates.append(update_fields)
+
+
+class FakeLeaveTypes(list):
+    def distinct(self):
+        return self
 
 
 @pytest.fixture
@@ -173,6 +179,49 @@ def test_query_rejects_invalid_or_oversized_message_before_auditing(api, message
     assert audit_records == []
 
 
+@pytest.mark.parametrize("conversation_id", [" ", "x" * 129, ["conversation"]])
+def test_query_rejects_invalid_conversation_id_before_auditing(api, conversation_id):
+    factory, audit_records = api
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": "How many employees?", "conversation_id": conversation_id},
+    )
+
+    assert response.status_code == 400
+    assert response.data["detail"].startswith("conversation_id must be")
+    assert audit_records == []
+
+
+def test_health_endpoint_blocks_non_admins_before_provider_access(api, monkeypatch):
+    factory, _ = api
+    monkeypatch.setattr(
+        views, "provider_health", lambda: pytest.fail("Unauthorized health request reached provider"),
+    )
+    request = factory.get("/api/hr-copilot/health/")
+    force_authenticate(request, user=system_admin(is_system_admin=False))
+
+    response = views.HRCopilotHealthView.as_view()(request)
+
+    assert response.status_code == 403
+    assert response.data["detail"] == "System Admin access is required."
+
+
+def test_conversation_endpoint_blocks_non_admins_before_loading_history(api, monkeypatch):
+    factory, _ = api
+    monkeypatch.setattr(
+        views, "load_messages", lambda *_: pytest.fail("Unauthorized conversation read")
+    )
+    request = factory.get("/api/hr-copilot/conversations/conversation-123/")
+    force_authenticate(request, user=system_admin(is_system_admin=False))
+
+    response = views.HRCopilotConversationView.as_view()(request, "conversation-123")
+
+    assert response.status_code == 403
+    assert response.data["detail"] == "System Admin access is required."
+
+
 def test_cancel_awaiting_action_returns_its_action_id(api, monkeypatch):
     factory, _ = api
     action = {"action_id": "pending-action-123", "intent": {}}
@@ -200,6 +249,59 @@ def test_cancel_awaiting_action_returns_its_action_id(api, monkeypatch):
 
     assert response.status_code == 200
     assert response.data["action_id"] == action["action_id"]
+
+
+def test_query_confirmation_executes_action_for_matching_conversation(api, monkeypatch):
+    factory, _ = api
+    conversation_id = "confirm-this-conversation"
+    pending = {
+        "action_id": "confirmed-action-1",
+        "intent": "attendance_create",
+        "conversation_id": conversation_id,
+    }
+    approved = {**pending, "status": "APPROVED"}
+    result = {
+        "success": True,
+        "operation": "created",
+        "message": "Attendance created.",
+    }
+    executed = []
+    events = []
+    monkeypatch.setattr(views, "record_event", lambda **_: None)
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_session_actions",
+        lambda *_: {pending["action_id"]: pending},
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager, "approve_action", lambda *_: approved
+    )
+    monkeypatch.setattr(
+        views.write_action_executor,
+        "execute_approved_action",
+        lambda _action, _user: result,
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "mark_executed",
+        lambda *args: executed.append(args),
+    )
+    monkeypatch.setattr(
+        views, "_record_copilot_action_event", lambda **kwargs: events.append(kwargs)
+    )
+    monkeypatch.setattr(views, "update_action_message", lambda *args: None)
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": "confirm", "conversation_id": conversation_id},
+    )
+
+    assert response.status_code == 200
+    assert response.data["query_status"] == "executed"
+    assert response.data["action_result"] == result
+    assert len(executed) == 1
+    assert events[0]["event_type"] == "COPILOT_ACTION_CONFIRMED"
 
 
 @pytest.mark.parametrize(
@@ -464,6 +566,38 @@ def test_pending_actions_view_filters_non_pending_actions(api, monkeypatch):
         views.copilot_action_session_id(1, "conversation-123"),
         1,
     )
+
+
+def test_pending_actions_without_conversation_lists_user_actions(api, monkeypatch):
+    factory, _ = api
+    actions = {
+        "pending": {
+            "status": "PENDING",
+            "description": "Confirm leave request",
+            "warning_message": "This cannot be undone.",
+            "target_data": {"employee_id": 7},
+            "proposed_changes": {"status": "PENDING"},
+            "current_state": {"exists": False},
+            "intent": "leave_create",
+            "expires_at": "later",
+            "created_at": "now",
+        }
+    }
+    captured = []
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_user_actions",
+        lambda *args: captured.append(args) or actions,
+    )
+    request = factory.get("/api/hr-copilot/actions/")
+    force_authenticate(request, user=system_admin())
+
+    response = views.HRCopilotPendingActionsView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    assert response.data["pending_actions"][0]["warning_message"] == "This cannot be undone."
+    assert captured == [(1,)]
 
 
 def test_action_failure_persists_scoped_audit_and_event(monkeypatch):
@@ -1166,6 +1300,68 @@ def test_pipeline_requires_a_metric_for_specialized_queries(intent_name, expecte
     assert expected_phrase in raised.value.message.lower()
 
 
+def test_pipeline_denies_an_explicit_section_outside_manager_scope():
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": "attendance_lookup",
+                "source": "attendance",
+                "entities": {"section": "D"},
+            },
+            {"sections": ["C"], "subsections": ["C1"], "unrestricted": False},
+            system_admin(),
+        )
+
+    assert raised.value.code == "scope_denied"
+    assert raised.value.status == 403
+
+
+def test_pipeline_requires_identity_when_normalizer_marks_it_missing():
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {"employee_identity_missing": True},
+            },
+            {"sections": ["C"], "subsections": [], "unrestricted": False},
+            system_admin(),
+        )
+
+    assert raised.value.code == "clarification_required"
+    assert "name or email" in raised.value.message
+
+
+@pytest.mark.parametrize(
+    ("resolution", "expected_code"),
+    [
+        ({"status": "not_found", "employee_id": None}, "employee_not_found"),
+        ({"status": "ambiguous", "employee_id": None}, "employee_ambiguous"),
+    ],
+)
+def test_pipeline_rejects_unresolved_employee_name(
+    monkeypatch, resolution, expected_code
+):
+    monkeypatch.setattr(
+        pipeline.employee_resolver,
+        "resolve_employee",
+        lambda **_: SimpleNamespace(as_dict=lambda: resolution),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        pipeline.plan_query(
+            {
+                "intent": "employee_lookup",
+                "source": "employee",
+                "entities": {"employee_name": "Asha Rao"},
+            },
+            {"sections": ["C"], "subsections": [], "unrestricted": False},
+            system_admin(),
+        )
+
+    assert raised.value.code == expected_code
+
+
 def test_write_planner_rejects_unsupported_regularization_type_before_lookup(monkeypatch):
     monkeypatch.setattr(
         write_action_planner,
@@ -1221,6 +1417,105 @@ def test_write_planner_requires_valid_shift_and_explicit_employee_status(monkeyp
     assert status_error.value.code == "status_required"
 
 
+def test_leave_planner_reports_missing_and_ambiguous_leave_types(monkeypatch):
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 12)
+    )
+
+    for leave_types, expected_code in (
+        (FakeLeaveTypes(), "no_leave_types"),
+        (
+            FakeLeaveTypes(
+                [SimpleNamespace(id=1, name="Annual"), SimpleNamespace(id=2, name="Medical")]
+            ),
+            "leave_type_ambiguous",
+        ),
+    ):
+        monkeypatch.setattr(
+            write_action_module,
+            "LeaveType",
+            SimpleNamespace(
+                objects=SimpleNamespace(filter=lambda **_: leave_types)
+            ),
+        )
+        with pytest.raises(CopilotError) as raised:
+            write_action_planner._plan_leave_create(
+                {
+                    "intent": "leave_create",
+                    "source": "leave",
+                    "entities": {"reason": "Personal leave"},
+                },
+                system_admin(),
+                {"unrestricted": True},
+                "leave-type-validation",
+            )
+        assert raised.value.code == expected_code
+
+
+def test_leave_planner_requests_a_reason_before_confirmation(monkeypatch):
+    leave_type = SimpleNamespace(id=11, name="Annual")
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 12)
+    )
+    monkeypatch.setattr(
+        write_action_module,
+        "LeaveType",
+        SimpleNamespace(
+            objects=SimpleNamespace(filter=lambda **_: FakeLeaveTypes([leave_type]))
+        ),
+    )
+
+    pending = write_action_planner._plan_leave_create(
+        {"intent": "leave_create", "source": "leave", "entities": {}},
+        system_admin(),
+        {"unrestricted": True},
+        "leave-reason-followup",
+    )
+
+    assert pending["status"] == "AWAITING_INFORMATION"
+    assert pending["validated"] is False
+    assert pending["validation_errors"] == ["reason"]
+    assert pending["target_data"]["leave_type_id"] == leave_type.id
+
+
+def test_leave_cancel_planner_requires_explicit_request_when_ambiguous(monkeypatch):
+    query = MagicMock()
+    query.order_by.return_value = query
+    query.__getitem__.return_value = query
+    query.exists.return_value = True
+    query.count.return_value = 2
+    monkeypatch.setattr(
+        write_action_module,
+        "LeaveRequest",
+        SimpleNamespace(objects=SimpleNamespace(filter=lambda **_: query)),
+    )
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_planner._plan_leave_cancel(
+            {"intent": "leave_cancel", "entities": {"employee_id": 42}},
+            system_admin(),
+            {"unrestricted": True},
+            "ambiguous-leave-cancel",
+        )
+
+    assert raised.value.code == "leave_request_ambiguous"
+
+
 def test_executor_rejects_unvalidated_action_before_authorization_or_write():
     with pytest.raises(CopilotError) as raised:
         write_action_executor.execute_approved_action(
@@ -1250,6 +1545,45 @@ def test_executor_revalidates_current_employee_scope(monkeypatch):
 
     assert raised.value.code == "scope_denied"
     assert raised.value.status == 403
+
+
+def test_executor_rejects_action_when_target_employee_was_deleted(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "derive_scope",
+        lambda _user: {"unrestricted": False, "sections": ["C"], "subsections": []},
+    )
+
+    def missing_employee(**_):
+        raise write_executor_module.Employee.DoesNotExist
+
+    monkeypatch.setattr(
+        write_executor_module.Employee,
+        "objects",
+        SimpleNamespace(get=missing_employee),
+    )
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_executor._revalidate_authorization(
+            {"target_data": {"employee_id": 42}}, system_admin()
+        )
+
+    assert raised.value.code == "employee_not_found"
+
+
+def test_executor_rejects_unsupported_action_type_before_audit_write(monkeypatch):
+    monkeypatch.setattr(
+        write_executor_module.transaction, "atomic", lambda: nullcontext()
+    )
+    monkeypatch.setattr(write_action_executor, "_revalidate_authorization", lambda *_: None)
+
+    with pytest.raises(CopilotError) as raised:
+        write_action_executor.execute_approved_action(
+            {"validated": True, "action_type": "unknown_write", "action_id": "a"},
+            system_admin(),
+        )
+
+    assert raised.value.code == "unsupported_action"
 
 
 @pytest.mark.parametrize(
