@@ -798,6 +798,87 @@ def test_ambiguous_employee_follow_up_keeps_action_pending_and_requests_email(
     assert response.data["pending_action"]["validation_errors"] == ["employee_email"]
 
 
+def test_leave_follow_up_resolves_employee_and_attaches_configured_leave_type(
+    api, monkeypatch
+):
+    factory, _ = api
+    today = timezone.localdate().isoformat()
+    draft = {
+        "action_id": "leave-follow-up",
+        "action_type": "leave_create",
+        "intent": "leave_create",
+        "target_data": {
+            "employee_id": None,
+            "start_date": today,
+            "end_date": today,
+            "reason": "Medical appointment",
+        },
+        "proposed_changes": {},
+        "validation_errors": ["employee_name"],
+        "current_state": {},
+    }
+    leave_type = SimpleNamespace(id=17, name="Annual leave")
+    updated_actions = []
+    updated = {
+        **draft,
+        "action_id": draft["action_id"],
+        "target_data": {
+            **draft["target_data"],
+            "employee_id": 42,
+            "employee_name": "Asha Rao",
+            "leave_type_id": leave_type.id,
+        },
+        "proposed_changes": {"leave_type": leave_type.name},
+        "validation_errors": [],
+        "status": "PENDING",
+        "description": f"Confirm Asha Rao's leave on {today}: Medical appointment",
+    }
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_awaiting_action",
+        lambda *args: draft,
+    )
+    monkeypatch.setattr(
+        views,
+        "extract_pending_action_fields",
+        lambda *_: {"employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        views,
+        "LeaveType",
+        SimpleNamespace(objects=SimpleNamespace(first=lambda: leave_type)),
+    )
+
+    def update_awaiting_action(*args):
+        updated_actions.append(args)
+        return updated
+
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "update_awaiting_action",
+        update_awaiting_action,
+    )
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": "Asha Rao", "conversation_id": "leave-follow-up-chat"},
+    )
+
+    assert response.status_code == 200
+    assert response.data["query_status"] == "pending_approval"
+    assert response.data["pending_action"]["target_data"]["leave_type_id"] == 17
+    assert response.data["pending_action"]["proposed_changes"]["leave_type"] == "Annual leave"
+    assert "Confirm Asha Rao's leave" in response.data["answer"]
+    assert len(updated_actions) == 1
+    assert updated_actions[0][3]["validated"] is True
+
+
 def test_employee_scope_denial_does_not_update_pending_action(api, monkeypatch):
     factory, _ = api
     monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
