@@ -311,7 +311,15 @@ class WriteActionExecutor:
         self, pending_action: Dict[str, Any], user
     ) -> Dict[str, Any]:
         """Execute attendance creation action."""
-        # Same as update but ensures creation
+        target_data = pending_action["target_data"]
+        target_date = datetime.fromisoformat(target_data["date"]).date()
+        if Attendance.objects.filter(
+            employee_id=target_data["employee_id"], date=target_date
+        ).exists():
+            raise CopilotError(
+                "attendance_exists",
+                f"Attendance record already exists for {target_date}",
+            )
         return self._execute_attendance_update(pending_action, user)
 
     def _execute_leave_create(

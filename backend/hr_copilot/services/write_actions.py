@@ -74,7 +74,7 @@ class WriteActionPlanner:
                 intent, user, scope, session_id
             )
         elif intent["intent"] == "attendance_create":
-            return self._plan_attendance_update(
+            return self._plan_attendance_create(
                 intent, user, scope, session_id
             )
         elif intent["intent"] == "leave_create":
@@ -326,51 +326,16 @@ class WriteActionPlanner:
         self, intent: Dict[str, Any], user, scope: Dict, session_id: str
     ) -> Dict[str, Any]:
         """Plan an attendance creation action."""
-        # Similar to update but ensures no existing record
-        entities = intent.get("entities", {})
-
-        employee_resolution = self._resolve_target_employee(
-            entities, user, scope
+        pending_action = self._plan_attendance_update(
+            intent, user, scope, session_id
         )
-        target_date = self._resolve_target_date(entities)
-        target_status = entities.get("target_status", "PRESENT").upper()
-
-        # Check if attendance already exists
-        existing = Attendance.objects.filter(
-            employee_id=employee_resolution["employee_id"], date=target_date
-        ).exists()
-
-        if existing:
+        if pending_action["current_state"]["exists"]:
             raise CopilotError(
                 "attendance_exists",
-                f"Attendance record already exists for {target_date}",
+                f"Attendance record already exists for {pending_action['target_data']['date']}",
             )
-
-        pending_action = {
-            "action_id": str(uuid.uuid4()),
-            "session_id": session_id,
-            "user_id": user.id,
-            "action_type": "attendance_create",
-            "intent": intent["intent"],
-            "source": intent["source"],
-            "target_data": {
-                "employee_id": employee_resolution["employee_id"],
-                "employee_name": employee_resolution["employee_name"],
-                "date": target_date.isoformat(),
-                "target_status": target_status,
-            },
-            "proposed_changes": {
-                "status": target_status,
-                "operation": "create",
-            },
-            "current_state": {"exists": False},
-            "validated": True,
-            "authorization_scope": scope,
-            "requires_confirmation": True,
-            "description": f"Create attendance record for {employee_resolution['employee_name']} on {target_date.strftime('%B %d, %Y')} as {target_status}",
-            "expires_at": timezone.now() + timedelta(minutes=10),
-        }
-
+        pending_action["action_type"] = "attendance_create"
+        pending_action["proposed_changes"]["operation"] = "create"
         return pending_action
 
     def _plan_leave_create(
