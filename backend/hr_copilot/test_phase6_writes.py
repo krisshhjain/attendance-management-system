@@ -135,6 +135,41 @@ class Phase6WriteTests(TestCase):
             ).exists()
         )
 
+    def test_attendance_update_creates_missing_record_and_audited_events(self):
+        target = timezone.localdate()
+        intent = self.intent(
+            "attendance_update",
+            {
+                "employee_id": self.employee.id,
+                "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+                "target_status": "PRESENT",
+                "check_in_time": "09:00",
+                "check_out_time": "18:00",
+            },
+        )
+
+        pending = write_action_planner.plan_write_action(
+            intent, self.admin, "phase6-attendance-create"
+        )
+
+        self.assertEqual(pending["action_type"], "attendance_update")
+        self.assertFalse(pending["current_state"]["exists"])
+        result = self.execute(intent)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["operation"], "created")
+        self.assertEqual(result["status"], "PRESENT")
+        self.assertTrue(
+            Attendance.objects.filter(employee=self.employee, date=target).exists()
+        )
+        events = AttendanceEvent.objects.filter(
+            employee=self.employee, timestamp__date=target
+        )
+        self.assertEqual(events.count(), 2)
+        self.assertEqual(
+            set(events.values_list("event_type", flat=True)),
+            {"CHECK_IN", "CHECK_OUT"},
+        )
+
     def test_attendance_update_outside_manager_scope_is_rejected(self):
         outside_user = get_user_model().objects.create_user(
             email="phase6-outside-attendance@example.test"
@@ -586,6 +621,32 @@ class Phase6WriteTests(TestCase):
             pending["proposed_changes"]["reason"], "No supporting details"
         )
         self.assertTrue(pending["requires_confirmation"])
+
+    def test_regularization_create_persists_both_requested_times(self):
+        target = timezone.localdate() - timedelta(days=1)
+        intent = self.intent(
+            "regularization_create",
+            {
+                "employee_id": self.employee.id,
+                "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+                "request_type": "INCORRECT_ATTENDANCE",
+                "reason": "Forgot to record both events",
+                "check_in_time": "09:05",
+                "check_out_time": "18:10",
+            },
+        )
+
+        result = self.execute(intent)
+        request = RegularizationRequest.objects.get(pk=result["request_id"])
+
+        self.assertEqual(request.status, "PENDING")
+        self.assertEqual(request.attendance_date, target)
+        self.assertEqual(
+            timezone.localtime(request.requested_check_in).time(), time(9, 5)
+        )
+        self.assertEqual(
+            timezone.localtime(request.requested_check_out).time(), time(18, 10)
+        )
 
     def test_shift_planning_rejects_incompatible_employment_type(self):
         intern_shift = Shift.objects.create(

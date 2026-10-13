@@ -105,6 +105,20 @@ class ManagerEmployeeAttendanceScopeTests(APITestCase):
             {row["employee"] for row in daily.data}, {self.in_scope.user.email}
         )
 
+    def test_attendance_history_rejects_invalid_employee_filter(self):
+        self.client.force_authenticate(self.manager)
+
+        with patch(
+            "attendance.views.Attendance.objects.filter",
+            side_effect=ValueError("invalid employee identifier"),
+        ):
+            response = self.client.get(
+                "/api/attendance/history/", {"employee_id": "not-an-id"}
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data, {"error": "Invalid employee_id"})
+
     def test_manager_cannot_edit_or_reset_attendance(self):
         self.client.force_authenticate(self.manager)
         self.assertEqual(

@@ -573,6 +573,60 @@ def test_write_planner_missing_employee_leave_follow_up_requests_reason():
     assert "employee" in pending["description"].casefold()
 
 
+def test_ambiguous_employee_follow_up_keeps_action_pending_and_requests_email(
+    api, monkeypatch
+):
+    factory, _ = api
+    monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
+    draft = {
+        "action_id": "ambiguous-action",
+        "action_type": "attendance_update",
+        "intent": "attendance_update",
+        "target_data": {"employee_id": None},
+        "proposed_changes": {"status": "ABSENT"},
+        "validation_errors": ["employee_name"],
+        "current_state": {},
+    }
+    updated = {
+        **draft,
+        "status": "AWAITING_INFORMATION",
+        "validation_errors": ["employee_email"],
+        "description": "Which employee email should I use?",
+    }
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_awaiting_action",
+        lambda *args: draft,
+    )
+    monkeypatch.setattr(
+        views,
+        "extract_pending_action_fields",
+        lambda *_: {"employee_name": "Asha Rao"},
+    )
+    monkeypatch.setattr(
+        write_action_planner,
+        "_resolve_target_employee",
+        lambda *args: (_ for _ in ()).throw(
+            CopilotError("employee_ambiguous", "More than one employee matched")
+        ),
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "update_awaiting_action",
+        lambda *args: updated,
+    )
+
+    response = call_endpoint(
+        factory,
+        system_admin(),
+        {"message": "Asha Rao", "conversation_id": "conversation-ambiguous"},
+    )
+
+    assert response.status_code == 200
+    assert response.data["query_status"] == "awaiting_information"
+    assert response.data["pending_action"]["validation_errors"] == ["employee_email"]
+
+
 @pytest.mark.parametrize(
     ("value", "checkout", "expected"),
     [
@@ -776,6 +830,31 @@ def test_pipeline_applies_supported_relative_dates(phrase, offset):
 
     expected = (today - timedelta(days=offset)).isoformat()
     assert entities["date_range"] == {"start": expected, "end": expected}
+
+
+@pytest.mark.parametrize("phrase", ["last week", "last 7 days"])
+def test_pipeline_last_week_range_includes_today_and_previous_six_days(phrase):
+    today = date(2026, 10, 13)
+    entities = {}
+
+    pipeline._apply_explicit_date_range(phrase, entities, today)
+
+    assert entities["date_range"] == {
+        "start": (today - timedelta(days=6)).isoformat(),
+        "end": today.isoformat(),
+    }
+
+
+def test_pipeline_calendar_month_ranges_handle_year_boundary():
+    today = date(2026, 1, 3)
+    this_month = {}
+    last_month = {}
+
+    pipeline._apply_explicit_date_range("this month", this_month, today)
+    pipeline._apply_explicit_date_range("last month", last_month, today)
+
+    assert this_month["date_range"] == {"start": "2026-01-01", "end": "2026-01-03"}
+    assert last_month["date_range"] == {"start": "2025-12-01", "end": "2025-12-31"}
 
 
 @pytest.mark.parametrize(
