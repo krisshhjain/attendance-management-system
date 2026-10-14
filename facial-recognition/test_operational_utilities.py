@@ -269,6 +269,32 @@ class EmbeddingRegenerationTests(unittest.TestCase):
             self.assertEqual(previous.read_bytes(), b"existing-cache")
             self.assertEqual(list(cache.glob(".*.staging-*")), [])
 
+    def test_cache_promotion_failure_restores_previous_identity_cache(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, identity = self._fixture(root)
+            cache = root / "cache"
+            previous = cache / "person" / "previous.npy"
+            previous.parent.mkdir(parents=True)
+            previous.write_bytes(b"previous-cache")
+            stats = regenerate_embeddings.RegenerationStats()
+            original_rename = Path.rename
+
+            def fail_staged_promotion(path, target):
+                if path.name.startswith(".person.staging-"):
+                    raise OSError("promotion failed")
+                return original_rename(path, target)
+
+            with patch.object(regenerate_embeddings, "DATASET_ROOT", root / "dataset"), patch.object(
+                regenerate_embeddings, "safe_extract_embedding", return_value=np.array([1.0])
+            ), patch.object(Path, "rename", new=fail_staged_promotion):
+                with self.assertRaisesRegex(OSError, "promotion failed"):
+                    regenerate_embeddings.regenerate_identity_embeddings(identity, cache, stats)
+
+            self.assertEqual(previous.read_bytes(), b"previous-cache")
+            self.assertEqual(list(cache.glob(".*.staging-*")), [])
+            self.assertEqual(list(cache.glob(".*.backup-*")), [])
+
     def test_regenerate_all_skips_missing_split_and_continues_after_identity_error(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -338,6 +364,59 @@ class EmbeddingRegenerationTests(unittest.TestCase):
             self.assertEqual((cache / "train" / "fixture.npy").read_bytes(), b"new-cache")
             self.assertEqual((cache / "val" / "fixture.npy").read_bytes(), b"new-cache")
             self.assertEqual(len(list(root.glob("embeddings_backup_*/old.npy"))), 1)
+
+    def test_main_restores_cache_after_keyboard_interrupt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / "embeddings"
+            cache.mkdir()
+            original = cache / "old.npy"
+            original.write_bytes(b"original-cache")
+            stats = regenerate_embeddings.RegenerationStats()
+            stats.processed = 1
+            original_open = builtins.open
+
+            def isolated_open(filename, mode="r", *args, **kwargs):
+                if Path(filename).name.startswith("embedding_regeneration_report_"):
+                    filename = root / Path(filename).name
+                return original_open(filename, mode, *args, **kwargs)
+
+            with patch.object(regenerate_embeddings, "CACHE_DIR", cache), patch.object(
+                regenerate_embeddings, "TRAIN_CACHE", cache / "train"
+            ), patch.object(regenerate_embeddings, "VAL_CACHE", cache / "val"), patch.object(
+                regenerate_embeddings, "TRAIN_DIR", root / "train"
+            ), patch.object(regenerate_embeddings, "VAL_DIR", root / "val"), patch.object(
+                regenerate_embeddings, "RegenerationStats", return_value=stats
+            ), patch.object(regenerate_embeddings, "regenerate_all_embeddings", side_effect=KeyboardInterrupt), patch(
+                "builtins.open", side_effect=isolated_open
+            ):
+                regenerate_embeddings.main()
+            self.assertEqual(original.read_bytes(), b"original-cache")
+            report_path = next(root.glob("embedding_regeneration_report_*.json"))
+            self.assertEqual(json.loads(report_path.read_text())["summary"]["total_processed"], 1)
+
+    def test_main_preserves_backup_and_original_error_if_cache_restore_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / "embeddings"
+            cache.mkdir()
+            (cache / "partial.npy").write_bytes(b"partial")
+            backup = root / "embeddings_backup_fixture"
+            backup.mkdir()
+            previous = backup / "old.npy"
+            previous.write_bytes(b"original-cache")
+
+            with patch.object(regenerate_embeddings, "CACHE_DIR", cache), patch.object(
+                regenerate_embeddings, "TRAIN_CACHE", cache / "train"
+            ), patch.object(regenerate_embeddings, "VAL_CACHE", cache / "val"), patch.object(
+                regenerate_embeddings, "backup_embeddings", return_value=backup
+            ), patch.object(regenerate_embeddings, "regenerate_all_embeddings", side_effect=RuntimeError("split failed")), patch.object(
+                regenerate_embeddings.shutil, "copytree", side_effect=OSError("restore failed")
+            ):
+                with self.assertRaisesRegex(RuntimeError, "split failed"):
+                    regenerate_embeddings.main()
+            self.assertTrue(previous.exists())
+            self.assertEqual(previous.read_bytes(), b"original-cache")
 
     def test_statistics_report_contains_counts_and_categorized_failures(self):
         with tempfile.TemporaryDirectory() as temporary:
