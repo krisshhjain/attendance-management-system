@@ -11,15 +11,14 @@ from employees.models import Employee
 from holidays.services import is_working_day
 from leave_management.models import LeaveRequest
 from notifications.services import (
-    active_manager_users,
-    queue_deduplicated_notification_after_commit,
-    get_or_create_notification,
-)
+    active_manager_users, get_or_create_notification,
+    queue_deduplicated_notification_after_commit)
 from system_logs.services import record_event
 
 
 def _is_regularization_correction(event):
-    from attendance.models import RegularizationRequest, RegularizationRequestDay
+    from attendance.models import (RegularizationRequest,
+                                   RegularizationRequestDay)
 
     return (
         RegularizationRequest.objects.filter(
@@ -63,7 +62,9 @@ def create_attendance_notification(attendance_event_id):
 
     employee_user = event.employee.user
     action = event.event_type
-    employee_name = employee_user.get_full_name().strip() or employee_user.email
+    employee_name = (
+        employee_user.get_full_name().strip() or employee_user.email
+    )
 
     _, created = get_or_create_notification(
         user=employee_user,
@@ -133,23 +134,27 @@ def check_consecutive_absences(
 
     with transaction.atomic():
         for employee in active_employees:
-            absent_on_first = not _has_valid_attendance(employee, first_absence_date)
-            absent_on_second = not _has_valid_attendance(employee, second_absence_date)
-            on_leave = _has_approved_leave(employee, first_absence_date) or _has_approved_leave(
+            absent_on_first = not _has_valid_attendance(
+                employee, first_absence_date
+            )
+            absent_on_second = not _has_valid_attendance(
                 employee, second_absence_date
             )
+            on_leave = _has_approved_leave(
+                employee, first_absence_date
+            ) or _has_approved_leave(employee, second_absence_date)
 
             if not (absent_on_first and absent_on_second and not on_leave):
                 continue
 
-            employee_name = employee.user.get_full_name().strip() or employee.user.email
+            employee_name = (
+                employee.user.get_full_name().strip() or employee.user.email
+            )
             date_label = f"{second_absence_date} and {first_absence_date}"
             title = "Employee Absent for 2 Consecutive Working Days"
             message = f"{employee_name} has been absent on {date_label}."
             subject = "Attendance alert: 2 consecutive absences"
-            deduplication_prefix = (
-                f"ABSENCE_ALERT:{employee.pk}:{second_absence_date}:{first_absence_date}"
-            )
+            deduplication_prefix = f"ABSENCE_ALERT:{employee.pk}:{second_absence_date}:{first_absence_date}"
 
             record_event(
                 event_type="ABSENCE_DETECTED",

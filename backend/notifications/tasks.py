@@ -2,13 +2,15 @@ import logging
 
 from celery import shared_task
 from django.core.mail import send_mail
-from system_logs.services import record_event
 
+from system_logs.services import record_event
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3, name="notifications.send_notification_email")
+@shared_task(
+    bind=True, max_retries=3, name="notifications.send_notification_email"
+)
 def send_notification_email(self, recipient_list, subject, body):
     """Send notification email asynchronously with bounded transient retries."""
     task_id = getattr(self.request, "id", "")
@@ -46,7 +48,10 @@ def send_notification_email(self, recipient_list, subject, body):
             message="Notification email sent.",
             source="CELERY",
             request_id=task_id,
-            metadata={"recipient_count": len(recipient_list), "sent_count": sent},
+            metadata={
+                "recipient_count": len(recipient_list),
+                "sent_count": sent,
+            },
         )
         record_event(
             event_type="TASK_SUCCESS",
@@ -59,7 +64,9 @@ def send_notification_email(self, recipient_list, subject, body):
             request_id=task_id,
             metadata={**task_metadata, "sent_count": sent},
         )
-        logger.info("Notification email sent to %s: %s", recipient_list, subject)
+        logger.info(
+            "Notification email sent to %s: %s", recipient_list, subject
+        )
         return {"sent": sent, "recipients": recipient_list}
     except Exception as exc:
         if self.request.retries >= self.max_retries:
@@ -86,12 +93,17 @@ def send_notification_email(self, recipient_list, subject, body):
                 message="Notification email task failed permanently.",
                 source="CELERY",
                 request_id=task_id,
-                metadata={**task_metadata, "retry_count": self.request.retries},
+                metadata={
+                    **task_metadata,
+                    "retry_count": self.request.retries,
+                },
             )
-            logger.exception("Notification email failed permanently: %s", subject)
+            logger.exception(
+                "Notification email failed permanently: %s", subject
+            )
             raise
 
-        countdown = min(60 * (2 ** self.request.retries), 15 * 60)
+        countdown = min(60 * (2**self.request.retries), 15 * 60)
         record_event(
             event_type="EMAIL_RETRY",
             category="NOTIFICATION",
@@ -116,7 +128,10 @@ def send_notification_email(self, recipient_list, subject, body):
             message="Notification email task scheduled for retry.",
             source="CELERY",
             request_id=task_id,
-            metadata={**task_metadata, "retry_count": self.request.retries + 1},
+            metadata={
+                **task_metadata,
+                "retry_count": self.request.retries + 1,
+            },
         )
         logger.warning(
             "Notification email failed; retrying in %s seconds (attempt %s/%s): %s",

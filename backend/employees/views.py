@@ -4,16 +4,20 @@ from django.contrib.auth import password_validation
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import status
-from rest_framework.permissions import IsAdminUser, BasePermission
+from rest_framework.permissions import BasePermission, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Employee, FaceProfile
-from .serializers import EmployeeCreateSerializer, EmployeeListSerializer, EmployeeUpdateSerializer
-from attendance.face_service import process_enrollment, FaceExtractionError
+
+from accounts.models import ManagerScope
+from accounts.scope_service import (employee_in_manager_scope,
+                                    filter_employees_by_manager_scope)
+from attendance.face_service import FaceExtractionError, process_enrollment
 from leave_management.permissions import IsManagerOrSuperUser, IsSuperAdmin
 from system_logs.services import record_event
-from accounts.models import ManagerScope
-from accounts.scope_service import employee_in_manager_scope, filter_employees_by_manager_scope
+
+from .models import Employee, FaceProfile
+from .serializers import (EmployeeCreateSerializer, EmployeeListSerializer,
+                          EmployeeUpdateSerializer)
 
 
 def _employee_log_state(employee):
@@ -101,17 +105,21 @@ def _set_manager_scopes(user, raw_scopes):
 
 def _manager_scope_data(user):
     return [
-        {"scope_type": scope.scope_type, "value": scope.value, "is_active": scope.is_active}
+        {
+            "scope_type": scope.scope_type,
+            "value": scope.value,
+            "is_active": scope.is_active,
+        }
         for scope in user.manager_scopes.filter(is_active=True)
     ]
 
 
 class IsAdminOrManager(BasePermission):
     """Allow access to admin users or managers."""
+
     def has_permission(self, request, view):
-        return (
-            request.user.is_authenticated and 
-            (request.user.is_staff or request.user.is_system_admin)
+        return request.user.is_authenticated and (
+            request.user.is_staff or request.user.is_system_admin
         )
 
 
@@ -158,9 +166,13 @@ class EmployeeListView(APIView):
     permission_classes = [IsAdminOrManager]
 
     def get(self, request):
-        employees = Employee.objects.select_related("user", "shift").order_by("id")
+        employees = Employee.objects.select_related("user", "shift").order_by(
+            "id"
+        )
         if request.user.is_system_admin and not request.user.is_superuser:
-            employees = filter_employees_by_manager_scope(request.user, employees)
+            employees = filter_employees_by_manager_scope(
+                request.user, employees
+            )
         serializer = EmployeeListSerializer(employees, many=True)
         return Response(serializer.data)
 
@@ -173,16 +185,26 @@ class EmployeeDetailView(APIView):
             employee = Employee.objects.select_related("user").get(pk=pk)
         except Employee.DoesNotExist:
             return None
-        if request.user.is_system_admin and not request.user.is_superuser and not employee_in_manager_scope(request.user, employee):
+        if (
+            request.user.is_system_admin
+            and not request.user.is_superuser
+            and not employee_in_manager_scope(request.user, employee)
+        ):
             return False
         return employee
 
     def get(self, request, pk):
         employee = self.get_object(request, pk)
         if employee is False:
-            return Response({"error": "You do not have access to this employee."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "You do not have access to this employee."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         if not employee:
-            return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Employee not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         serializer = EmployeeListSerializer(employee)
         return Response(serializer.data)
 
@@ -190,11 +212,19 @@ class EmployeeDetailView(APIView):
     def patch(self, request, pk):
         employee = self.get_object(request, pk)
         if employee is False:
-            return Response({"error": "You do not have access to this employee."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "You do not have access to this employee."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         if not employee:
-            return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Employee not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-        serializer = EmployeeUpdateSerializer(employee, data=request.data, partial=True)
+        serializer = EmployeeUpdateSerializer(
+            employee, data=request.data, partial=True
+        )
         serializer.is_valid(raise_exception=True)
         before_state = _employee_log_state(employee)
         before_active = employee.is_active
@@ -276,15 +306,24 @@ class EmployeeDetailView(APIView):
     def delete(self, request, pk):
         employee = self.get_object(request, pk)
         if employee is False:
-            return Response({"error": "You do not have access to this employee."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "You do not have access to this employee."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         if not employee:
-            return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Employee not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         user = employee.user
         employee.delete()
         user.delete()
 
-        return Response({"message": "Employee deleted successfully."}, status=status.HTTP_200_OK)
+        return Response(
+            {"message": "Employee deleted successfully."},
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminEmployeePasswordChangeView(APIView):
@@ -295,17 +334,26 @@ class AdminEmployeePasswordChangeView(APIView):
         try:
             employee = Employee.objects.select_related("user").get(pk=pk)
         except Employee.DoesNotExist:
-            return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Employee not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         new_password = request.data.get("new_password")
         if not isinstance(new_password, str) or not new_password:
-            return Response({"error": "new_password is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "new_password is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         user = employee.user
         try:
             password_validation.validate_password(new_password, user)
         except DjangoValidationError as error:
-            return Response({"error": list(error.messages)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": list(error.messages)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         user.set_password(new_password)
         user.save()
 
@@ -321,10 +369,15 @@ class AdminEmployeePasswordChangeView(APIView):
             message="Employee password changed by an administrator.",
             source="API",
             request=request,
-            after_state={"must_change_password": employee.must_change_password},
+            after_state={
+                "must_change_password": employee.must_change_password
+            },
         )
 
-        return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
+        return Response(
+            {"message": "Password changed successfully."},
+            status=status.HTTP_200_OK,
+        )
 
 
 class EmployeeFaceEnrollmentView(APIView):
@@ -335,10 +388,17 @@ class EmployeeFaceEnrollmentView(APIView):
         try:
             employee = Employee.objects.get(pk=pk)
         except Employee.DoesNotExist:
-            return Response({"error": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Employee not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-        images = request.data.getlist("images") if hasattr(request.data, "getlist") else request.data.get("images", [])
-        
+        images = (
+            request.data.getlist("images")
+            if hasattr(request.data, "getlist")
+            else request.data.get("images", [])
+        )
+
         if len(images) != 3:
             record_event(
                 event_type="FACE_ENROLLMENT",
@@ -351,20 +411,23 @@ class EmployeeFaceEnrollmentView(APIView):
                 source="API",
                 request=request,
             )
-            return Response({"error": "Exactly 3 images are required for enrollment."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Exactly 3 images are required for enrollment."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             # Process images and extract template
             # If images are files from multipart form data, read their content
             image_bytes = []
             for img in images:
-                if hasattr(img, 'read'):
+                if hasattr(img, "read"):
                     image_bytes.append(img.read())
                 else:
                     image_bytes.append(img)
-            
+
             template = process_enrollment(image_bytes)
-            
+
             # Save template
             FaceProfile.objects.update_or_create(
                 employee=employee,
@@ -373,8 +436,8 @@ class EmployeeFaceEnrollmentView(APIView):
                     "status": "ACTIVE",
                     "model_name": "ArcFace",
                     "detector_backend": "retinaface",
-                    "version": "1.0"
-                }
+                    "version": "1.0",
+                },
             )
             record_event(
                 event_type="FACE_ENROLLMENT",
@@ -388,9 +451,12 @@ class EmployeeFaceEnrollmentView(APIView):
                 request=request,
                 after_state={"face_profile_status": "ACTIVE"},
             )
-            
-            return Response({"message": "Face enrolled successfully."}, status=status.HTTP_200_OK)
-            
+
+            return Response(
+                {"message": "Face enrolled successfully."},
+                status=status.HTTP_200_OK,
+            )
+
         except FaceExtractionError as e:
             record_event(
                 event_type="FACE_ENROLLMENT",
@@ -404,7 +470,9 @@ class EmployeeFaceEnrollmentView(APIView):
                 request=request,
                 metadata={"error_type": type(e).__name__},
             )
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
             record_event(
                 event_type="FACE_ENROLLMENT",
@@ -418,22 +486,28 @@ class EmployeeFaceEnrollmentView(APIView):
                 request=request,
                 metadata={"error_type": type(e).__name__},
             )
-            return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": f"An unexpected error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 # ============================================================================
 # Manager Management (SuperUser only)
 # ============================================================================
 
+
 class ManagerCreateView(APIView):
     """SuperUser can create Manager accounts."""
+
     permission_classes = [IsSuperAdmin]
 
     @transaction.atomic
     def post(self, request):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
-        
+
         email = request.data.get("email", "").strip()
         password = request.data.get("password", "")
         first_name = request.data.get("first_name", "").strip()
@@ -441,22 +515,26 @@ class ManagerCreateView(APIView):
         hr_copilot_sections = request.data.get("hr_copilot_sections", [])
         hr_copilot_subsections = request.data.get("hr_copilot_subsections", [])
         raw_scopes = request.data.get("scopes")
-        
+
         # Validation
         if not email:
             return Response({"error": "Email is required"}, status=400)
         if not password:
             return Response({"error": "Password is required"}, status=400)
         if len(password) < 8:
-            return Response({"error": "Password must be at least 8 characters"}, status=400)
+            return Response(
+                {"error": "Password must be at least 8 characters"}, status=400
+            )
         if User.objects.filter(email=email).exists():
-            return Response({"error": "User with this email already exists"}, status=400)
+            return Response(
+                {"error": "User with this email already exists"}, status=400
+            )
         if raw_scopes is not None:
             try:
                 _normalize_manager_scopes(raw_scopes)
             except ValueError as error:
                 return Response({"error": str(error)}, status=400)
-        
+
         # Create Manager user
         user = User.objects.create_user(
             email=email,
@@ -467,7 +545,7 @@ class ManagerCreateView(APIView):
             is_staff=False,
             is_superuser=False,
         )
-        
+
         user.hr_copilot_sections = hr_copilot_sections
         user.hr_copilot_subsections = hr_copilot_subsections
         user.save()
@@ -500,55 +578,66 @@ class ManagerCreateView(APIView):
             before_state={"is_system_admin": False, "is_superuser": False},
             after_state={"is_system_admin": True, "is_superuser": False},
         )
-        
-        return Response({
-            "id": user.id,
-            "email": user.email,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "is_system_admin": user.is_system_admin,
-            "hr_copilot_sections": user.hr_copilot_sections,
-            "hr_copilot_subsections": user.hr_copilot_subsections,
-            "scopes": _manager_scope_data(user),
-        }, status=201)
+
+        return Response(
+            {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "is_system_admin": user.is_system_admin,
+                "hr_copilot_sections": user.hr_copilot_sections,
+                "hr_copilot_subsections": user.hr_copilot_subsections,
+                "scopes": _manager_scope_data(user),
+            },
+            status=201,
+        )
 
 
 class ManagerListView(APIView):
     """SuperUser can list all Managers."""
+
     permission_classes = [IsSuperAdmin]
 
     def get(self, request):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
-        
+
         managers = User.objects.filter(
-            is_system_admin=True,
-            is_superuser=False
+            is_system_admin=True, is_superuser=False
         ).order_by("id")
-        
-        data = [{
-            "id": m.id,
-            "email": m.email,
-            "first_name": m.first_name,
-            "last_name": m.last_name,
-            "is_active": m.is_active,
-            "hr_copilot_sections": m.hr_copilot_sections,
-            "hr_copilot_subsections": m.hr_copilot_subsections,
-            "scopes": _manager_scope_data(m),
-        } for m in managers]
-        
+
+        data = [
+            {
+                "id": m.id,
+                "email": m.email,
+                "first_name": m.first_name,
+                "last_name": m.last_name,
+                "is_active": m.is_active,
+                "hr_copilot_sections": m.hr_copilot_sections,
+                "hr_copilot_subsections": m.hr_copilot_subsections,
+                "scopes": _manager_scope_data(m),
+            }
+            for m in managers
+        ]
+
         return Response(data)
 
 
 class ManagerDetailView(APIView):
     """SuperUser can view/update/delete Manager accounts."""
+
     permission_classes = [IsSuperAdmin]
 
     def get_object(self, pk):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
         try:
-            return User.objects.get(pk=pk, is_system_admin=True, is_superuser=False)
+            return User.objects.get(
+                pk=pk, is_system_admin=True, is_superuser=False
+            )
         except User.DoesNotExist:
             return None
 
@@ -556,17 +645,19 @@ class ManagerDetailView(APIView):
         manager = self.get_object(pk)
         if not manager:
             return Response({"error": "Manager not found"}, status=404)
-        
-        return Response({
-            "id": manager.id,
-            "email": manager.email,
-            "first_name": manager.first_name,
-            "last_name": manager.last_name,
-            "is_active": manager.is_active,
-            "hr_copilot_sections": manager.hr_copilot_sections,
-            "hr_copilot_subsections": manager.hr_copilot_subsections,
-            "scopes": _manager_scope_data(manager),
-        })
+
+        return Response(
+            {
+                "id": manager.id,
+                "email": manager.email,
+                "first_name": manager.first_name,
+                "last_name": manager.last_name,
+                "is_active": manager.is_active,
+                "hr_copilot_sections": manager.hr_copilot_sections,
+                "hr_copilot_subsections": manager.hr_copilot_subsections,
+                "scopes": _manager_scope_data(manager),
+            }
+        )
 
     @transaction.atomic
     def patch(self, request, pk):
@@ -586,7 +677,9 @@ class ManagerDetailView(APIView):
         if "hr_copilot_sections" in request.data:
             manager.hr_copilot_sections = request.data["hr_copilot_sections"]
         if "hr_copilot_subsections" in request.data:
-            manager.hr_copilot_subsections = request.data["hr_copilot_subsections"]
+            manager.hr_copilot_subsections = request.data[
+                "hr_copilot_subsections"
+            ]
         if "scopes" in request.data:
             try:
                 _set_manager_scopes(manager, request.data["scopes"])
@@ -599,7 +692,11 @@ class ManagerDetailView(APIView):
 
         if before_active != manager.is_active:
             record_event(
-                event_type=("MANAGER_ACTIVATED" if manager.is_active else "MANAGER_DEACTIVATED"),
+                event_type=(
+                    "MANAGER_ACTIVATED"
+                    if manager.is_active
+                    else "MANAGER_DEACTIVATED"
+                ),
                 category="EMPLOYEE",
                 severity="INFO",
                 status="SUCCESS",
@@ -632,42 +729,48 @@ class ManagerDetailView(APIView):
                 before_state=before_state,
                 after_state=after_state,
             )
-        
-        return Response({
-            "id": manager.id,
-            "email": manager.email,
-            "first_name": manager.first_name,
-            "last_name": manager.last_name,
-            "is_active": manager.is_active,
-            "hr_copilot_sections": manager.hr_copilot_sections,
-            "hr_copilot_subsections": manager.hr_copilot_subsections,
-            "scopes": _manager_scope_data(manager),
-        })
+
+        return Response(
+            {
+                "id": manager.id,
+                "email": manager.email,
+                "first_name": manager.first_name,
+                "last_name": manager.last_name,
+                "is_active": manager.is_active,
+                "hr_copilot_sections": manager.hr_copilot_sections,
+                "hr_copilot_subsections": manager.hr_copilot_subsections,
+                "scopes": _manager_scope_data(manager),
+            }
+        )
 
     @transaction.atomic
     def delete(self, request, pk):
         manager = self.get_object(pk)
         if not manager:
             return Response({"error": "Manager not found"}, status=404)
-        
+
         manager.delete()
         return Response({"message": "Manager deleted successfully"})
 
 
 class ManagerPasswordChangeView(APIView):
     """SuperUser can change Manager password."""
+
     permission_classes = [IsSuperAdmin]
 
     @transaction.atomic
     def post(self, request, pk):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
-        
+
         try:
-            manager = User.objects.get(pk=pk, is_system_admin=True, is_superuser=False)
+            manager = User.objects.get(
+                pk=pk, is_system_admin=True, is_superuser=False
+            )
         except User.DoesNotExist:
             return Response({"error": "Manager not found"}, status=404)
-        
+
         new_password = request.data.get("new_password")
         if not isinstance(new_password, str) or not new_password:
             return Response({"error": "new_password is required"}, status=400)
@@ -689,5 +792,5 @@ class ManagerPasswordChangeView(APIView):
             source="API",
             request=request,
         )
-        
+
         return Response({"message": "Manager password changed successfully"})

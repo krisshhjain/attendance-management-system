@@ -1,10 +1,10 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
 
-from .models import Notification
-from .tasks import send_notification_email
 from system_logs.services import record_event
 
+from .models import Notification
+from .tasks import send_notification_email
 
 NOTIFICATION_TYPES = {
     "ATTENDANCE",
@@ -66,10 +66,14 @@ def get_or_create_notification(
     if notification_type not in NOTIFICATION_TYPES:
         raise ValueError(f"Unsupported notification type: {notification_type}")
 
-    lookup = {"deduplication_key": deduplication_key} if deduplication_key else {
-        "user": user,
-        "attendance_event": attendance_event,
-    }
+    lookup = (
+        {"deduplication_key": deduplication_key}
+        if deduplication_key
+        else {
+            "user": user,
+            "attendance_event": attendance_event,
+        }
+    )
     notification, created = Notification.objects.get_or_create(
         **lookup,
         defaults={
@@ -112,6 +116,7 @@ def queue_deduplicated_notification_after_commit(
     email_body=None,
 ):
     """Publish one idempotent notification and email after its transaction commits."""
+
     def publish():
         _, created = get_or_create_notification(
             user=user,
@@ -132,7 +137,9 @@ def queue_deduplicated_notification_after_commit(
                 source="CELERY",
                 metadata={"recipient_count": 1},
             )
-            send_notification_email.delay([user.email], email_subject, email_body)
+            send_notification_email.delay(
+                [user.email], email_subject, email_body
+            )
 
     transaction.on_commit(publish)
 
@@ -147,6 +154,7 @@ def queue_notification_after_commit(
     email_body=None,
 ):
     """Create an in-app notification and optionally enqueue its email after commit."""
+
     def publish():
         create_notification(
             user=user,

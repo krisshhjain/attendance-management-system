@@ -10,9 +10,9 @@ class ChangePasswordSerializer(serializers.Serializer):
         user = self.context["request"].user
 
         if not user.check_password(attrs["current_password"]):
-            raise serializers.ValidationError({
-                "current_password": "Current password is incorrect."
-            })
+            raise serializers.ValidationError(
+                {"current_password": "Current password is incorrect."}
+            )
 
         password_validation.validate_password(
             attrs["new_password"],
@@ -20,6 +20,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         )
 
         return attrs
+
 
 class UserProfileSerializer(serializers.Serializer):
     email = serializers.EmailField()

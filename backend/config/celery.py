@@ -11,10 +11,10 @@ app.autodiscover_tasks()
 
 
 class RabbitMQWorker(CeleryWorker):
-	def __init__(self, *args, **kwargs):
-		kwargs["without_mingle"] = True
-		kwargs["without_gossip"] = True
-		super().__init__(*args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        kwargs["without_mingle"] = True
+        kwargs["without_gossip"] = True
+        super().__init__(*args, **kwargs)
 
 
 app.Worker = app.subclass_with_self(RabbitMQWorker)

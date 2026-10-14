@@ -3,12 +3,8 @@
 import re
 from bisect import bisect_left
 
-_EMAIL_LOCAL_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyz0123456789._%+-"
-)
-_EMAIL_DOMAIN_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyz0123456789.-"
-)
+_EMAIL_LOCAL_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789._%+-")
+_EMAIL_DOMAIN_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789.-")
 _EMAIL_REGEX_CASE_SPECIALS = frozenset("İı")
 
 
@@ -39,9 +35,8 @@ def find_email_address(text):
             continue
 
         local_start = index
-        while (
-            index < length
-            and _matches_email_character(text[index], _EMAIL_LOCAL_CHARS)
+        while index < length and _matches_email_character(
+            text[index], _EMAIL_LOCAL_CHARS
         ):
             index += 1
         if index >= length or text[index] != "@":
@@ -49,11 +44,8 @@ def find_email_address(text):
 
         domain_start = index + 1
         domain_end = domain_start
-        while (
-            domain_end < length
-            and _matches_email_character(
-                text[domain_end], _EMAIL_DOMAIN_CHARS
-            )
+        while domain_end < length and _matches_email_character(
+            text[domain_end], _EMAIL_DOMAIN_CHARS
         ):
             domain_end += 1
 
@@ -78,7 +70,9 @@ def find_email_address(text):
     return None
 
 
-def has_ordered_regex_matches(text, start_pattern, end_pattern, flags=re.IGNORECASE):
+def has_ordered_regex_matches(
+    text, start_pattern, end_pattern, flags=re.IGNORECASE
+):
     """Return whether a start match precedes an end match on one line.
 
     This preserves the meaning of ``start.*end`` while avoiding repeated
@@ -96,7 +90,9 @@ def has_ordered_regex_matches(text, start_pattern, end_pattern, flags=re.IGNOREC
     return False
 
 
-def find_ordered_capture(text, start_pattern, end_pattern, flags=re.IGNORECASE):
+def find_ordered_capture(
+    text, start_pattern, end_pattern, flags=re.IGNORECASE
+):
     """Capture text between the first ordered start/end pair in linear time."""
     start_regex = re.compile(start_pattern, flags)
     end_regex = re.compile(end_pattern, flags)
@@ -108,5 +104,5 @@ def find_ordered_capture(text, start_pattern, end_pattern, flags=re.IGNORECASE):
         for start in starts:
             end_index = bisect_left(end_positions, start.end())
             if end_index < len(ends):
-                return line[start.end():ends[end_index].start()]
+                return line[start.end(): ends[end_index].start()]
     return None

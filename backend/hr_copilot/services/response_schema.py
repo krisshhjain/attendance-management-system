@@ -1,7 +1,9 @@
 """Stable public response helpers for HR Copilot."""
 
 
-def result_response(*, answer, intent, data, scope=None, conversation_id=None, metadata=None):
+def result_response(
+    *, answer, intent, data, scope=None, conversation_id=None, metadata=None
+):
     payload = {
         "response_type": "result",
         "answer": answer,
@@ -17,9 +19,22 @@ def result_response(*, answer, intent, data, scope=None, conversation_id=None, m
     return payload
 
 
-def action_response(*, answer, intent, status, conversation_id=None, action_id=None, action_result=None, pending_action=None):
+def action_response(
+    *,
+    answer,
+    intent,
+    status,
+    conversation_id=None,
+    action_id=None,
+    action_result=None,
+    pending_action=None,
+):
     payload = {
-        "response_type": "action_success" if status == "executed" else "action_preview" if status in {"pending_approval", "awaiting_information"} else "action_failure",
+        "response_type": "action_success"
+        if status == "executed"
+        else "action_preview"
+        if status in {"pending_approval", "awaiting_information"}
+        else "action_failure",
         "answer": answer,
         "intent": intent,
         "query_status": status,

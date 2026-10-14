@@ -3,9 +3,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from system_logs.services import record_event
+
 from .models import Notification
 from .serializers import NotificationSerializer
-from system_logs.services import record_event
 
 PERSISTENT_NOTIFICATION_TYPES = frozenset({"LEAVE", "REGULARIZATION"})
 
@@ -14,9 +15,9 @@ class NotificationListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        notifications = Notification.objects.filter(user=request.user).select_related(
-            "attendance_event"
-        )
+        notifications = Notification.objects.filter(
+            user=request.user
+        ).select_related("attendance_event")
 
         unread = request.query_params.get("unread")
         if unread is not None and unread.lower() in {"1", "true", "yes"}:
@@ -70,7 +71,10 @@ class NotificationDeleteView(APIView):
             pk=pk,
             user=request.user,
         )
-        if notification.notification_type.upper() in PERSISTENT_NOTIFICATION_TYPES:
+        if (
+            notification.notification_type.upper()
+            in PERSISTENT_NOTIFICATION_TYPES
+        ):
             return Response(
                 {"detail": "This notification cannot be deleted."},
                 status=400,

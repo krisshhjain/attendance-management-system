@@ -28,6 +28,10 @@ QUICK START (All-in-One)
      Copy-Item .env.example .env       (Windows PowerShell)
      cp .env.example .env              (Linux / Mac / Git Bash)
 
+   Set DB_PASSWORD and RABBITMQ_PASSWORD in the root .env to distinct,
+   URL-safe random values. The root .env is used by Compose for its local
+   database and broker; their published ports bind to localhost only.
+
    Backend .env (used by Docker Compose):
      Copy-Item backend\.env.example backend\.env
 
@@ -166,16 +170,21 @@ Leave Configuration (Super Admin only):
 DOCKER: FULL STACK MODE (Optional)
 =======================================================
 
-To run the entire stack (DB + Backend + Frontend) in Docker:
+To run the entire development stack (DB + Backend + Frontend) in Docker:
 
   docker compose --profile full up --build -d
 
-This builds and starts all 3 containers. The backend entrypoint.sh
+This builds and starts the Compose services. The backend entrypoint.sh
 automatically waits for PostgreSQL, runs migrations, and seeds data.
 
 Access at:
   Frontend:   http://localhost:80
   Backend:    http://localhost:8000
+
+This Compose file is for local development. Production deployments must
+provide secrets through the deployment platform, set DJANGO_ENV=production,
+configure production hosts and integrations, and terminate HTTPS at a trusted
+reverse proxy. Django rejects development-only settings in production.
 
 =======================================================
 13. TEAM GIT WORKFLOW

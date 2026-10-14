@@ -1,7 +1,6 @@
 from django.conf import settings
-from django.db import models
 from django.contrib.postgres.fields import ArrayField
-
+from django.db import models
 
 DEFAULT_APP_ACCESS = {
     "dashboard": True,
@@ -47,7 +46,7 @@ class Employee(models.Model):
 
     def __str__(self):
         return self.user.email
-    
+
     def get_effective_shift(self):
         """
         Get the effective shift for this employee based on employment type configuration.
@@ -60,20 +59,21 @@ class Employee(models.Model):
         # If employee has an explicitly assigned shift, use that
         if self.shift is not None:
             return self.shift
-        
+
         # Check shifts configured for this employment type
         from attendance.models import Shift
+
         configured_shifts = Shift.objects.filter(
-            employment_type=self.employment_type,
-            is_active=True
+            employment_type=self.employment_type, is_active=True
         )
-        
+
         # If exactly one shift configured, auto-assign it
         if configured_shifts.count() == 1:
             return configured_shifts.first()
-        
+
         # Otherwise (0 or multiple), no effective shift
         return None
+
 
 class FaceProfile(models.Model):
     STATUS_CHOICES = [
@@ -83,15 +83,15 @@ class FaceProfile(models.Model):
     ]
 
     employee = models.OneToOneField(
-        Employee, 
-        on_delete=models.CASCADE, 
-        related_name="face_profile"
+        Employee, on_delete=models.CASCADE, related_name="face_profile"
     )
     face_template = ArrayField(models.FloatField(), size=512)
     model_name = models.CharField(max_length=50, default="ArcFace")
     detector_backend = models.CharField(max_length=50, default="retinaface")
     version = models.CharField(max_length=20, default="1.0")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="ACTIVE")
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="ACTIVE"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -6,8 +6,8 @@ from html import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from django.contrib.auth import get_user_model
-from django.http import HttpResponse, StreamingHttpResponse
 from django.db.models import Q
+from django.http import HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -20,7 +20,6 @@ from leave_management.permissions import IsSuperAdmin
 
 from .models import SystemLog
 from .serializers import SystemLogSerializer
-
 
 CATEGORIES = {
     "AUTHENTICATION",
@@ -104,7 +103,15 @@ EVENT_TYPES = {
 }
 SEVERITIES = {value for value, _ in SystemLog.SEVERITY_CHOICES}
 STATUSES = {value for value, _ in SystemLog.STATUS_CHOICES}
-ACTOR_ROLES = {"EMPLOYEE", "MANAGER", "STAFF", "SUPERUSER", "USER", "SYSTEM", "ANONYMOUS"}
+ACTOR_ROLES = {
+    "EMPLOYEE",
+    "MANAGER",
+    "STAFF",
+    "SUPERUSER",
+    "USER",
+    "SYSTEM",
+    "ANONYMOUS",
+}
 SOURCES = {
     "API",
     "ADMIN",
@@ -116,12 +123,34 @@ SOURCES = {
     "SYSTEM",
     "HR_COPILOT",
 }
-ORDERING = {"timestamp", "-timestamp", "created_at", "-created_at", "id", "-id"}
+ORDERING = {
+    "timestamp",
+    "-timestamp",
+    "created_at",
+    "-created_at",
+    "id",
+    "-id",
+}
 EXPORT_HEADERS = [
-    "id", "timestamp", "severity", "category", "event_type", "status",
-    "actor", "actor_role", "target_type", "target_id", "target_label",
-    "message", "source", "ip_address", "user_agent", "request_id",
-    "before_state", "after_state", "metadata",
+    "id",
+    "timestamp",
+    "severity",
+    "category",
+    "event_type",
+    "status",
+    "actor",
+    "actor_role",
+    "target_type",
+    "target_id",
+    "target_label",
+    "message",
+    "source",
+    "ip_address",
+    "user_agent",
+    "request_id",
+    "before_state",
+    "after_state",
+    "metadata",
 ]
 
 
@@ -149,16 +178,18 @@ class SystemLogListView(APIView):
         until_date_str = request.query_params.get("until_date")
         if not until_date_str:
             return Response({"detail": "until_date is required."}, status=400)
-            
+
         try:
             until_date = self._parse_date(until_date_str, "until_date")
         except ValueError as error:
             return Response({"detail": str(error)}, status=400)
-            
+
         end_of_date = self._start_of_day(until_date + timedelta(days=1))
-        
-        deleted_count, _ = SystemLog.objects.filter(timestamp__lt=end_of_date).delete()
-        
+
+        deleted_count, _ = SystemLog.objects.filter(
+            timestamp__lt=end_of_date
+        ).delete()
+
         return Response({"deleted": deleted_count})
 
     def _filtered_queryset(self, request):
@@ -186,11 +217,15 @@ class SystemLogListView(APIView):
             )
 
         queryset = self._exact_filter(queryset, params, "category", CATEGORIES)
-        queryset = self._exact_filter(queryset, params, "event_type", EVENT_TYPES)
+        queryset = self._exact_filter(
+            queryset, params, "event_type", EVENT_TYPES
+        )
         queryset = self._exact_filter(queryset, params, "severity", SEVERITIES)
         queryset = self._exact_filter(queryset, params, "status", STATUSES)
         queryset = self._exact_filter(queryset, params, "source", SOURCES)
-        queryset = self._exact_filter(queryset, params, "actor_role", ACTOR_ROLES)
+        queryset = self._exact_filter(
+            queryset, params, "actor_role", ACTOR_ROLES
+        )
 
         actor = params.get("actor")
         if actor:
@@ -207,13 +242,21 @@ class SystemLogListView(APIView):
         if date_from and date_to and date_from > date_to:
             raise ValueError("date_from cannot be later than date_to.")
         if date_from:
-            queryset = queryset.filter(timestamp__gte=self._start_of_day(date_from))
+            queryset = queryset.filter(
+                timestamp__gte=self._start_of_day(date_from)
+            )
         if date_to:
-            queryset = queryset.filter(timestamp__lt=self._start_of_day(date_to + timedelta(days=1)))
+            queryset = queryset.filter(
+                timestamp__lt=self._start_of_day(date_to + timedelta(days=1))
+            )
 
         ordering = params.get("ordering", "-timestamp")
-        ordering_fields = [field.strip() for field in ordering.split(",") if field.strip()]
-        if not ordering_fields or any(field not in ORDERING for field in ordering_fields):
+        ordering_fields = [
+            field.strip() for field in ordering.split(",") if field.strip()
+        ]
+        if not ordering_fields or any(
+            field not in ORDERING for field in ordering_fields
+        ):
             raise ValueError("ordering contains an unsupported field.")
         if "id" not in {field.lstrip("-") for field in ordering_fields}:
             ordering_fields.append("-id")
@@ -230,7 +273,9 @@ class SystemLogListView(APIView):
             try:
                 page_size_value = int(page_size)
             except (TypeError, ValueError):
-                raise ValueError("page_size must be an integer between 1 and 100.")
+                raise ValueError(
+                    "page_size must be an integer between 1 and 100."
+                )
             if not 1 <= page_size_value <= 100:
                 raise ValueError("page_size must be between 1 and 100.")
 
@@ -257,14 +302,18 @@ class SystemLogListView(APIView):
 
     @staticmethod
     def _start_of_day(value):
-        return timezone.make_aware(datetime.combine(value, time.min), timezone.get_current_timezone())
+        return timezone.make_aware(
+            datetime.combine(value, time.min), timezone.get_current_timezone()
+        )
 
 
 class SystemLogDetailView(APIView):
     permission_classes = [IsSuperAdmin]
 
     def get(self, request, pk):
-        log = get_object_or_404(SystemLog.objects.select_related("actor"), pk=pk)
+        log = get_object_or_404(
+            SystemLog.objects.select_related("actor"), pk=pk
+        )
         return Response(SystemLogSerializer(log).data)
 
 
@@ -274,7 +323,10 @@ class SystemLogActorView(APIView):
     def get(self, request):
         search = request.query_params.get("search", "").strip()
         if len(search) > 100:
-            return Response({"detail": "search must be 100 characters or fewer."}, status=400)
+            return Response(
+                {"detail": "search must be 100 characters or fewer."},
+                status=400,
+            )
         users = get_user_model().objects.all().order_by("email")
         if search:
             user_filter = (
@@ -285,23 +337,29 @@ class SystemLogActorView(APIView):
             if search.isdigit():
                 user_filter |= Q(id=int(search))
             users = users.filter(user_filter)
-        return Response([
-            {
-                "id": user.id,
-                "email": user.email,
-                "name": user.get_full_name().strip() or user.email,
-            }
-            for user in users[:20]
-        ])
+        return Response(
+            [
+                {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.get_full_name().strip() or user.email,
+                }
+                for user in users[:20]
+            ]
+        )
 
 
 class SystemLogExportView(APIView):
     permission_classes = [IsSuperAdmin]
 
     def get(self, request):
-        export_format = request.query_params.get("export_format", "csv").lower()
+        export_format = request.query_params.get(
+            "export_format", "csv"
+        ).lower()
         if export_format not in {"csv", "xlsx"}:
-            return Response({"detail": "format must be csv or xlsx."}, status=400)
+            return Response(
+                {"detail": "format must be csv or xlsx."}, status=400
+            )
         try:
             queryset = SystemLogListView()._filtered_queryset(request)
         except ValueError as error:
@@ -317,7 +375,11 @@ class SystemLogExportView(APIView):
         actor = data.get("actor") or {}
         data["actor"] = actor.get("email") or actor.get("name") or ""
         for field in ("before_state", "after_state", "metadata"):
-            data[field] = json.dumps(data[field], ensure_ascii=True, sort_keys=True) if data[field] else ""
+            data[field] = (
+                json.dumps(data[field], ensure_ascii=True, sort_keys=True)
+                if data[field]
+                else ""
+            )
         return [data.get(header, "") for header in EXPORT_HEADERS]
 
     def _csv_response(self, queryset):
@@ -332,8 +394,12 @@ class SystemLogExportView(APIView):
                 writer.writerow(self._serialized_row(log))
                 yield output.getvalue()
 
-        response = StreamingHttpResponse(rows(), content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="system-logs.csv"'
+        response = StreamingHttpResponse(
+            rows(), content_type="text/csv; charset=utf-8"
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="system-logs.csv"'
+        )
         return response
 
     def _xlsx_response(self, queryset):
@@ -356,13 +422,19 @@ class SystemLogExportView(APIView):
                 '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
             )
             with archive.open("xl/worksheets/sheet1.xml", "w") as sheet:
-                sheet.write(b'<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>')
-                for row_number, row in enumerate(self._iter_xlsx_rows(queryset), start=1):
+                sheet.write(
+                    b'<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+                )
+                for row_number, row in enumerate(
+                    self._iter_xlsx_rows(queryset), start=1
+                ):
                     sheet.write(f'<row r="{row_number}">'.encode())
                     for column, value in enumerate(row, start=1):
                         cell_ref = f"{_xlsx_column(column)}{row_number}"
                         safe_value = _excel_safe_string(value)
-                        sheet.write(f'<c r="{cell_ref}" t="inlineStr"><is><t>{escape(safe_value)}</t></is></c>'.encode())
+                        sheet.write(
+                            f'<c r="{cell_ref}" t="inlineStr"><is><t>{escape(safe_value)}</t></is></c>'.encode()
+                        )
                     sheet.write(b"</row>")
                 sheet.write(b"</sheetData></worksheet>")
 
@@ -370,7 +442,9 @@ class SystemLogExportView(APIView):
             output.getvalue(),
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        response["Content-Disposition"] = 'attachment; filename="system-logs.xlsx"'
+        response["Content-Disposition"] = (
+            'attachment; filename="system-logs.xlsx"'
+        )
         return response
 
     def _iter_xlsx_rows(self, queryset):

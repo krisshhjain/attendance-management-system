@@ -1,4 +1,5 @@
-from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
+from rest_framework.generics import (ListAPIView, ListCreateAPIView,
+                                     RetrieveUpdateAPIView)
 from rest_framework.permissions import IsAuthenticated
 
 from leave_management.permissions import IsSuperAdmin

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+
 from .models import OfficeLocation, RegularizationQuotaPolicy
 
 
@@ -19,12 +20,16 @@ class OfficeLocationSerializer(serializers.ModelSerializer):
 
     def validate_latitude(self, value):
         if value < -90.0 or value > 90.0:
-            raise serializers.ValidationError("Latitude must be between -90 and 90 degrees.")
+            raise serializers.ValidationError(
+                "Latitude must be between -90 and 90 degrees."
+            )
         return value
 
     def validate_longitude(self, value):
         if value < -180.0 or value > 180.0:
-            raise serializers.ValidationError("Longitude must be between -180 and 180 degrees.")
+            raise serializers.ValidationError(
+                "Longitude must be between -180 and 180 degrees."
+            )
         return value
 
     def validate_name(self, value):

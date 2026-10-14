@@ -5,16 +5,15 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounts.models import User
-from employees.models import Employee
 from employees.management.commands.import_reference_students import (
-    STUDENTS,
-    email_slug,
-    normalize_name,
-)
+    STUDENTS, email_slug, normalize_name)
+from employees.models import Employee
 
 
 class Command(BaseCommand):
-    help = "Restore missing reference students without changing existing records."
+    help = (
+        "Restore missing reference students without changing existing records."
+    )
 
     def handle(self, *args, **options):
         existing_users = list(User.objects.select_related("employee"))
@@ -34,7 +33,10 @@ class Command(BaseCommand):
             normalized_name = normalize_name(full_name)
             email = f"{email_slug(full_name)}@dailoqa.com"
 
-            if normalized_name in existing_names or email.casefold() in existing_emails:
+            if (
+                normalized_name in existing_names
+                or email.casefold() in existing_emails
+            ):
                 skipped.append(full_name)
                 continue
 

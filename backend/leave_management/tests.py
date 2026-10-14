@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
@@ -7,15 +8,14 @@ from django.utils import timezone
 from accounts.models import User
 from attendance.models import Attendance
 from employees.models import Employee
+from holidays.models import Holiday
 from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
-from leave_management.services import (
-    approve_leave_request,
-    calculate_employee_leave_balances,
-    calculate_working_days,
-    cancel_leave_request,
-    deny_leave_request,
-    validate_leave_request,
-)
+from leave_management.services import (approve_leave_request,
+                                       calculate_employee_leave_balances,
+                                       calculate_working_days,
+                                       cancel_leave_request,
+                                       deny_leave_request,
+                                       validate_leave_request)
 
 
 class LeaveManagementTestCase(TestCase):
@@ -90,7 +90,9 @@ class LeaveManagementTestCase(TestCase):
         self.assertEqual(calculate_working_days(sat, sun), Decimal("0.0"))
 
         # Single half-day on Monday
-        self.assertEqual(calculate_working_days(start, start, "FIRST_HALF"), Decimal("0.5"))
+        self.assertEqual(
+            calculate_working_days(start, start, "FIRST_HALF"), Decimal("0.5")
+        )
 
     def test_leave_balances_calculation(self):
         balances = calculate_employee_leave_balances(self.employee, year=2026)
@@ -126,7 +128,9 @@ class LeaveManagementTestCase(TestCase):
         self.assertEqual(req.status, "PENDING")
 
         # Verify attendance is NOT affected while PENDING
-        att = Attendance.objects.filter(employee=self.employee, date=start).first()
+        att = Attendance.objects.filter(
+            employee=self.employee, date=start
+        ).first()
         self.assertIsNone(att)
 
     def test_approval_workflow_updates_attendance(self):
@@ -142,7 +146,9 @@ class LeaveManagementTestCase(TestCase):
             status="PENDING",
         )
 
-        approved = approve_leave_request(req, reviewer_user=self.admin_user, remarks="Approved enjoy!")
+        approved = approve_leave_request(
+            req, reviewer_user=self.admin_user, remarks="Approved enjoy!"
+        )
         self.assertEqual(approved.status, "APPROVED")
         self.assertEqual(approved.reviewed_by, self.admin_user)
 
@@ -166,12 +172,18 @@ class LeaveManagementTestCase(TestCase):
             status="PENDING",
         )
 
-        denied = deny_leave_request(req, reviewer_user=self.admin_user, remarks="Shortage of staff")
+        denied = deny_leave_request(
+            req, reviewer_user=self.admin_user, remarks="Shortage of staff"
+        )
         self.assertEqual(denied.status, "DENIED")
         self.assertEqual(denied.reviewer_remarks, "Shortage of staff")
 
         # Verify no attendance record created
-        self.assertFalse(Attendance.objects.filter(employee=self.employee, date=start).exists())
+        self.assertFalse(
+            Attendance.objects.filter(
+                employee=self.employee, date=start
+            ).exists()
+        )
 
     def test_overlapping_leave_request_rejected(self):
         start = date(2026, 9, 28)
@@ -199,8 +211,13 @@ class LeaveManagementTestCase(TestCase):
         start = timezone.localdate() + timedelta(days=1)
         end = start + timedelta(days=1)
         req = LeaveRequest.objects.create(
-            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
-            duration_days=Decimal("2.0"), reason="Test", status="PENDING"
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=start,
+            end_date=end,
+            duration_days=Decimal("2.0"),
+            reason="Test",
+            status="PENDING",
         )
         cancelled = cancel_leave_request(req, user=self.emp_user)
         self.assertEqual(cancelled.status, "CANCELLED")
@@ -209,8 +226,13 @@ class LeaveManagementTestCase(TestCase):
         start = timezone.localdate() + timedelta(days=2)
         end = start + timedelta(days=2)
         req = LeaveRequest.objects.create(
-            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
-            duration_days=Decimal("2.0"), reason="Test", status="APPROVED"
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=start,
+            end_date=end,
+            duration_days=Decimal("2.0"),
+            reason="Test",
+            status="APPROVED",
         )
         cancelled = cancel_leave_request(req, user=self.emp_user)
         self.assertEqual(cancelled.status, "CANCELLED")
@@ -219,8 +241,13 @@ class LeaveManagementTestCase(TestCase):
         start = timezone.localdate() - timedelta(days=2)
         end = start + timedelta(days=2)
         req = LeaveRequest.objects.create(
-            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
-            duration_days=Decimal("2.0"), reason="Test", status="APPROVED"
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=start,
+            end_date=end,
+            duration_days=Decimal("2.0"),
+            reason="Test",
+            status="APPROVED",
         )
         cancelled = cancel_leave_request(req, user=self.emp_user)
         self.assertEqual(cancelled.status, "CANCELLED")
@@ -229,8 +256,13 @@ class LeaveManagementTestCase(TestCase):
         start = timezone.localdate() + timedelta(days=2)
         end = start + timedelta(days=2)
         req = LeaveRequest.objects.create(
-            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
-            duration_days=Decimal("2.0"), reason="Test", status="CANCELLED"
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=start,
+            end_date=end,
+            duration_days=Decimal("2.0"),
+            reason="Test",
+            status="CANCELLED",
         )
         with self.assertRaises(ValidationError):
             cancel_leave_request(req, user=self.emp_user)
@@ -239,21 +271,171 @@ class LeaveManagementTestCase(TestCase):
         # Admin approves, attendance created
         start = timezone.localdate() + timedelta(days=2)
         from config.business_rules import is_working_day
+
         if not is_working_day(start):  # Ensure it's a weekday for attendance
             start += timedelta(days=2)
         end = start
 
         req = LeaveRequest.objects.create(
-            employee=self.employee, leave_type=self.casual_leave, start_date=start, end_date=end,
-            duration_days=Decimal("1.0"), reason="Test", status="PENDING"
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=start,
+            end_date=end,
+            duration_days=Decimal("1.0"),
+            reason="Test",
+            status="PENDING",
         )
-        approved = approve_leave_request(req, reviewer_user=self.admin_user, remarks="OK")
-        
+        approved = approve_leave_request(
+            req, reviewer_user=self.admin_user, remarks="OK"
+        )
+
         # Verify attendance exists
-        self.assertTrue(Attendance.objects.filter(leave_request=approved).exists())
-        
+        self.assertTrue(
+            Attendance.objects.filter(leave_request=approved).exists()
+        )
+
         # Employee cancels future approved leave
         cancel_leave_request(approved, user=self.emp_user)
-        
+
         # Verify attendance removed
-        self.assertFalse(Attendance.objects.filter(leave_request=approved).exists())
+        self.assertFalse(
+            Attendance.objects.filter(leave_request=approved).exists()
+        )
+
+    def test_validation_rejects_inactive_employee_and_inactive_leave_type(self):
+        self.employee.is_active = False
+        with self.assertRaises(ValidationError) as employee_error:
+            validate_leave_request(
+                self.employee,
+                self.casual_leave,
+                date(2026, 9, 28),
+                date(2026, 9, 28),
+            )
+        self.assertIn("Inactive employee", str(employee_error.exception))
+
+        self.employee.is_active = True
+        self.sick_leave.is_active = False
+        with self.assertRaises(ValidationError) as type_error:
+            validate_leave_request(
+                self.employee,
+                self.sick_leave,
+                date(2026, 9, 28),
+                date(2026, 9, 28),
+            )
+        self.assertIn("currently inactive", str(type_error.exception))
+
+    def test_validation_rejects_weekends_half_days_and_missing_documents(self):
+        weekend = timezone.localdate() + timedelta(days=1)
+        while weekend.weekday() != 5:
+            weekend += timedelta(days=1)
+        with self.assertRaises(ValidationError) as weekend_error:
+            validate_leave_request(
+                self.employee,
+                self.casual_leave,
+                weekend,
+                weekend + timedelta(days=1),
+            )
+        self.assertIn("no working days", str(weekend_error.exception))
+
+        self.sick_leave.allow_half_day = False
+        workday = weekend + timedelta(days=2)
+        with self.assertRaises(ValidationError) as half_day_error:
+            validate_leave_request(
+                self.employee,
+                self.sick_leave,
+                workday,
+                workday,
+                day_type="FIRST_HALF",
+            )
+        self.assertIn("Half-day leave is not allowed", str(half_day_error.exception))
+
+        self.sick_leave.allow_half_day = True
+        self.sick_leave.requires_document = True
+        with self.assertRaises(ValidationError) as document_error:
+            validate_leave_request(
+                self.employee,
+                self.sick_leave,
+                workday,
+                workday,
+                attachment="",
+            )
+        self.assertIn("Supporting documentation is required", str(document_error.exception))
+
+    def test_leave_policy_enforces_notice_and_consecutive_day_limits(self):
+        self.casual_policy.min_notice_days = 5
+        self.casual_policy.save(update_fields=["min_notice_days"])
+        start = timezone.localdate() + timedelta(days=2)
+        while start.weekday() >= 5:
+            start += timedelta(days=1)
+
+        with self.assertRaises(ValidationError) as notice_error:
+            validate_leave_request(
+                self.employee,
+                self.casual_leave,
+                start,
+                start,
+                reason="Personal",
+            )
+        self.assertIn("Minimum notice period", str(notice_error.exception))
+
+        self.casual_policy.min_notice_days = 0
+        self.casual_policy.max_consecutive_days = 1
+        self.casual_policy.save(
+            update_fields=["min_notice_days", "max_consecutive_days"]
+        )
+        start += timedelta(days=(7 - start.weekday()) % 7)
+        end = start + timedelta(days=1)
+        with self.assertRaises(ValidationError) as duration_error:
+            validate_leave_request(
+                self.employee,
+                self.casual_leave,
+                start,
+                end,
+                reason="Personal",
+            )
+        self.assertIn("Maximum consecutive days", str(duration_error.exception))
+
+    def test_denial_without_reviewer_remarks_preserves_pending_request(self):
+        target = timezone.localdate() + timedelta(days=3)
+        while target.weekday() >= 5:
+            target += timedelta(days=1)
+        request = LeaveRequest.objects.create(
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=target,
+            end_date=target,
+            duration_days=Decimal("1.0"),
+            reason="Personal",
+            status="PENDING",
+        )
+
+        with self.assertRaises(ValidationError) as raised:
+            deny_leave_request(request, self.admin_user, "  ")
+
+        self.assertIn("Reviewer remarks are required", str(raised.exception))
+        request.refresh_from_db()
+        self.assertEqual(request.status, "PENDING")
+        self.assertFalse(Attendance.objects.filter(leave_request=request).exists())
+
+    def test_approval_rechecks_dates_after_a_holiday_is_added(self):
+        target = timezone.localdate() + timedelta(days=7)
+        while target.weekday() >= 5:
+            target += timedelta(days=1)
+        request = LeaveRequest.objects.create(
+            employee=self.employee,
+            leave_type=self.casual_leave,
+            start_date=target,
+            end_date=target,
+            duration_days=Decimal("1.0"),
+            reason="Personal",
+            status="PENDING",
+        )
+        Holiday.objects.create(date=target, name="New company holiday")
+
+        with self.assertRaises(ValidationError) as raised:
+            approve_leave_request(request, self.admin_user)
+
+        self.assertIn("no working days", str(raised.exception))
+        request.refresh_from_db()
+        self.assertEqual(request.status, "PENDING")
+        self.assertFalse(Attendance.objects.filter(leave_request=request).exists())

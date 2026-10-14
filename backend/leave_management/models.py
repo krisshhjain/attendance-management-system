@@ -36,9 +36,13 @@ class LeavePolicy(models.Model):
         on_delete=models.CASCADE,
         related_name="policies",
     )
-    annual_entitlement = models.DecimalField(max_digits=5, decimal_places=1, default=0.0)
+    annual_entitlement = models.DecimalField(
+        max_digits=5, decimal_places=1, default=0.0
+    )
     allow_carry_forward = models.BooleanField(default=False)
-    max_carry_forward = models.DecimalField(max_digits=5, decimal_places=1, default=0.0)
+    max_carry_forward = models.DecimalField(
+        max_digits=5, decimal_places=1, default=0.0
+    )
     unused_expires = models.BooleanField(default=True)
     max_consecutive_days = models.IntegerField(default=10)
     min_notice_days = models.IntegerField(default=0)

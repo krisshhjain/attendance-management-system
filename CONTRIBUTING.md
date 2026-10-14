@@ -414,11 +414,16 @@ DJANGO_SECRET_KEY=<generate once and keep stable for this environment>
 ```
 
 Each developer may use their own local password and Django secret key.
+The root Compose `.env` also requires distinct `DB_PASSWORD` and
+`RABBITMQ_PASSWORD` values; use URL-safe random values. Compose publishes its
+database and broker ports on localhost only.
 The application defaults to `DEBUG=False` and localhost-only `ALLOWED_HOSTS`.
 Set `DJANGO_ENV=production` in production; startup rejects wildcard hosts,
 debug mode, local LLM/console email settings, and known development database or
-broker credentials. Supply explicit production values through the deployment's
-secret manager.
+broker credentials. It also requires a 50-character Django key and a
+32-character face-service token. Supply explicit production values through the
+deployment's secret manager. Configure `CORS_ALLOWED_ORIGINS` and
+`CSRF_TRUSTED_ORIGINS` when the product is served from a separate web origin.
 
 ### Docker networking
 
