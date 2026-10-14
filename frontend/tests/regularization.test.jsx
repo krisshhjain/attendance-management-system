@@ -241,3 +241,37 @@ test("submits one correction covering multiple eligible dates in the selected we
   );
   expect(await screen.findByText("Regularization request submitted.")).toBeInTheDocument();
 }, 30_000);
+
+test("reports an unavailable regularization request list instead of showing a false empty state", async () => {
+  let attempts = 0;
+  server.use(
+    http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => {
+      attempts += 1;
+      if (attempts === 1)
+        return HttpResponse.json({ detail: "Service unavailable" }, { status: 503 });
+      return HttpResponse.json([
+        {
+          id: 41,
+          attendance_date: "2026-10-14",
+          period_type: "DAY",
+          status: "APPROVED",
+          requested_check_in: "not-a-date",
+          reason: "Clock verified by supervisor",
+          reviewed_by_name: "Morgan Manager",
+        },
+      ]);
+    }),
+    http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/regularization/quota/`, () =>
+      HttpResponse.json(requestQuota),
+    ),
+    http.get(`${API_BASE_URL}/holidays/`, () => HttpResponse.json([])),
+  );
+  renderPage();
+
+  expect(await screen.findByText("Service unavailable")).toBeInTheDocument();
+  expect(
+    screen.queryByText("You have not submitted any regularization requests."),
+  ).not.toBeInTheDocument();
+  expect(attempts).toBe(1);
+});

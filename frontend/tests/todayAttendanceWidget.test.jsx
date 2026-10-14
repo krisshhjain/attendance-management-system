@@ -110,6 +110,25 @@ test("shows loading and retry states", async () => {
   expect(reloadData).toHaveBeenCalledOnce();
 });
 
+test("shows holiday context and safely formats incomplete or malformed attendance values", () => {
+  renderWidget({
+    data: {
+      status: "HOLIDAY",
+      holiday_name: "Founders Day",
+      check_in: "not-a-timestamp",
+      check_out: null,
+      working_duration: "3661",
+    },
+  });
+
+  expect(screen.getAllByText("Holiday")).toHaveLength(2);
+  expect(screen.getByText("Founders Day")).toBeInTheDocument();
+  expect(screen.getByText("01h 01m")).toBeInTheDocument();
+  expect(screen.getAllByText("--:--")).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "Check In" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Check Out" })).toBeDisabled();
+});
+
 test("opens face verification only after confirming a precise office location", async () => {
   state.coordinates.mockResolvedValue({ latitude: 10, longitude: 20, accuracy: 25 });
   state.officeLocations.mockResolvedValue([

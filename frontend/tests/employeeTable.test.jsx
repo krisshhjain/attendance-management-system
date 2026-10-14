@@ -10,16 +10,42 @@ import { API_BASE_URL } from "../src/lib/api.js";
 import { server } from "./mocks/server.js";
 
 vi.mock("../src/components/dashboard/AddEmployeeDialog.jsx", () => ({
-  AddEmployeeDialog: () => null,
+  AddEmployeeDialog: ({ open, onClose, onSuccess }) =>
+    open ? (
+      <div role="dialog" aria-label="Add employee dialog">
+        <button onClick={onSuccess}>Complete add</button>
+        <button onClick={onClose}>Close add</button>
+      </div>
+    ) : null,
 }));
 vi.mock("../src/components/dashboard/EditEmployeeDialog.jsx", () => ({
-  EditEmployeeDialog: () => null,
+  EditEmployeeDialog: ({ open, employee, onClose, onSuccess }) =>
+    open ? (
+      <div role="dialog" aria-label="Edit employee dialog">
+        <span>{employee.email}</span>
+        <button onClick={onSuccess}>Complete edit</button>
+        <button onClick={onClose}>Close edit</button>
+      </div>
+    ) : null,
 }));
 vi.mock("../src/components/dashboard/ChangePasswordDialog.jsx", () => ({
-  ChangePasswordDialog: () => null,
+  ChangePasswordDialog: ({ open, employee, onClose }) =>
+    open ? (
+      <div role="dialog" aria-label="Change password dialog">
+        <span>{employee.email}</span>
+        <button onClick={onClose}>Close password</button>
+      </div>
+    ) : null,
 }));
 vi.mock("../src/components/dashboard/ShiftAssignmentDialog.jsx", () => ({
-  ShiftAssignmentDialog: () => null,
+  ShiftAssignmentDialog: ({ open, employee, onClose, onSuccess }) =>
+    open ? (
+      <div role="dialog" aria-label="Assign shift dialog">
+        <span>{employee.email}</span>
+        <button onClick={onSuccess}>Complete shift</button>
+        <button onClick={onClose}>Close shift</button>
+      </div>
+    ) : null,
 }));
 vi.mock("../src/components/WebcamCapture.jsx", () => ({ default: () => null }));
 
@@ -61,6 +87,14 @@ const employees = [
     has_face_enrolled: false,
     shift: null,
   },
+  {
+    id: 6,
+    email: "taylor@example.test",
+    department: "Support",
+    is_active: true,
+    has_face_enrolled: false,
+    shift: null,
+  },
 ];
 
 test("searches employees by name or email and applies employment/status filters", async () => {
@@ -81,6 +115,64 @@ test("searches employees by name or email and applies employment/status filters"
   expect(screen.getByText("Avery Lee")).toBeInTheDocument();
   expect(screen.queryByText("Jordan Park")).not.toBeInTheDocument();
   expect(screen.getByText("DAY")).toBeInTheDocument();
+});
+
+test("filters inactive and active employees independently and supports fallback names", async () => {
+  server.use(http.get(`${API_BASE_URL}/admin/employees/list/`, () => HttpResponse.json(employees)));
+  const user = userEvent.setup();
+  renderTable();
+
+  expect(await screen.findByText("taylor")).toBeInTheDocument();
+  const statusFilter = screen.getAllByRole("combobox")[1];
+  await user.click(statusFilter);
+  await user.click(screen.getByRole("option", { name: "Inactive" }));
+  expect(screen.getByText("Jordan Park")).toBeInTheDocument();
+  expect(screen.queryByText("Avery Lee")).not.toBeInTheDocument();
+
+  await user.click(screen.getAllByRole("combobox")[1]);
+  await user.click(screen.getByRole("option", { name: "Active" }));
+  expect(screen.getByText("Avery Lee")).toBeInTheDocument();
+  expect(screen.getByText("taylor")).toBeInTheDocument();
+  expect(screen.queryByText("Jordan Park")).not.toBeInTheDocument();
+});
+
+test("opens employee actions with the selected record and refreshes after saved changes", async () => {
+  let loads = 0;
+  server.use(
+    http.get(`${API_BASE_URL}/admin/employees/list/`, () => {
+      loads += 1;
+      return HttpResponse.json(employees);
+    }),
+  );
+  const user = userEvent.setup();
+  renderTable();
+  const row = (await screen.findByText("Avery Lee")).closest("tr");
+  const actions = within(row).getAllByRole("button");
+
+  await user.click(screen.getByRole("button", { name: "Add Employee" }));
+  expect(screen.getByRole("dialog", { name: "Add employee dialog" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Complete add" }));
+  await waitFor(() => expect(loads).toBe(2));
+
+  await user.click(actions[3]);
+  expect(screen.getByRole("dialog", { name: "Edit employee dialog" })).toHaveTextContent(
+    "avery@example.test",
+  );
+  await user.click(screen.getByRole("button", { name: "Complete edit" }));
+  await waitFor(() => expect(loads).toBe(3));
+
+  await user.click(actions[2]);
+  expect(screen.getByRole("dialog", { name: "Change password dialog" })).toHaveTextContent(
+    "avery@example.test",
+  );
+  await user.click(screen.getByRole("button", { name: "Close password" }));
+
+  await user.click(actions[0]);
+  expect(screen.getByRole("dialog", { name: "Assign shift dialog" })).toHaveTextContent(
+    "avery@example.test",
+  );
+  await user.click(screen.getByRole("button", { name: "Complete shift" }));
+  await waitFor(() => expect(loads).toBe(4));
 });
 
 test("confirms employee deletion, reports success, and refreshes the list", async () => {

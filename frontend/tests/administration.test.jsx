@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { Route } from "../src/routes/administration.jsx";
@@ -142,6 +142,93 @@ test("opens and closes an attached document from an admin leave review row", asy
   expect(screen.queryByRole("img", { name: "Document preview" })).not.toBeInTheDocument();
 });
 
+test("filters leave reviews by server status and renders the available decisions", async () => {
+  const [request] = await state.api.fetchAdminLeaveRequests();
+  state.api.fetchAdminLeaveRequests.mockResolvedValue([
+    request,
+    { ...request, id: 10, employee_name: "Blake Park", status: "APPROVED" },
+    { ...request, id: 11, employee_name: "Casey Reed", status: "DENIED" },
+    { ...request, id: 12, employee_name: "Drew Cole", status: "CANCELLED" },
+    { ...request, id: 13, employee_name: "Elliot Gray", status: "OTHER" },
+  ]);
+  const user = userEvent.setup();
+  renderPage();
+
+  expect(await screen.findByText("Blake Park")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "ALL" }));
+  await waitFor(() => expect(state.api.fetchAdminLeaveRequests).toHaveBeenLastCalledWith({}));
+  expect(screen.getByText("Casey Reed")).toBeInTheDocument();
+  expect(screen.getByText("Drew Cole")).toBeInTheDocument();
+  expect(screen.getByText("OTHER")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "APPROVED" }));
+  await waitFor(() =>
+    expect(state.api.fetchAdminLeaveRequests).toHaveBeenLastCalledWith({ status: "APPROVED" }),
+  );
+});
+
+test("cancels an approved leave request and refreshes the review queue", async () => {
+  const [request] = await state.api.fetchAdminLeaveRequests();
+  state.api.fetchAdminLeaveRequests.mockResolvedValue([{ ...request, status: "APPROVED" }]);
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("Avery Lee");
+
+  await user.click(screen.getByRole("button", { name: "Cancel Approved" }));
+  expect(screen.getByText("Cancel Approved Leave")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Confirm Action" }));
+
+  await waitFor(() => expect(state.api.cancelApprovedLeaveRequest).toHaveBeenCalledWith(9));
+  expect(state.success).toHaveBeenCalledWith("Leave cancelled successfully.");
+  expect(state.api.fetchAdminLeaveRequests).toHaveBeenCalledTimes(3);
+});
+
+test("reports a failed leave decision without discarding the review dialog", async () => {
+  state.api.approveLeaveRequest.mockRejectedValue(new Error("Approval service is unavailable"));
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("Avery Lee");
+  await user.click(screen.getByRole("button", { name: "Approve" }));
+  await user.click(screen.getByRole("button", { name: "Confirm Action" }));
+
+  await waitFor(() =>
+    expect(state.notifyError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Approval service is unavailable" }),
+      expect.objectContaining({ title: "Leave action failed" }),
+    ),
+  );
+  expect(screen.getByText("Approve Leave Request")).toBeInTheDocument();
+});
+
+test("shows a server validation error when an office location cannot be saved", async () => {
+  state.api.createOfficeLocation.mockRejectedValue(new Error("Location name already exists"));
+  const user = userEvent.setup();
+  renderPage();
+  await user.click(screen.getByRole("tab", { name: "Office Locations" }));
+  await user.click(await screen.findByRole("button", { name: "Add Location" }));
+  await user.type(screen.getByRole("textbox", { name: "Location Name" }), "Portland Office");
+  await user.type(screen.getByRole("spinbutton", { name: "Latitude" }), "45.5");
+  await user.type(screen.getByRole("spinbutton", { name: "Longitude" }), "-122.6");
+  await user.click(screen.getByRole("button", { name: "Save Location" }));
+
+  expect(await screen.findByText("Location name already exists")).toBeInTheDocument();
+  expect(state.api.createOfficeLocation).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "Portland Office", latitude: 45.5, longitude: -122.6 }),
+  );
+});
+
+test("denies administration access to a signed-in non-staff user", () => {
+  state.user = { is_staff: false, is_superuser: false, is_system_admin: false };
+  state.loginType = "employee";
+  renderPage();
+
+  expect(screen.getByRole("heading", { name: "Access Denied" })).toBeInTheDocument();
+  expect(
+    screen.getByText("You do not have administrative permissions to view this page."),
+  ).toBeInTheDocument();
+  expect(state.api.fetchAdminLeaveRequests).not.toHaveBeenCalled();
+});
+
 test("validates office coordinates before creating a location and refreshes the list", async () => {
   const user = userEvent.setup();
   renderPage();
@@ -172,6 +259,73 @@ test("validates office coordinates before creating a location and refreshes the 
   expect(state.success).toHaveBeenCalledWith("Office location created successfully.");
   expect(state.api.fetchOfficeLocations).toHaveBeenCalledTimes(2);
 }, 15_000);
+
+test("edits an office location and saves normalized field values", async () => {
+  state.api.fetchOfficeLocations.mockResolvedValue([
+    {
+      id: 17,
+      name: "Portland Office",
+      latitude: 45.52,
+      longitude: -122.68,
+      radius_meters: 200,
+      is_active: false,
+    },
+  ]);
+  const user = userEvent.setup();
+  renderPage();
+  await user.click(screen.getByRole("tab", { name: "Office Locations" }));
+  const row = (await screen.findByText("Portland Office")).closest("tr");
+  await user.click(within(row).getAllByRole("button")[0]);
+
+  expect(screen.getByRole("heading", { name: "Edit Office Location" })).toBeInTheDocument();
+  await user.clear(screen.getByRole("textbox", { name: "Location Name" }));
+  await user.type(screen.getByRole("textbox", { name: "Location Name" }), "  Portland HQ  ");
+  await user.clear(screen.getByRole("spinbutton", { name: "Radius (meters)" }));
+  await user.type(screen.getByRole("spinbutton", { name: "Radius (meters)" }), "250");
+  await user.click(screen.getByRole("button", { name: "Save Location" }));
+
+  await waitFor(() =>
+    expect(state.api.updateOfficeLocation).toHaveBeenCalledWith(17, {
+      name: "Portland HQ",
+      latitude: 45.52,
+      longitude: -122.68,
+      radius_meters: 250,
+      is_active: false,
+    }),
+  );
+  expect(state.success).toHaveBeenCalledWith("Office location updated successfully.");
+  expect(state.api.fetchOfficeLocations).toHaveBeenCalledTimes(2);
+});
+
+test("honors office location deletion confirmation before refreshing the list", async () => {
+  state.api.fetchOfficeLocations.mockResolvedValue([
+    {
+      id: 21,
+      name: "Austin Office",
+      latitude: 30,
+      longitude: -97,
+      radius_meters: 150,
+      is_active: true,
+    },
+  ]);
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const user = userEvent.setup();
+  renderPage();
+  await user.click(screen.getByRole("tab", { name: "Office Locations" }));
+  const row = (await screen.findByText("Austin Office")).closest("tr");
+  const buttons = within(row).getAllByRole("button");
+
+  await user.click(buttons[1]);
+  expect(confirm).toHaveBeenCalledWith("Delete office location 'Austin Office'?");
+  expect(state.api.deleteOfficeLocation).not.toHaveBeenCalled();
+
+  confirm.mockReturnValue(true);
+  await user.click(buttons[1]);
+  await waitFor(() => expect(state.api.deleteOfficeLocation).toHaveBeenCalledWith(21));
+  expect(state.success).toHaveBeenCalledWith("Office location deleted successfully.");
+  expect(state.api.fetchOfficeLocations).toHaveBeenCalledTimes(2);
+  confirm.mockRestore();
+});
 
 test("creates a normalized leave type from the registry", async () => {
   const user = userEvent.setup();
@@ -256,6 +410,96 @@ test("creates a leave policy for a selected leave type", async () => {
     ),
   );
   expect(state.success).toHaveBeenCalledWith("Leave policy created successfully.");
+});
+
+test("edits policy controls and submits the complete updated policy payload", async () => {
+  const user = userEvent.setup();
+  state.api.fetchLeaveTypesAll.mockResolvedValue([{ id: 4, name: "Annual Leave", code: "ANNUAL" }]);
+  state.api.fetchLeavePoliciesAll.mockResolvedValue([
+    {
+      id: 15,
+      employee_type: "PERMANENT",
+      leave_type: 4,
+      leave_type_name: "Annual Leave",
+      leave_type_code: "ANNUAL",
+      annual_entitlement: 20,
+      allow_carry_forward: false,
+      max_carry_forward: 0,
+      max_consecutive_days: 10,
+      min_notice_days: 2,
+      allow_half_day: true,
+      requires_document: false,
+      effective_from: "2026-01-01",
+      is_active: true,
+    },
+  ]);
+  renderPage();
+  await user.click(screen.getByRole("tab", { name: "Leave Policies" }));
+  const row = (await screen.findByText("Annual Leave")).closest("tr");
+  await user.click(within(row).getByRole("button", { name: "Edit policy" }));
+
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Annual Entitlement (days per year)" }), {
+    target: { value: "24" },
+  });
+  await user.click(screen.getByRole("checkbox", { name: "Allow Carry Forward to Next Year" }));
+  await user.type(screen.getByRole("spinbutton", { name: "Max Carry Forward Days" }), "4");
+  await user.click(screen.getByRole("checkbox", { name: "Require Document" }));
+  await user.click(screen.getByRole("button", { name: "Save Policy" }));
+
+  await waitFor(() =>
+    expect(state.api.updateLeavePolicy).toHaveBeenCalledWith(
+      15,
+      expect.objectContaining({
+        employee_type: "PERMANENT",
+        leave_type: 4,
+        annual_entitlement: 24,
+        allow_carry_forward: true,
+        max_carry_forward: 4,
+        max_consecutive_days: 10,
+        min_notice_days: 2,
+        allow_half_day: true,
+        requires_document: true,
+        effective_from: "2026-01-01",
+        is_active: true,
+      }),
+    ),
+  );
+  expect(state.success).toHaveBeenCalledWith("Leave policy updated successfully.");
+});
+
+test("limits system administrators to read-only policy and leave-type tabs", async () => {
+  state.loginType = "systemadmin";
+  state.user = { is_staff: true, is_system_admin: true, is_superuser: false };
+  state.api.fetchLeavePoliciesAll.mockResolvedValue([
+    {
+      id: 16,
+      employee_type: "PERMANENT",
+      leave_type: 4,
+      leave_type_name: "Annual Leave",
+      leave_type_code: "ANNUAL",
+      annual_entitlement: 20,
+      allow_carry_forward: false,
+      max_carry_forward: 0,
+      max_consecutive_days: 10,
+      min_notice_days: 0,
+      allow_half_day: true,
+      requires_document: false,
+      effective_from: "2026-01-01",
+      is_active: true,
+    },
+  ]);
+  const user = userEvent.setup();
+  renderPage();
+
+  expect(screen.queryByRole("tab", { name: "Office Locations" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "Leave Policies (View Only)" }));
+  expect(await screen.findByText("Annual Leave")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Configure New Policy" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Edit policy" })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("tab", { name: "Leave Types (View Only)" }));
+  expect(await screen.findByText("System Leave Types Registry")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Create Leave Type" })).not.toBeInTheDocument();
 });
 
 test("filters the employee leave balance audit by email", async () => {

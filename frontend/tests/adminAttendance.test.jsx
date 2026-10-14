@@ -2,11 +2,26 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { test, expect } from "vitest";
+import { test, expect, vi } from "vitest";
 import { AdminAttendancePage } from "../src/components/admin/AdminAttendancePage.jsx";
 import { FeedbackProvider } from "../src/feedback/FeedbackProvider.jsx";
 import { API_BASE_URL } from "../src/lib/api.js";
 import { server } from "./mocks/server.js";
+
+const spreadsheet = vi.hoisted(() => ({
+  aoaToSheet: vi.fn((rows) => ({ rows })),
+  bookNew: vi.fn(() => ({ sheets: [] })),
+  appendSheet: vi.fn((workbook, sheet, name) => workbook.sheets.push({ sheet, name })),
+  writeFile: vi.fn(),
+}));
+vi.mock("xlsx", () => ({
+  utils: {
+    aoa_to_sheet: (...args) => spreadsheet.aoaToSheet(...args),
+    book_new: (...args) => spreadsheet.bookNew(...args),
+    book_append_sheet: (...args) => spreadsheet.appendSheet(...args),
+  },
+  writeFile: (...args) => spreadsheet.writeFile(...args),
+}));
 
 function renderPage(props) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -66,6 +81,66 @@ test("filters visible attendance rows as the administrator searches", async () =
   await user.type(screen.getByPlaceholderText("Search employees..."), "nobody");
   expect(screen.getByText("No records match your filters.")).toBeInTheDocument();
 }, 15_000);
+
+test("exports the currently filtered attendance rows to a dated workbook", async () => {
+  server.use(
+    http.get(`${API_BASE_URL}/admin/attendance/`, ({ request }) =>
+      HttpResponse.json({ results: attendanceFor(request) }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("Alice Employee");
+  await user.type(screen.getByPlaceholderText("Search employees..."), "Alice");
+  await user.click(screen.getByRole("button", { name: "Download Excel" }));
+
+  await waitFor(() => expect(spreadsheet.writeFile).toHaveBeenCalledOnce());
+  const [workbook, filename] = spreadsheet.writeFile.mock.calls[0];
+  expect(filename).toMatch(/^attendance_\d{4}-\d{2}-\d{2}\.xlsx$/);
+  expect(workbook.sheets[0].name).toBe("Attendance");
+  expect(spreadsheet.aoaToSheet.mock.calls[0][0]).toEqual([
+    [
+      "Employee",
+      "Email",
+      "Section",
+      "Subsection",
+      "Date",
+      "Status",
+      "Check In",
+      "Check Out",
+      "Working Hours",
+    ],
+    [
+      "Alice Employee",
+      "alice@example.test",
+      "People",
+      "Recruiting",
+      expect.any(String),
+      "INCOMPLETE",
+      expect.any(String),
+      "",
+      expect.any(String),
+    ],
+  ]);
+});
+
+test("filters attendance by status when the API returns a paginated result envelope", async () => {
+  server.use(
+    http.get(`${API_BASE_URL}/admin/attendance/`, ({ request }) =>
+      HttpResponse.json({ results: attendanceFor(request) }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  expect(await screen.findByText("Alice Employee")).toBeInTheDocument();
+  await user.click(screen.getByRole("combobox"));
+  await user.click(screen.getByRole("option", { name: "Present" }));
+  expect(screen.getByText("Bob Employee")).toBeInTheDocument();
+  expect(screen.queryByText("Alice Employee")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("combobox"));
+  await user.click(screen.getByRole("option", { name: "Absent" }));
+  expect(screen.getByText("No records match your filters.")).toBeInTheDocument();
+});
 
 test("sends a checkout request for the selected employee and reports success", async () => {
   let checkoutPayload;

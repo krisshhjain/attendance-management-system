@@ -455,7 +455,7 @@ function RegularizationPage() {
           <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
             <CircularProgress size={28} />
           </Box>
-        ) : requests.length === 0 ? (
+        ) : pageError ? null : requests.length === 0 ? (
           <Typography color="text.secondary" sx={{ p: 3 }}>
             You have not submitted any regularization requests.
           </Typography>

@@ -8,11 +8,17 @@ import { OrganizationScopeProvider } from "../src/lib/organizationScope.jsx";
 import { API_BASE_URL } from "../src/lib/api.js";
 import { server } from "./mocks/server.js";
 
+const uploadState = vi.hoisted(() => ({ upload: vi.fn() }));
+
 vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => (options) => options }));
 vi.mock("../src/components/RequireAuth.jsx", () => ({
   RequireAuth: ({ children }) => children,
 }));
 vi.mock("../src/lib/auth.jsx", () => ({ useAuth: () => ({ loginType: "employee" }) }));
+vi.mock("../src/lib/api.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, uploadFile: (...args) => uploadState.upload(...args) };
+});
 
 function renderPage() {
   const Component = Route.component;
@@ -132,6 +138,27 @@ test("filters employee requests and confirms cancellation before changing server
   await waitFor(() => expect(screen.queryByText("Appointment")).not.toBeInTheDocument());
 });
 
+test("keeps the user informed when leave cancellation is rejected by the server", async () => {
+  leaveApi();
+  server.use(
+    http.post(`${API_BASE_URL}/leave/requests/31/cancel/`, () =>
+      HttpResponse.json({ detail: "Cancellation deadline has passed." }, { status: 400 }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("Appointment");
+  const row = screen.getByText("Appointment").closest("tr");
+  await user.click(within(row).getByRole("button", { name: "Cancel" }));
+  await user.click(screen.getByRole("button", { name: "Confirm Cancellation" }));
+
+  expect(await screen.findByText("Cancellation deadline has passed.")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Confirm Cancellation" })).not.toBeInTheDocument(),
+  );
+  expect(screen.getByText("Appointment")).toBeInTheDocument();
+});
+
 test("requires a supporting document for medical leave and rejects disallowed files", async () => {
   leaveApi();
   const user = userEvent.setup({ applyAccept: false });
@@ -179,6 +206,30 @@ test("submits an eligible leave request with a supporting document link", async 
   );
   expect(await screen.findByText("Leave request submitted successfully.")).toBeInTheDocument();
   expect(await screen.findByText("Medical appointment")).toBeInTheDocument();
+}, 30_000);
+
+test("uploads an allowed medical document before submitting the leave request", async () => {
+  const calls = leaveApi({ onSubmit: vi.fn() });
+  uploadState.upload.mockResolvedValue({ file_url: "/media/medical-note.pdf" });
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("4 Left");
+  await user.click(screen.getByRole("button", { name: "Apply for Leave" }));
+  await user.type(screen.getByRole("textbox", { name: "Reason for Leave" }), "Clinic visit");
+  const file = new File(["test report"], "medical-note.pdf", { type: "application/pdf" });
+  await user.upload(document.getElementById("attachment-file-input"), file);
+  expect(await screen.findByText("Selected: medical-note.pdf")).toBeInTheDocument();
+  expect(document.querySelector("form").checkValidity()).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Submit Request" }));
+
+  await waitFor(() => expect(uploadState.upload).toHaveBeenCalledOnce());
+  expect(uploadState.upload).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "medical-note.pdf" }),
+  );
+  expect(calls.onSubmit).toHaveBeenCalledWith(
+    expect.objectContaining({ reason: "Clinic visit", attachment: "/media/medical-note.pdf" }),
+  );
+  expect(await screen.findByText("Leave request submitted successfully.")).toBeInTheDocument();
 }, 30_000);
 
 test("opens a remote image attachment in its document preview", async () => {
