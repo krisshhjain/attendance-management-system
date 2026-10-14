@@ -124,6 +124,7 @@ function SuperAdminDashboard() {
         dept: r.section || "---",
       }));
     } else if (type === "ABSENT") {
+      if (!isWorkingDay) return [];
       return scopedEmployees
         .filter(
           (e) =>
@@ -253,7 +254,7 @@ function SuperAdminDashboard() {
         <DialogTitle
           sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", pb: 1 }}
         >
-          <Typography variant="h6" sx={{ fontWeight: 700, color: "#0f172a" }}>
+          <Typography component="span" variant="h6" sx={{ fontWeight: 700, color: "#0f172a" }}>
             {modalState.title}
           </Typography>
           <IconButton

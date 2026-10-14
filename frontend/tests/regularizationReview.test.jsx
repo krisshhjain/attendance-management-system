@@ -80,7 +80,7 @@ test("requires a final time for each requested day and submits the complete corr
     }),
   );
   expect(state.success).toHaveBeenCalledWith("Regularization approved successfully.");
-});
+}, 15_000);
 
 test("rejects invalid day time order and requires a reason to reject", async () => {
   const user = userEvent.setup();

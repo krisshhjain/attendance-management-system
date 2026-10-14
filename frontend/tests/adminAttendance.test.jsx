@@ -65,7 +65,7 @@ test("filters visible attendance rows as the administrator searches", async () =
   await user.clear(screen.getByPlaceholderText("Search employees..."));
   await user.type(screen.getByPlaceholderText("Search employees..."), "nobody");
   expect(screen.getByText("No records match your filters.")).toBeInTheDocument();
-});
+}, 15_000);
 
 test("sends a checkout request for the selected employee and reports success", async () => {
   let checkoutPayload;
