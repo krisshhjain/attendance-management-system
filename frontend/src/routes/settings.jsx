@@ -93,7 +93,7 @@ function ChangePasswordDialog({ open, onClose }) {
       PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
     >
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" fontWeight={600} letterSpacing="-0.5px">
+        <Typography component="span" variant="h6" fontWeight={600} letterSpacing="-0.5px">
           Change Password
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
