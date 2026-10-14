@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { test, expect, vi } from "vitest";
@@ -150,3 +150,94 @@ test("blocks requests for registered holidays and disables submission when quota
   ).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Submit request" })).toBeDisabled();
 });
+
+test("rejects malformed times and a checkout earlier than the corrected check-in", async () => {
+  const RealDate = Date;
+  const fixedTimestamp = new RealDate(2026, 9, 14, 12).getTime();
+  class FixedDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [fixedTimestamp]));
+    }
+
+    static now() {
+      return fixedTimestamp;
+    }
+  }
+  vi.stubGlobal("Date", FixedDate);
+  server.use(
+    http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/regularization/quota/`, () =>
+      HttpResponse.json(requestQuota),
+    ),
+    http.get(`${API_BASE_URL}/holidays/`, () => HttpResponse.json([])),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("You have not submitted any regularization requests.");
+  await user.click(screen.getByRole("button", { name: "Request correction" }));
+
+  await user.type(screen.getByLabelText("Corrected check-in"), "25:70");
+  await user.type(screen.getByLabelText("Reason"), "Correcting the workday");
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+  expect(screen.getByText(/enter a valid time/)).toBeInTheDocument();
+
+  const checkIn = screen.getByLabelText("Corrected check-in");
+  await user.clear(checkIn);
+  await user.type(checkIn, "9:00");
+  await user.type(screen.getByLabelText("Corrected check-out"), "8:00");
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+  expect(screen.getByText(/check-out must be later than check-in/)).toBeInTheDocument();
+}, 15_000);
+
+test("submits one correction covering multiple eligible dates in the selected week", async () => {
+  const RealDate = Date;
+  const fixedTimestamp = new RealDate(2026, 9, 14, 12).getTime();
+  class FixedDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [fixedTimestamp]));
+    }
+
+    static now() {
+      return fixedTimestamp;
+    }
+  }
+  vi.stubGlobal("Date", FixedDate);
+  let payload;
+  server.use(
+    http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/regularization/quota/`, () =>
+      HttpResponse.json(requestQuota),
+    ),
+    http.get(`${API_BASE_URL}/holidays/`, () => HttpResponse.json([])),
+    http.post(`${API_BASE_URL}/attendance/regularization/`, async ({ request }) => {
+      payload = await request.json();
+      return HttpResponse.json({ id: 5 }, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("You have not submitted any regularization requests.");
+  await user.click(screen.getByRole("button", { name: "Request correction" }));
+  await user.click(screen.getByRole("combobox", { name: "Period" }));
+  await user.click(screen.getByRole("option", { name: "Week" }));
+  expect(screen.getByRole("combobox", { name: "Week" })).toHaveTextContent(/Oct 12.*Oct 18, 2026/);
+  await user.click(screen.getByRole("combobox", { name: "Week" }));
+  await user.click(screen.getByRole("option", { name: /Oct 12.*Oct 18, 2026/ }));
+
+  const eligibleDates = [...document.querySelectorAll("[data-attendance-date]")].slice(0, 2);
+  expect(eligibleDates).toHaveLength(2);
+  for (const [index, card] of eligibleDates.entries()) {
+    await user.type(within(card).getByLabelText("Corrected check-in"), index ? "9:15" : "9:00");
+    await user.type(within(card).getByLabelText("Reason"), `Workday correction ${index + 1}`);
+  }
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+
+  await waitFor(() => expect(payload?.period_type).toBe("WEEK"));
+  expect(payload.days).toHaveLength(2);
+  expect(payload.days.map((day) => day.attendance_date)).toEqual(
+    eligibleDates.map((card) => card.getAttribute("data-attendance-date")),
+  );
+  expect(await screen.findByText("Regularization request submitted.")).toBeInTheDocument();
+}, 30_000);

@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   checkIn: vi.fn(),
   checkOut: vi.fn(),
   coordinates: vi.fn(),
+  officeLocations: vi.fn(),
   navigate: vi.fn(),
 }));
 
@@ -17,9 +18,17 @@ vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: state.shift }
 vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({ useFeedback: () => state.feedback }));
 vi.mock("../src/lib/attendance.js", () => ({ checkIn: state.checkIn, checkOut: state.checkOut }));
 vi.mock("../src/lib/location.js", () => ({ getCurrentCoordinates: state.coordinates }));
-vi.mock("../src/lib/api.js", () => ({ fetchMyShift: vi.fn(), fetchOfficeLocations: vi.fn() }));
+vi.mock("../src/lib/api.js", () => ({
+  fetchMyShift: vi.fn(),
+  fetchOfficeLocations: (...args) => state.officeLocations(...args),
+}));
 vi.mock("../src/components/employee-dashboard/FaceVerificationModal.jsx", () => ({
-  FaceVerificationModal: () => null,
+  FaceVerificationModal: ({ open, actionType, locationData }) =>
+    open ? (
+      <div role="dialog">
+        Verify {actionType} at {locationData.latitude}, {locationData.longitude}
+      </div>
+    ) : null,
 }));
 vi.mock("@mui/icons-material/CameraAltOutlined", () => ({ default: () => null }));
 vi.mock("@mui/icons-material/ScheduleOutlined", () => ({ default: () => null }));
@@ -40,6 +49,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.shift = null;
   state.coordinates.mockResolvedValue({ latitude: 40.7, longitude: -74, accuracy: 10 });
+  state.officeLocations.mockResolvedValue([]);
   state.checkIn.mockResolvedValue(undefined);
   state.checkOut.mockResolvedValue(undefined);
 });
@@ -98,4 +108,35 @@ test("shows loading and retry states", async () => {
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Retry" }));
   expect(reloadData).toHaveBeenCalledOnce();
+});
+
+test("opens face verification only after confirming a precise office location", async () => {
+  state.coordinates.mockResolvedValue({ latitude: 10, longitude: 20, accuracy: 25 });
+  state.officeLocations.mockResolvedValue([
+    { latitude: 10, longitude: 20, radius_meters: 150, is_active: true },
+  ]);
+  const user = userEvent.setup();
+  renderWidget();
+
+  await user.click(screen.getByRole("button", { name: "Face Check In" }));
+
+  expect(await screen.findByRole("dialog")).toHaveTextContent("Verify in at 10, 20");
+  expect(state.officeLocations).toHaveBeenCalledOnce();
+});
+
+test("blocks face verification when GPS accuracy is outside the supported range", async () => {
+  state.coordinates.mockResolvedValue({ latitude: 10, longitude: 20, accuracy: 500 });
+  const user = userEvent.setup();
+  renderWidget();
+
+  await user.click(screen.getByRole("button", { name: "Face Check In" }));
+
+  expect(state.officeLocations).not.toHaveBeenCalled();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(state.feedback.notifyError).toHaveBeenCalledWith(
+    expect.objectContaining({
+      message: "Your location accuracy is too low. Please enable precise location and try again.",
+    }),
+    expect.objectContaining({ title: "Location unavailable" }),
+  );
 });

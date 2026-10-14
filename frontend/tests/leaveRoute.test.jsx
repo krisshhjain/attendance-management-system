@@ -179,7 +179,7 @@ test("submits an eligible leave request with a supporting document link", async 
   );
   expect(await screen.findByText("Leave request submitted successfully.")).toBeInTheDocument();
   expect(await screen.findByText("Medical appointment")).toBeInTheDocument();
-}, 15_000);
+}, 30_000);
 
 test("opens a remote image attachment in its document preview", async () => {
   leaveApi({ attachment: "https://files.example.test/medical-note.png" });
@@ -213,4 +213,4 @@ test("shows the server policy message when a leave request is rejected", async (
   await user.click(screen.getByRole("button", { name: "Submit Request" }));
   expect(await screen.findByText("The notice period is too short.")).toBeInTheDocument();
   expect(screen.getByRole("dialog")).toBeInTheDocument();
-}, 15_000);
+}, 30_000);

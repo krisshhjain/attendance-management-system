@@ -2,6 +2,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { Route } from "../src/routes/login.jsx";
+import { Route as AdminLoginRoute } from "../src/routes/admin-login.jsx";
+import { Route as SystemManagerLoginRoute } from "../src/routes/systemadmin-login.jsx";
 
 const state = vi.hoisted(() => ({
   login: vi.fn(),
@@ -24,8 +26,8 @@ vi.mock("../src/lib/auth.jsx", () => ({
   }),
 }));
 
-function renderPage() {
-  const Component = Route.component;
+function renderPage(route = Route) {
+  const Component = route.component;
   return render(<Component />);
 }
 
@@ -74,3 +76,26 @@ test("redirects a ready authenticated user to the dashboard", () => {
   renderPage();
   expect(state.navigate).toHaveBeenCalledWith({ to: "/dashboard", replace: true });
 });
+
+test.each([
+  ["admin", AdminLoginRoute, "Admin Sign in", "admin"],
+  ["system manager", SystemManagerLoginRoute, "System Manager Sign in", "systemadmin"],
+])(
+  "signs in through the %s login route with the correct authorization role",
+  async (_label, route, heading, role) => {
+    const user = userEvent.setup();
+    renderPage(route);
+
+    expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Email" }), "  admin@example.test  ");
+    await user.type(
+      document.querySelector('input[autocomplete="current-password"]'),
+      "manager-password",
+    );
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(state.login).toHaveBeenCalledWith("admin@example.test", "manager-password", role);
+    expect(state.navigate).toHaveBeenCalledWith({ to: "/dashboard", replace: true });
+  },
+  15_000,
+);

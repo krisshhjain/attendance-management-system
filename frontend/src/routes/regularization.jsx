@@ -528,7 +528,10 @@ function RegularizationPage() {
                 label="Period"
                 value={periodType}
                 onChange={(event) => {
-                  setPeriodType(event.target.value);
+                  const nextPeriodType = event.target.value;
+                  setPeriodType(nextPeriodType);
+                  if (nextPeriodType === "WEEK") setPeriodValue(weekStart(periodValue));
+                  if (nextPeriodType === "MONTH") setPeriodValue(`${periodValue.slice(0, 7)}-01`);
                   setDays({});
                 }}
               >

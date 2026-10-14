@@ -79,3 +79,30 @@ test("shows a recovery action after an attendance history failure", () => {
   expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   expect(refetch).not.toHaveBeenCalled();
 });
+
+test("keeps holiday labels over stale absences in calendar views but preserves history in the list", async () => {
+  const today = new Date();
+  const holiday = Array.from(
+    { length: 7 },
+    (_, index) => new Date(today.getFullYear(), today.getMonth(), index + 1),
+  ).find((date) => date.getDay() !== 0 && date.getDay() !== 6);
+  const holidayKey = dateKey(holiday);
+  state.query.data = [
+    {
+      date: holidayKey,
+      status: "ABSENT",
+      check_in: null,
+      check_out: null,
+      working_duration: 0,
+    },
+  ];
+  state.holidays.data = [{ date: holidayKey, name: "Founders Day" }];
+  const user = userEvent.setup();
+  renderPage();
+
+  expect(screen.getByText("Founders Day")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Week" }));
+  expect(screen.getByText("Founders Day")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "List" }));
+  expect(screen.getByRole("row", { name: /Absent/ })).toBeInTheDocument();
+});
