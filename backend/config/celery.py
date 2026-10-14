@@ -1,4 +1,5 @@
 import os
+import tempfile
 
 from celery import Celery
 from celery.apps.worker import Worker as CeleryWorker
@@ -7,6 +8,10 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
 app = Celery("config")
 app.config_from_object("django.conf:settings", namespace="CELERY_")
+app.conf.beat_schedule_filename = os.environ.get(
+    "CELERY_BEAT_SCHEDULE_FILE",
+    os.path.join(tempfile.gettempdir(), "celerybeat-schedule"),
+)
 app.autodiscover_tasks()
 
 

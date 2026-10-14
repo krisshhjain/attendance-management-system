@@ -110,7 +110,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    command: python -m celery -A config beat -l info
+    command: python -m celery -A config beat -l info --schedule=/tmp/celerybeat-schedule
     profiles:
       - full
 
