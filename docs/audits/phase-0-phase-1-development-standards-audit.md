@@ -75,12 +75,12 @@ Tool versions: Python 3.10.11, pytest 9.0.3, Flake8 7.4.1, isort 9.0.2, Bandit 1
 
 ## SonarQube and hosted CI
 
-The restored base `088a7bbdebe52a7ecf8c6a3aa17428ecd932c5fc` has a successful GitHub Actions run: [38636547705](https://github.com/krisshhjain/attendance-management-system/actions/runs/38636547705), including the SonarQube Cloud analysis step. The workflow’s scanner-job success alone does not prove a Quality Gate result; the gate for the updated PR head is **not yet verified**.
+The restored base `088a7bbdebe52a7ecf8c6a3aa17428ecd932c5fc` has a successful GitHub Actions run: [38636547705](https://github.com/krisshhjain/attendance-management-system/actions/runs/38636547705). The updated PR head `e48a5bd7e426660410cec2d63b45ff6c5d99f0e2` also passed [GitHub Actions run 38642688405](https://github.com/krisshhjain/attendance-management-system/actions/runs/38642688405): backend checks, frontend build/tests, facial-recognition checks, and the SonarQube Cloud analysis action all completed successfully. The workflow does not wait for or report the Sonar Quality Gate, so that gate remains **unverified**.
 
 ## Remaining blockers
 
 1. Resolve the 936 E501 string-literal lines safely while preserving exact runtime values, especially HR Copilot prompts and SQL. No automatic rewrite or broad E501 suppression is acceptable. The safety reviewer rejected the attempted bulk rewrite; its rejection reason was that the rewrite could alter prompts/behavior and had previously caused syntax errors.
 2. Triage and resolve or explicitly accept the 2 CRITICAL and 19 HIGH backend image findings. Some appear tied to Debian base packages without a fix in the tested image; no unsupported suppressions were added.
-3. Rerun full security scans after backend image fixes, then wait for PR #19 CI and confirm the actual Sonar Quality Gate on the updated head.
+3. Rerun full security scans after backend image fixes and obtain the actual Sonar Quality Gate result for the updated head. The current PR CI run passed, but a successful scanner action is not a Quality Gate result.
 
 The branch contains actual lint, test, security triage, health-check, image, and SBOM changes. It is **not ready to merge** until the blockers above are reviewed and resolved or explicitly accepted.
