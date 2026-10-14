@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { Box, Collapse, IconButton, LinearProgress, Stack, Typography, useTheme } from "@mui/material";
+import {
+  Box,
+  Collapse,
+  IconButton,
+  LinearProgress,
+  Stack,
+  Typography,
+  useTheme,
+} from "@mui/material";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import ErrorRoundedIcon from "@mui/icons-material/ErrorRounded";
 import InfoRoundedIcon from "@mui/icons-material/InfoRounded";
@@ -35,7 +43,11 @@ function FeedbackToast({ notification, onClose }) {
   const close = () => setOpen(false);
 
   return (
-    <Collapse in={open} timeout={{ enter: 260, exit: 180 }} onExited={() => onClose(notification.id)}>
+    <Collapse
+      in={open}
+      timeout={{ enter: 260, exit: 180 }}
+      onExited={() => onClose(notification.id)}
+    >
       <Box
         role={notification.severity === "error" ? "alert" : "status"}
         tabIndex={0}
@@ -50,15 +62,21 @@ function FeedbackToast({ notification, onClose }) {
           borderRadius: 3,
           bgcolor: "background.paper",
           color: "text.primary",
-          boxShadow: theme.palette.mode === "dark"
-            ? "0 14px 38px rgba(0,0,0,.46)"
-            : "0 14px 38px rgba(15,23,42,.16)",
+          boxShadow:
+            theme.palette.mode === "dark"
+              ? "0 14px 38px rgba(0,0,0,.46)"
+              : "0 14px 38px rgba(15,23,42,.16)",
           outline: "none",
-          "&:focus-visible": { boxShadow: `0 0 0 3px ${theme.palette.primary.main}55, ${theme.palette.mode === "dark" ? "0 14px 38px rgba(0,0,0,.46)" : "0 14px 38px rgba(15,23,42,.16)"}` },
+          "&:focus-visible": {
+            boxShadow: `0 0 0 3px ${theme.palette.primary.main}55, ${theme.palette.mode === "dark" ? "0 14px 38px rgba(0,0,0,.46)" : "0 14px 38px rgba(15,23,42,.16)"}`,
+          },
         }}
       >
         <Stack direction="row" spacing={1.25} alignItems="flex-start" sx={{ p: 1.5 }}>
-          <Icon sx={{ color: COLORS[notification.severity], fontSize: 24, mt: 0.1 }} aria-hidden="true" />
+          <Icon
+            sx={{ color: COLORS[notification.severity], fontSize: 24, mt: 0.1 }}
+            aria-hidden="true"
+          />
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 800, lineHeight: 1.25 }}>
               {notification.title}
@@ -67,7 +85,12 @@ function FeedbackToast({ notification, onClose }) {
               {notification.message}
             </Typography>
           </Box>
-          <IconButton size="small" onClick={close} aria-label="Dismiss notification" sx={{ mt: -0.5, mr: -0.5 }}>
+          <IconButton
+            size="small"
+            onClick={close}
+            aria-label="Dismiss notification"
+            sx={{ mt: -0.5, mr: -0.5 }}
+          >
             <CloseRoundedIcon fontSize="small" />
           </IconButton>
         </Stack>
@@ -114,7 +137,11 @@ export function FeedbackToastHost({ notifications, onClose }) {
       }}
     >
       {notifications.map((notification) => (
-        <FeedbackToast key={getFeedbackKey(notification)} notification={notification} onClose={onClose} />
+        <FeedbackToast
+          key={getFeedbackKey(notification)}
+          notification={notification}
+          onClose={onClose}
+        />
       ))}
     </Box>
   );

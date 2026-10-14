@@ -9,7 +9,6 @@ export function getAdminAttendance(date) {
   return apiRequest(`/admin/attendance/${qs}`);
 }
 
-
 export function checkIn(locationData) {
   return apiRequest("/attendance/check-in/", {
     method: "POST",

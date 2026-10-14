@@ -1,12 +1,15 @@
-from django.test import TestCase
-from django.contrib.auth import get_user_model
-from django.db import IntegrityError
-from django.core.management import call_command, CommandError
 from io import StringIO
 from unittest.mock import patch
+
+from django.contrib.auth import get_user_model
+from django.core.management import CommandError, call_command
+from django.db import IntegrityError
+from django.test import TestCase
+
 from employees.models import Employee, FaceProfile
 
 User = get_user_model()
+
 
 class FaceProfileModelTests(TestCase):
     def setUp(self):
@@ -14,13 +17,13 @@ class FaceProfileModelTests(TestCase):
             email="test@example.com",
             password="password123",
             first_name="Test",
-            last_name="User"
+            last_name="User",
         )
         self.employee = Employee.objects.create(
             user=self.user,
             department="Engineering",
             employment_type="PERMANENT",
-            date_joined="2023-01-01"
+            date_joined="2023-01-01",
         )
         self.dummy_template = [0.1] * 512
 
@@ -32,7 +35,7 @@ class FaceProfileModelTests(TestCase):
             model_name="ArcFace",
             detector_backend="retinaface",
             version="1.0",
-            status="ACTIVE"
+            status="ACTIVE",
         )
         self.assertEqual(profile.employee, self.employee)
         self.assertEqual(profile.status, "ACTIVE")
@@ -41,14 +44,12 @@ class FaceProfileModelTests(TestCase):
     def test_one_to_one_constraint(self):
         """Test that an employee cannot have multiple FaceProfile rows (integrity error)."""
         FaceProfile.objects.create(
-            employee=self.employee,
-            face_template=self.dummy_template
+            employee=self.employee, face_template=self.dummy_template
         )
-        
+
         with self.assertRaises(IntegrityError):
             FaceProfile.objects.create(
-                employee=self.employee,
-                face_template=self.dummy_template
+                employee=self.employee, face_template=self.dummy_template
             )
 
     def test_update_existing_profile(self):
@@ -57,19 +58,19 @@ class FaceProfileModelTests(TestCase):
             employee=self.employee,
             defaults={
                 "face_template": self.dummy_template,
-                "status": "ACTIVE"
-            }
+                "status": "ACTIVE",
+            },
         )
         self.assertTrue(created)
-        
+
         new_template = [0.5] * 512
         profile2, created2 = FaceProfile.objects.update_or_create(
             employee=self.employee,
             defaults={
                 "face_template": new_template,
                 "status": "ACTIVE",
-                "version": "1.1"
-            }
+                "version": "1.1",
+            },
         )
         self.assertFalse(created2)
         self.assertEqual(profile.pk, profile2.pk)
@@ -104,7 +105,9 @@ class CredentialBootstrapCommandTests(TestCase):
 
     def test_bulk_reset_requires_confirmation_and_disables_passwords(self):
         user = User.objects.create_user(
-            email="bulk-reset@example.com", password="ExistingPassword123!", first_name=""
+            email="bulk-reset@example.com",
+            password="ExistingPassword123!",
+            first_name="",
         )
         Employee.objects.create(
             user=user,

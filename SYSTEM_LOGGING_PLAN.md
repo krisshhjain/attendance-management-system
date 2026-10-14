@@ -4,7 +4,7 @@
 
 This document is an inspection-based implementation plan only. No application code, migrations, frontend files, Docker files, packages, or Git state are changed by this phase.
 
-The repository has two frontend-looking trees. The active application relevant to the requested SuperUser page is `frontend/`, which uses TanStack Router, React, and the `SuperAdminLayout`/`Sidebar` pair. The root `src/` tree is a separate Tailwind/Figma-style application surface and is not the route tree used by `frontend/index.html`.
+The active application relevant to the requested SuperUser page is `frontend/`, which uses TanStack Router, React, and the `SuperAdminLayout`/`Sidebar` pair.
 
 ## 1. Current logging and audit mechanisms
 
@@ -304,7 +304,6 @@ Frontend, subject to the active app confirmation:
 - A new focused table/filter/detail component under `frontend/src/components/` if existing components cannot be reused.
 - `frontend/src/routeTree.gen.js` only through the route generation/build process; do not hand-edit generated output unless the project requires it.
 
-Do not modify the root `src/App.tsx` unless a later product decision confirms that tree is also a supported deployment target.
 
 ## 12. Risks and conflicts with existing audit systems
 
@@ -317,7 +316,7 @@ Do not modify the root `src/App.tsx` unless a later product decision confirms th
 7. **Background actor identity:** Tasks often have no human request user. Use `SYSTEM` actor role and task/request correlation IDs.
 8. **Proxy IP correctness:** `REMOTE_ADDR` is not automatically the real client IP. Establish trusted proxy configuration before recording IP addresses.
 9. **Export risk:** Large exports can exhaust memory or expose more detail than the table view. Use streaming or bounded asynchronous exports with the same authorization and redaction policy.
-10. **Frontend duplication:** `frontend/` and root `src/` have different structures. The deployment entrypoint must remain the source of truth for the page integration.
+10. **Frontend deployment entrypoint:** Keep deployment configuration pointed at `frontend/`, the attendance product application.
 11. **Existing unrelated worktree edits:** At audit time, unrelated changes exist in `backend/hr_copilot/services/semantic_interpreter.py`, `backend/hr_copilot/test_api.py`, `backend/hr_copilot/test_compact_context.py`, and `backend/hr_copilot/test_semantic_generalization.py`; this phase does not alter them.
 
 ## 13. Recommended implementation order
@@ -353,7 +352,6 @@ Do not modify the root `src/App.tsx` unless a later product decision confirms th
 - `frontend/src/routes/administration.jsx`, `hr-copilot.jsx`, `admin-regularization.jsx`, and related route files
 - `frontend/src/services/hrCopilotService.js`
 - `frontend/src/main.jsx` for theme conventions
-- Root `src/App.tsx` only to distinguish the separate frontend tree
 
 ### Existing logging mechanisms found
 

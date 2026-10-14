@@ -1,5 +1,18 @@
 import { useState } from "react";
-import { Dialog, DialogTitle, DialogContent, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Divider, Box, Typography, Button } from "@mui/material";
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  List,
+  ListItem,
+  ListItemAvatar,
+  Avatar,
+  ListItemText,
+  IconButton,
+  Divider,
+  Box,
+  Typography,
+} from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
@@ -41,71 +54,88 @@ function SuperAdminDashboard() {
   const hasScopedAttendanceData = Array.isArray(scopedAttendance);
 
   const presentRecords = scopedAttendance?.filter((record) => record.status === "PRESENT") || [];
-  const incompleteRecords = scopedAttendance?.filter((record) => record.status === "INCOMPLETE") || [];
+  const incompleteRecords =
+    scopedAttendance?.filter((record) => record.status === "INCOMPLETE") || [];
   const leaveRecords = scopedAttendance?.filter((record) => record.status === "LEAVE") || [];
-  
-  const presentEmails = new Set(presentRecords.map(r => r.employee));
-  const incompleteEmails = new Set(incompleteRecords.map(r => r.employee));
-  const leaveEmails = new Set(leaveRecords.map(r => r.employee));
 
-  const attendanceSummary = hasScopedAttendanceData ? {
-    present_today: presentRecords.length,
-    incomplete_today: incompleteRecords.length,
-    checked_in_today: scopedAttendance.filter((record) => record.check_in && !record.check_out).length,
-    completed_today: scopedAttendance.filter((record) => record.check_in && record.check_out).length,
-    on_leave: leaveRecords.length,
-  } : {};
+  const presentEmails = new Set(presentRecords.map((r) => r.employee));
+  const incompleteEmails = new Set(incompleteRecords.map((r) => r.employee));
+  const leaveEmails = new Set(leaveRecords.map((r) => r.employee));
 
-  const scopedData = data ? {
-    ...data,
-    ...(hasScopedEmployeeData ? {
-      total_employees: scopedEmployees.length,
-      active_employees: scopedEmployees.filter((employee) => employee.is_active).length,
-    } : {}),
-    ...(hasScopedAttendanceData ? attendanceSummary : {}),
-  } : data;
+  const attendanceSummary = hasScopedAttendanceData
+    ? {
+        present_today: presentRecords.length,
+        incomplete_today: incompleteRecords.length,
+        checked_in_today: scopedAttendance.filter((record) => record.check_in && !record.check_out)
+          .length,
+        completed_today: scopedAttendance.filter((record) => record.check_in && record.check_out)
+          .length,
+        on_leave: leaveRecords.length,
+      }
+    : {};
+
+  const scopedData = data
+    ? {
+        ...data,
+        ...(hasScopedEmployeeData
+          ? {
+              total_employees: scopedEmployees.length,
+              active_employees: scopedEmployees.filter((employee) => employee.is_active).length,
+            }
+          : {}),
+        ...(hasScopedAttendanceData ? attendanceSummary : {}),
+      }
+    : data;
 
   const totalEmployees = scopedData?.total_employees || 0;
   const presentToday = scopedData?.present_today || 0;
   const incompleteToday = scopedData?.incomplete_today || 0;
   const onLeave = scopedData?.on_leave || 0;
-  
+
   const isWorkingDay = scopedData?.is_working_day ?? true;
-  const absentToday = isWorkingDay ? Math.max(0, totalEmployees - presentToday - incompleteToday - onLeave) : 0;
+  const absentToday = isWorkingDay
+    ? Math.max(0, totalEmployees - presentToday - incompleteToday - onLeave)
+    : 0;
 
   const getEmployeeName = (emp) => {
-    if (typeof emp === 'string') return emp;
-    if (emp?.first_name) return `${emp.first_name} ${emp.last_name || ''}`.trim();
-    if (emp?.user?.first_name) return `${emp.user.first_name} ${emp.user.last_name || ''}`.trim();
-    return emp?.user?.email || emp?.email || 'Unknown';
+    if (typeof emp === "string") return emp;
+    if (emp?.first_name) return `${emp.first_name} ${emp.last_name || ""}`.trim();
+    if (emp?.user?.first_name) return `${emp.user.first_name} ${emp.user.last_name || ""}`.trim();
+    return emp?.user?.email || emp?.email || "Unknown";
   };
 
   const getUserList = (type) => {
     if (type === "PRESENT") {
-      return presentRecords.map(r => ({
+      return presentRecords.map((r) => ({
         name: r.employee_name || r.employee,
         email: r.employee,
-        dept: r.section || "---"
+        dept: r.section || "---",
       }));
     } else if (type === "INCOMPLETE") {
-      return incompleteRecords.map(r => ({
+      return incompleteRecords.map((r) => ({
         name: r.employee_name || r.employee,
         email: r.employee,
-        dept: r.section || "---"
+        dept: r.section || "---",
       }));
     } else if (type === "LEAVE") {
-      return leaveRecords.map(r => ({
+      return leaveRecords.map((r) => ({
         name: r.employee_name || r.employee,
         email: r.employee,
-        dept: r.section || "---"
+        dept: r.section || "---",
       }));
     } else if (type === "ABSENT") {
+      if (!isWorkingDay) return [];
       return scopedEmployees
-        .filter(e => !presentEmails.has(e.user?.email) && !incompleteEmails.has(e.user?.email) && !leaveEmails.has(e.user?.email))
-        .map(e => ({
+        .filter(
+          (e) =>
+            !presentEmails.has(e.user?.email) &&
+            !incompleteEmails.has(e.user?.email) &&
+            !leaveEmails.has(e.user?.email),
+        )
+        .map((e) => ({
           name: getEmployeeName(e),
           email: e.user?.email,
-          dept: e.section || "---"
+          dept: e.section || "---",
         }));
     }
     return [];
@@ -119,7 +149,10 @@ function SuperAdminDashboard() {
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a" }}>
+          <Typography
+            variant="h5"
+            sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a" }}
+          >
             Overview
           </Typography>
           <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5 }}>
@@ -127,17 +160,65 @@ function SuperAdminDashboard() {
           </Typography>
         </Box>
       </Box>
-      
-      {loginType === "systemadmin" && <OrganizationScopeFilters user={user} employees={employeeRecords} />}
-      
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)", lg: "repeat(5, 1fr)" }, gap: 3 }}>
-        <StatCard title="Total Employees" value={totalEmployees} icon={<PeopleIcon fontSize="small" />} colorClass="primary" subtitle="Across all departments" onClick={() => navigate({ to: "/employees" })} />
-        <StatCard title="Present Today" value={presentToday} icon={<CheckCircleOutlineIcon fontSize="small" />} colorClass="success" subtitle="Completed shift" onClick={() => handleOpenModal("Present Today", "PRESENT")} />
-        <StatCard title="Incomplete" value={incompleteToday} icon={<AccessTimeIcon fontSize="small" />} colorClass="info" subtitle="Currently checked in" onClick={() => handleOpenModal("Incomplete Today", "INCOMPLETE")} />
-        <StatCard title="Absent Today" value={absentToday} icon={<PersonOffOutlinedIcon fontSize="small" />} colorClass="error" subtitle="Not arrived yet" onClick={() => handleOpenModal("Absent Today", "ABSENT")} />
-        <StatCard title="On Leave" value={onLeave} icon={<BusinessCenterOutlinedIcon fontSize="small" />} colorClass="warning" subtitle="Approved leaves today" onClick={() => handleOpenModal("On Leave Today", "LEAVE")} />
+
+      {loginType === "systemadmin" && (
+        <OrganizationScopeFilters user={user} employees={employeeRecords} />
+      )}
+
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm: "repeat(2, 1fr)",
+            md: "repeat(3, 1fr)",
+            lg: "repeat(5, 1fr)",
+          },
+          gap: 3,
+        }}
+      >
+        <StatCard
+          title="Total Employees"
+          value={totalEmployees}
+          icon={<PeopleIcon fontSize="small" />}
+          colorClass="primary"
+          subtitle="Across all departments"
+          onClick={() => navigate({ to: "/employees" })}
+        />
+        <StatCard
+          title="Present Today"
+          value={presentToday}
+          icon={<CheckCircleOutlineIcon fontSize="small" />}
+          colorClass="success"
+          subtitle="Completed shift"
+          onClick={() => handleOpenModal("Present Today", "PRESENT")}
+        />
+        <StatCard
+          title="Incomplete"
+          value={incompleteToday}
+          icon={<AccessTimeIcon fontSize="small" />}
+          colorClass="info"
+          subtitle="Currently checked in"
+          onClick={() => handleOpenModal("Incomplete Today", "INCOMPLETE")}
+        />
+        <StatCard
+          title="Absent Today"
+          value={absentToday}
+          icon={<PersonOffOutlinedIcon fontSize="small" />}
+          colorClass="error"
+          subtitle="Not arrived yet"
+          onClick={() => handleOpenModal("Absent Today", "ABSENT")}
+        />
+        <StatCard
+          title="On Leave"
+          value={onLeave}
+          icon={<BusinessCenterOutlinedIcon fontSize="small" />}
+          colorClass="warning"
+          subtitle="Approved leaves today"
+          onClick={() => handleOpenModal("On Leave Today", "LEAVE")}
+        />
       </Box>
-      
+
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 2fr 1fr" }, gap: 3 }}>
         <AttendanceChart data={scopedData} />
         <WeeklyTrendChart />
@@ -145,25 +226,42 @@ function SuperAdminDashboard() {
       </Box>
 
       <Box sx={{ mt: 1 }}>
-        <LatestAttendanceTable records={(scopedAttendance || []).map(record => {
-          const emp = scopedEmployees.find(e => e.user?.email === record.employee || e.email === record.employee || e.id === record.employee);
-          return {
-            ...record,
-            employee_name: emp ? getEmployeeName(emp) : (record.employee_name || record.employee)
-          };
-        })} />
+        <LatestAttendanceTable
+          records={(scopedAttendance || []).map((record) => {
+            const emp = scopedEmployees.find(
+              (e) =>
+                e.user?.email === record.employee ||
+                e.email === record.employee ||
+                e.id === record.employee,
+            );
+            return {
+              ...record,
+              employee_name: emp ? getEmployeeName(emp) : record.employee_name || record.employee,
+            };
+          })}
+        />
       </Box>
 
-      <Dialog 
-        open={modalState.open} 
+      <Dialog
+        open={modalState.open}
         onClose={() => setModalState({ ...modalState, open: false })}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: "16px", boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)" } }}
+        PaperProps={{
+          sx: { borderRadius: "16px", boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)" },
+        }}
       >
-        <DialogTitle sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, color: "#0f172a" }}>{modalState.title}</Typography>
-          <IconButton onClick={() => setModalState({ ...modalState, open: false })} size="small" sx={{ color: "#64748b" }}>
+        <DialogTitle
+          sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", pb: 1 }}
+        >
+          <Typography component="span" variant="h6" sx={{ fontWeight: 700, color: "#0f172a" }}>
+            {modalState.title}
+          </Typography>
+          <IconButton
+            onClick={() => setModalState({ ...modalState, open: false })}
+            size="small"
+            sx={{ color: "#64748b" }}
+          >
             <CloseIcon />
           </IconButton>
         </DialogTitle>
@@ -176,15 +274,33 @@ function SuperAdminDashboard() {
               </Box>
             ) : (
               getUserList(modalState.type).map((u, i) => (
-                <ListItem key={i} divider={i < getUserList(modalState.type).length - 1} sx={{ px: 3, py: 1.5 }}>
+                <ListItem
+                  key={i}
+                  divider={i < getUserList(modalState.type).length - 1}
+                  sx={{ px: 3, py: 1.5 }}
+                >
                   <ListItemAvatar>
-                    <Avatar sx={{ bgcolor: "primary.light", color: "primary.main", fontWeight: 600, width: 40, height: 40 }}>
+                    <Avatar
+                      sx={{
+                        bgcolor: "primary.light",
+                        color: "primary.main",
+                        fontWeight: 600,
+                        width: 40,
+                        height: 40,
+                      }}
+                    >
                       {u.name.charAt(0).toUpperCase()}
                     </Avatar>
                   </ListItemAvatar>
-                  <ListItemText 
-                    primary={<Typography sx={{ fontWeight: 600, color: "#1e293b", fontSize: "14px" }}>{u.name}</Typography>}
-                    secondary={<Typography sx={{ fontSize: "13px", color: "#64748b" }}>{u.dept}</Typography>}
+                  <ListItemText
+                    primary={
+                      <Typography sx={{ fontWeight: 600, color: "#1e293b", fontSize: "14px" }}>
+                        {u.name}
+                      </Typography>
+                    }
+                    secondary={
+                      <Typography sx={{ fontSize: "13px", color: "#64748b" }}>{u.dept}</Typography>
+                    }
                   />
                 </ListItem>
               ))
@@ -212,9 +328,14 @@ function EmployeeDashboard() {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <WelcomeHeader />
-      
+
       <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <TodayAttendanceWidget data={data} loading={isLoading} loadError={isError} reloadData={refetch} />
+        <TodayAttendanceWidget
+          data={data}
+          loading={isLoading}
+          loadError={isError}
+          reloadData={refetch}
+        />
         <WeeklyAttendanceTrack todayData={data} />
         <UpcomingHolidays />
         <RecentAttendance />
@@ -236,14 +357,27 @@ function DashboardComponent() {
     }
     if (user?.is_staff) {
       return (
-        <Box sx={{ p: 4, textAlign: "center", bgcolor: "white", borderRadius: 4, border: "1px solid", borderColor: "divider" }}>
-          <Typography variant="h5" fontWeight={600} gutterBottom>Admin Dashboard</Typography>
-          <Typography color="text.secondary">This view is coming soon. Please check back later.</Typography>
+        <Box
+          sx={{
+            p: 4,
+            textAlign: "center",
+            bgcolor: "white",
+            borderRadius: 4,
+            border: "1px solid",
+            borderColor: "divider",
+          }}
+        >
+          <Typography variant="h5" fontWeight={600} gutterBottom>
+            Admin Dashboard
+          </Typography>
+          <Typography color="text.secondary">
+            This view is coming soon. Please check back later.
+          </Typography>
         </Box>
       );
     }
   }
-  
+
   return <EmployeeDashboard />;
 }
 
@@ -253,7 +387,10 @@ export const Route = createFileRoute("/dashboard")({
       { title: "Dashboard — AttendPro" },
       { name: "description", content: "Overview of your daily attendance and recent activity." },
       { property: "og:title", content: "Dashboard — AttendPro" },
-      { property: "og:description", content: "Overview of your daily attendance and recent activity." },
+      {
+        property: "og:description",
+        content: "Overview of your daily attendance and recent activity.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

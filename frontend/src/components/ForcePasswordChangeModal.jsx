@@ -84,7 +84,12 @@ export function ForcePasswordChangeModal({ open }) {
           <LockResetIcon />
         </Box>
         <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: "-0.5px" }}>
+          <Typography
+            component="span"
+            variant="h6"
+            fontWeight={700}
+            sx={{ letterSpacing: "-0.5px" }}
+          >
             First-Time Password Setup
           </Typography>
           <Typography variant="caption" color="text.secondary">
@@ -96,7 +101,8 @@ export function ForcePasswordChangeModal({ open }) {
       <Box component="form" onSubmit={handleSubmit}>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Since this is your first time logging in (or your password was recently reset), please choose a new secure password for your account.
+            Since this is your first time logging in (or your password was recently reset), please
+            choose a new secure password for your account.
           </Typography>
 
           {error && (
@@ -141,7 +147,9 @@ export function ForcePasswordChangeModal({ open }) {
           />
         </DialogContent>
 
-        <DialogActions sx={{ px: 3, pb: 2, pt: 1, display: "flex", justifyContent: "space-between" }}>
+        <DialogActions
+          sx={{ px: 3, pb: 2, pt: 1, display: "flex", justifyContent: "space-between" }}
+        >
           <Button
             onClick={() => logout()}
             disabled={loading}

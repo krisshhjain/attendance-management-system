@@ -1,10 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchActiveHolidays } from "../lib/api.js";
 import { localDateKey } from "./holidayDateUtils.js";
-export { classifyDate, formatHolidayDate, indexActiveHolidays, localDateKey } from "./holidayDateUtils.js";
+export {
+  classifyDate,
+  formatHolidayDate,
+  indexActiveHolidays,
+  localDateKey,
+} from "./holidayDateUtils.js";
 
 export function useActiveHolidays() {
-  return useQuery({ queryKey: ["holidays", "active"], queryFn: fetchActiveHolidays, staleTime: 5 * 60 * 1000 });
+  return useQuery({
+    queryKey: ["holidays", "active"],
+    queryFn: fetchActiveHolidays,
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 export function useUpcomingHolidays() {

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
+import { LeaveDocumentPreviewDialog } from "../components/LeaveDocumentPreviewDialog.jsx";
 import {
   Box,
   Typography,
@@ -36,16 +37,11 @@ import AttachFileIcon from "@mui/icons-material/AttachFile";
 import AttachmentIcon from "@mui/icons-material/Attachment";
 import CloseIcon from "@mui/icons-material/Close";
 import EventBusyIcon from "@mui/icons-material/EventBusy";
-import BeachAccessIcon from "@mui/icons-material/BeachAccess";
-import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import CancelIcon from "@mui/icons-material/Cancel";
 import InfoIcon from "@mui/icons-material/Info";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorIcon from "@mui/icons-material/Error";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import DownloadIcon from "@mui/icons-material/Download";
-import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import {
   apiRequest,
   fetchLeaveBalances,
@@ -109,7 +105,8 @@ function LeaveBalanceCard({ balance }) {
   const carried = balance.carried_forward ?? 0;
 
   const totalPossible = entitlement + carried;
-  const percentage = totalPossible > 0 ? Math.min(100, Math.round((used / totalPossible) * 100)) : 0;
+  const percentage =
+    totalPossible > 0 ? Math.min(100, Math.round((used / totalPossible) * 100)) : 0;
 
   return (
     <Paper
@@ -134,7 +131,16 @@ function LeaveBalanceCard({ balance }) {
     >
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <Box>
-          <Typography variant="body2" sx={{ color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", fontSize: "0.75rem" }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: "#64748b",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              fontSize: "0.75rem",
+            }}
+          >
             {balance.leave_type_name}
           </Typography>
           <Typography variant="caption" sx={{ color: "#94a3b8" }}>
@@ -150,7 +156,9 @@ function LeaveBalanceCard({ balance }) {
       </Box>
 
       <Box sx={{ my: 0.5 }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", mb: 0.5 }}>
+        <Box
+          sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", mb: 0.5 }}
+        >
           <Typography variant="h4" sx={{ fontWeight: 700, color: "#4f46e5" }}>
             {available}
           </Typography>
@@ -177,19 +185,33 @@ function LeaveBalanceCard({ balance }) {
         />
       </Box>
 
-      <Box sx={{ display: "flex", gap: 2, pt: 1, borderTop: "1px solid #f1f5f9", fontSize: "0.75rem" }}>
+      <Box
+        sx={{ display: "flex", gap: 2, pt: 1, borderTop: "1px solid #f1f5f9", fontSize: "0.75rem" }}
+      >
         <Box>
-          <Typography variant="caption" sx={{ color: "#64748b" }}>Used: </Typography>
-          <Typography variant="caption" sx={{ fontWeight: 600, color: "#0f172a" }}>{used}</Typography>
+          <Typography variant="caption" sx={{ color: "#64748b" }}>
+            Used:{" "}
+          </Typography>
+          <Typography variant="caption" sx={{ fontWeight: 600, color: "#0f172a" }}>
+            {used}
+          </Typography>
         </Box>
         <Box>
-          <Typography variant="caption" sx={{ color: "#64748b" }}>Pending: </Typography>
-          <Typography variant="caption" sx={{ fontWeight: 600, color: "#d97706" }}>{pending}</Typography>
+          <Typography variant="caption" sx={{ color: "#64748b" }}>
+            Pending:{" "}
+          </Typography>
+          <Typography variant="caption" sx={{ fontWeight: 600, color: "#d97706" }}>
+            {pending}
+          </Typography>
         </Box>
         {carried > 0 && (
           <Box>
-            <Typography variant="caption" sx={{ color: "#64748b" }}>Carried: </Typography>
-            <Typography variant="caption" sx={{ fontWeight: 600, color: "#0f172a" }}>{carried}</Typography>
+            <Typography variant="caption" sx={{ color: "#64748b" }}>
+              Carried:{" "}
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: "#0f172a" }}>
+              {carried}
+            </Typography>
           </Box>
         )}
       </Box>
@@ -233,34 +255,17 @@ function Leave() {
 
   // Remarks modal
   const [remarksModal, setRemarksModal] = useState({ open: false, title: "", text: "" });
-  
+
   // Cancellation modal
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, status: "" });
-  
+
   // Document preview modal
-  const [documentModal, setDocumentModal] = useState({ open: false, url: "", title: "", fileName: "" });
-
-  const handleDownloadFile = (url, fileName) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName || 'document';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const getFileExtension = (url) => {
-    return url.split('.').pop().toLowerCase();
-  };
-
-  const isImageFile = (url) => {
-    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
-    return imageExtensions.includes(getFileExtension(url));
-  };
-
-  const isPdfFile = (url) => {
-    return getFileExtension(url) === 'pdf';
-  };
+  const [documentModal, setDocumentModal] = useState({
+    open: false,
+    url: "",
+    title: "",
+    fileName: "",
+  });
 
   const loadData = async () => {
     setLoading(true);
@@ -293,7 +298,10 @@ function Leave() {
       .then((data) => setEmployees(Array.isArray(data) ? data : []))
       .catch((loadError) => {
         setEmployees([]);
-        notifyError(loadError, { title: "Employee list unavailable", fallback: "Could not load employees for scope filtering." });
+        notifyError(loadError, {
+          title: "Employee list unavailable",
+          fallback: "Could not load employees for scope filtering.",
+        });
       });
   }, [loginType, notifyError]);
 
@@ -345,15 +353,15 @@ function Leave() {
         setFormError("File size must be less than 5MB.");
         return;
       }
-      
+
       // Validate file type
-      const allowedTypes = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'];
-      const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+      const allowedTypes = [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"];
+      const fileExtension = "." + file.name.split(".").pop().toLowerCase();
       if (!allowedTypes.includes(fileExtension)) {
         setFormError("File type not allowed. Please upload PDF, JPG, PNG, DOC, or DOCX files.");
         return;
       }
-      
+
       setAttachmentFile(file);
       setFormError(null);
     }
@@ -377,10 +385,10 @@ function Leave() {
     }
 
     // Check if document is required for selected leave type
-    const selectedType = leaveTypes.find(t => t.id === leaveTypeId);
-    const selectedBalance = balances.find(b => b.leave_type_id === leaveTypeId);
+    const selectedType = leaveTypes.find((t) => t.id === leaveTypeId);
+    const selectedBalance = balances.find((b) => b.leave_type_id === leaveTypeId);
     const requiresDocument = selectedType?.requires_document || selectedBalance?.requires_document;
-    
+
     if (requiresDocument && !attachment.trim() && !attachmentFile) {
       setFormError("Supporting document is required for this leave type.");
       return;
@@ -389,7 +397,7 @@ function Leave() {
     setSubmitting(true);
     try {
       let attachmentUrl = attachment.trim();
-      
+
       // Upload file if provided
       if (attachmentFile) {
         setUploading(true);
@@ -397,7 +405,10 @@ function Leave() {
           const uploadResponse = await uploadFile(attachmentFile);
           attachmentUrl = uploadResponse.file_url;
         } catch (uploadError) {
-          notifyError(uploadError, { title: "Attachment upload failed", fallback: "Failed to upload the attachment." });
+          notifyError(uploadError, {
+            title: "Attachment upload failed",
+            fallback: "Failed to upload the attachment.",
+          });
           return;
         } finally {
           setUploading(false);
@@ -433,18 +444,22 @@ function Leave() {
       success("Leave request cancelled successfully.");
       await loadData();
     } catch (err) {
-      notifyError(err, { title: "Leave cancellation failed", fallback: "Failed to cancel the leave request." });
+      notifyError(err, {
+        title: "Leave cancellation failed",
+        fallback: "Failed to cancel the leave request.",
+      });
     } finally {
       setCancelModal({ open: false, id: null, status: "" });
     }
   };
 
-  const scopedRequests = loginType === "systemadmin" && (selectedScope.sectionId || selectedScope.subsectionId)
-    ? requests.filter((request) => {
-      const employee = employees.find((item) => item.email === request.employee_email);
-      return employee && filterScopedRecords([employee], selectedScope).length > 0;
-    })
-    : requests;
+  const scopedRequests =
+    loginType === "systemadmin" && (selectedScope.sectionId || selectedScope.subsectionId)
+      ? requests.filter((request) => {
+          const employee = employees.find((item) => item.email === request.employee_email);
+          return employee && filterScopedRecords([employee], selectedScope).length > 0;
+        })
+      : requests;
   const filteredRequests = scopedRequests.filter((r) => {
     if (statusFilter === "ALL") return true;
     return r.status === statusFilter;
@@ -456,7 +471,15 @@ function Leave() {
     <RequireAuth>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
         {/* Top Bar */}
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 2 }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            gap: 2,
+          }}
+        >
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px" }}>
               Leave Management
@@ -492,11 +515,27 @@ function Leave() {
               <CircularProgress size={32} />
             </Box>
           ) : balances.length === 0 ? (
-            <Paper sx={{ p: 3, borderRadius: 3, border: "1px dashed", borderColor: "divider", textAlign: "center" }}>
-              <Typography color="text.secondary">No active leave balances available for your profile.</Typography>
+            <Paper
+              sx={{
+                p: 3,
+                borderRadius: 3,
+                border: "1px dashed",
+                borderColor: "divider",
+                textAlign: "center",
+              }}
+            >
+              <Typography color="text.secondary">
+                No active leave balances available for your profile.
+              </Typography>
             </Paper>
           ) : (
-            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" }, gap: 2 }}>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" },
+                gap: 2,
+              }}
+            >
               {balances.map((bal) => (
                 <LeaveBalanceCard key={bal.leave_type_id} balance={bal} />
               ))}
@@ -505,8 +544,28 @@ function Leave() {
         </Box>
 
         {/* Leave Requests Table */}
-        <Paper sx={{ borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none", overflow: "hidden" }}>
-          <Box sx={{ px: 3, py: 2, borderBottom: "1px solid", borderColor: "divider", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 1.5 }}>
+        <Paper
+          sx={{
+            borderRadius: 3,
+            border: "1px solid",
+            borderColor: "divider",
+            boxShadow: "none",
+            overflow: "hidden",
+          }}
+        >
+          <Box
+            sx={{
+              px: 3,
+              py: 2,
+              borderBottom: "1px solid",
+              borderColor: "divider",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 1.5,
+            }}
+          >
             <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
               My Requests
             </Typography>
@@ -531,7 +590,17 @@ function Leave() {
               <CircularProgress size={32} />
             </Box>
           ) : filteredRequests.length === 0 ? (
-            <Box sx={{ p: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "text.secondary", gap: 1 }}>
+            <Box
+              sx={{
+                p: 6,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "text.secondary",
+                gap: 1,
+              }}
+            >
               <EventBusyIcon sx={{ fontSize: 48, color: "action.disabled" }} />
               <Typography variant="body1" fontWeight={600} color="text.primary">
                 No leave requests found
@@ -552,7 +621,9 @@ function Leave() {
                     <TableCell sx={{ fontWeight: 700 }}>Reason</TableCell>
                     <TableCell sx={{ fontWeight: 700 }}>Attachment</TableCell>
                     <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
+                      Actions
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -568,7 +639,9 @@ function Leave() {
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" fontWeight={500}>
-                          {req.start_date === req.end_date ? req.start_date : `${req.start_date} → ${req.end_date}`}
+                          {req.start_date === req.end_date
+                            ? req.start_date
+                            : `${req.start_date} → ${req.end_date}`}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -598,31 +671,33 @@ function Leave() {
                               variant="text"
                               color="primary"
                               onClick={() => {
-                                if (req.attachment.startsWith('http')) {
+                                if (req.attachment.startsWith("http")) {
                                   setDocumentModal({
                                     open: true,
                                     url: req.attachment,
                                     title: `Document for ${req.leave_type_name} Leave`,
-                                    fileName: req.attachment.split('/').pop() || 'document'
+                                    fileName: req.attachment.split("/").pop() || "document",
                                   });
                                 } else {
-                                  const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://127.0.0.1:8000';
-                                  const fullUrl = req.attachment.startsWith('/') ? 
-                                    `${baseUrl}${req.attachment}` : 
-                                    req.attachment;
+                                  const baseUrl =
+                                    import.meta.env.VITE_API_BASE_URL?.replace("/api", "") ||
+                                    "http://127.0.0.1:8000";
+                                  const fullUrl = req.attachment.startsWith("/")
+                                    ? `${baseUrl}${req.attachment}`
+                                    : req.attachment;
                                   setDocumentModal({
                                     open: true,
                                     url: fullUrl,
                                     title: `Document for ${req.leave_type_name} Leave`,
-                                    fileName: req.attachment.split('/').pop() || 'document'
+                                    fileName: req.attachment.split("/").pop() || "document",
                                   });
                                 }
                               }}
-                              sx={{ 
-                                p: 0, 
-                                minWidth: 'auto', 
-                                textTransform: 'none',
-                                fontSize: '0.7rem'
+                              sx={{
+                                p: 0,
+                                minWidth: "auto",
+                                textTransform: "none",
+                                fontSize: "0.7rem",
                               }}
                             >
                               View Document
@@ -644,7 +719,13 @@ function Leave() {
                               <IconButton
                                 size="small"
                                 color="info"
-                                onClick={() => setRemarksModal({ open: true, title: `Remarks for ${req.leave_type_name}`, text: req.reviewer_remarks })}
+                                onClick={() =>
+                                  setRemarksModal({
+                                    open: true,
+                                    title: `Remarks for ${req.leave_type_name}`,
+                                    text: req.reviewer_remarks,
+                                  })
+                                }
                               >
                                 <InfoIcon fontSize="small" />
                               </IconButton>
@@ -656,7 +737,12 @@ function Leave() {
                               color="error"
                               variant="outlined"
                               onClick={() => handleCancelRequest(req.id, req.status)}
-                              sx={{ borderRadius: 1.5, textTransform: "none", fontSize: "0.75rem", py: 0.3 }}
+                              sx={{
+                                borderRadius: 1.5,
+                                textTransform: "none",
+                                fontSize: "0.75rem",
+                                py: 0.3,
+                              }}
                             >
                               Cancel
                             </Button>
@@ -673,7 +759,14 @@ function Leave() {
 
         {/* Apply Leave Modal */}
         <Dialog open={openModal} onClose={handleCloseModal} maxWidth="sm" fullWidth>
-          <DialogTitle sx={{ fontWeight: 700, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <DialogTitle
+            sx={{
+              fontWeight: 700,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
             Apply for Leave
             <IconButton size="small" onClick={handleCloseModal}>
               <CloseIcon />
@@ -706,7 +799,8 @@ function Leave() {
                     label="Start Date"
                     value={startDate}
                     onChange={(e) => {
-                      const nextStartDate = e.target.value < todayDateString ? todayDateString : e.target.value;
+                      const nextStartDate =
+                        e.target.value < todayDateString ? todayDateString : e.target.value;
                       setStartDate(nextStartDate);
                       if (!endDate || endDate < nextStartDate) {
                         setEndDate(nextStartDate);
@@ -738,12 +832,12 @@ function Leave() {
                 <FormLabel component="legend" sx={{ fontSize: "0.85rem", fontWeight: 600 }}>
                   Day Type
                 </FormLabel>
-                <RadioGroup
-                  row
-                  value={dayType}
-                  onChange={(e) => setDayType(e.target.value)}
-                >
-                  <FormControlLabel value="FULL_DAY" control={<Radio size="small" />} label="Full Day" />
+                <RadioGroup row value={dayType} onChange={(e) => setDayType(e.target.value)}>
+                  <FormControlLabel
+                    value="FULL_DAY"
+                    control={<Radio size="small" />}
+                    label="Full Day"
+                  />
                   <FormControlLabel
                     value="FIRST_HALF"
                     control={<Radio size="small" />}
@@ -760,12 +854,29 @@ function Leave() {
               </FormControl>
 
               {/* Estimated Duration Preview */}
-              <Box sx={{ p: 2, borderRadius: 2, bgcolor: "rgba(125, 37, 169, 0.05)", border: "1px solid", borderColor: "rgba(125, 37, 169, 0.2)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor: "rgba(125, 37, 169, 0.05)",
+                  border: "1px solid",
+                  borderColor: "rgba(125, 37, 169, 0.2)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
                 <Typography variant="body2" fontWeight={600} color="text.secondary">
                   Estimated Working Duration:
                 </Typography>
                 <Typography variant="body1" fontWeight={700} color="primary.main">
-                  {estimating ? <CircularProgress size={16} /> : estimatedDuration !== null ? `${estimatedDuration} working day(s)` : "--"}
+                  {estimating ? (
+                    <CircularProgress size={16} />
+                  ) : estimatedDuration !== null ? (
+                    `${estimatedDuration} working day(s)`
+                  ) : (
+                    "--"
+                  )}
                 </Typography>
               </Box>
 
@@ -783,21 +894,22 @@ function Leave() {
               {/* Supporting Document Section */}
               <Box>
                 {(() => {
-                  const selectedType = leaveTypes.find(t => t.id === leaveTypeId);
-                  const selectedBalance = balances.find(b => b.leave_type_id === leaveTypeId);
-                  const requiresDocument = selectedType?.requires_document || selectedBalance?.requires_document;
-                  
+                  const selectedType = leaveTypes.find((t) => t.id === leaveTypeId);
+                  const selectedBalance = balances.find((b) => b.leave_type_id === leaveTypeId);
+                  const requiresDocument =
+                    selectedType?.requires_document || selectedBalance?.requires_document;
+
                   return (
                     <>
                       <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
                         Supporting Document {requiresDocument ? "(Required)" : "(Optional)"}
                       </Typography>
-                      
+
                       {/* File Upload */}
                       <Box sx={{ mb: 2 }}>
                         <input
                           accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                          style={{ display: 'none' }}
+                          style={{ display: "none" }}
                           id="attachment-file-input"
                           type="file"
                           onChange={handleFileChange}
@@ -819,7 +931,7 @@ function Leave() {
                           </Typography>
                         )}
                       </Box>
-                      
+
                       {/* URL Input as alternative */}
                       <TextField
                         fullWidth
@@ -829,9 +941,13 @@ function Leave() {
                         placeholder="Enter document URL or notes..."
                         size="small"
                       />
-                      
+
                       {requiresDocument && (
-                        <Typography variant="caption" color="warning.main" sx={{ mt: 0.5, display: 'block' }}>
+                        <Typography
+                          variant="caption"
+                          color="warning.main"
+                          sx={{ mt: 0.5, display: "block" }}
+                        >
                           This leave type requires supporting documentation.
                         </Typography>
                       )}
@@ -844,7 +960,12 @@ function Leave() {
               <Button onClick={handleCloseModal} color="inherit">
                 Cancel
               </Button>
-              <Button type="submit" variant="contained" color="primary" disabled={submitting || uploading}>
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                disabled={submitting || uploading}
+              >
                 {uploading ? (
                   <>
                     <CircularProgress size={16} sx={{ mr: 1 }} />
@@ -864,17 +985,25 @@ function Leave() {
         </Dialog>
 
         {/* Cancellation Confirmation Modal */}
-        <Dialog open={cancelModal.open} onClose={() => setCancelModal({ open: false, id: null, status: "" })} maxWidth="xs" fullWidth>
+        <Dialog
+          open={cancelModal.open}
+          onClose={() => setCancelModal({ open: false, id: null, status: "" })}
+          maxWidth="xs"
+          fullWidth
+        >
           <DialogTitle sx={{ fontWeight: 700 }}>Confirm Cancellation</DialogTitle>
           <DialogContent>
             <Typography>
-              {cancelModal.status === "APPROVED" 
-                ? "Are you sure you want to cancel this approved leave?" 
+              {cancelModal.status === "APPROVED"
+                ? "Are you sure you want to cancel this approved leave?"
                 : "Are you sure you want to cancel this pending leave request?"}
             </Typography>
           </DialogContent>
           <DialogActions sx={{ px: 3, py: 2 }}>
-            <Button onClick={() => setCancelModal({ open: false, id: null, status: "" })} sx={{ borderRadius: 1.5, fontWeight: 600 }}>
+            <Button
+              onClick={() => setCancelModal({ open: false, id: null, status: "" })}
+              sx={{ borderRadius: 1.5, fontWeight: 600 }}
+            >
               Close
             </Button>
             <Button
@@ -888,213 +1017,27 @@ function Leave() {
           </DialogActions>
         </Dialog>
 
-        {/* Document Preview Modal */}
-        <Dialog 
-          open={documentModal.open} 
-          onClose={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })} 
-          maxWidth="lg" 
-          fullWidth
-          PaperProps={{
-            sx: { height: '90vh', maxHeight: '90vh' }
-          }}
-        >
-          <DialogTitle sx={{ 
-            fontWeight: 700, 
-            display: "flex", 
-            justifyContent: "space-between", 
-            alignItems: "center",
-            borderBottom: 1,
-            borderColor: 'divider'
-          }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <AttachmentIcon color="primary" />
-              <Typography variant="h6" component="span">
-                {documentModal.title}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Tooltip title="Download Document">
-                <IconButton 
-                  size="small" 
-                  color="primary"
-                  onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
-                >
-                  <DownloadIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Open in New Tab">
-                <IconButton 
-                  size="small" 
-                  color="primary"
-                  onClick={() => window.open(documentModal.url, '_blank')}
-                >
-                  <OpenInNewIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Fullscreen">
-                <IconButton 
-                  size="small" 
-                  color="primary"
-                  onClick={async () => {
-                    const elem = document.querySelector('[data-document-preview]');
-                    if (elem && elem.requestFullscreen) {
-                      try {
-                        await elem.requestFullscreen();
-                      } catch (fullscreenError) {
-                        notifyError(fullscreenError, {
-                          title: "Fullscreen unavailable",
-                          fallback: "Could not open the document preview in fullscreen.",
-                        });
-                      }
-                    }
-                  }}
-                >
-                  <FullscreenIcon />
-                </IconButton>
-              </Tooltip>
-              <IconButton size="small" onClick={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })}>
-                <CloseIcon />
-              </IconButton>
-            </Box>
-          </DialogTitle>
-          <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {documentModal.url && (
-              <Box 
-                sx={{ 
-                  flex: 1, 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  backgroundColor: '#f5f5f5',
-                  position: 'relative'
-                }}
-                data-document-preview
-              >
-                {isImageFile(documentModal.url) ? (
-                  <Box sx={{ 
-                    flex: 1, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    p: 2
-                  }}>
-                    <img
-                      src={documentModal.url}
-                      alt="Document preview"
-                      style={{ 
-                        maxWidth: '100%', 
-                        maxHeight: '100%',
-                        objectFit: 'contain',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                      }}
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextElementSibling.style.display = 'flex';
-                      }}
-                    />
-                    <Box sx={{ 
-                      display: 'none', 
-                      flexDirection: 'column', 
-                      alignItems: 'center', 
-                      gap: 2,
-                      p: 4,
-                      textAlign: 'center'
-                    }}>
-                      <ErrorIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
-                      <Typography variant="body1" color="text.secondary">
-                        Unable to preview this image
-                      </Typography>
-                    </Box>
-                  </Box>
-                ) : isPdfFile(documentModal.url) ? (
-                  <iframe
-                    src={`${documentModal.url}#toolbar=1&navpanes=1&scrollbar=1`}
-                    width="100%"
-                    height="100%"
-                    style={{ border: 'none', flex: 1 }}
-                    title="PDF Preview"
-                    onError={() => {
-                      console.log('PDF preview failed');
-                    }}
-                  />
-                ) : (
-                  <Box sx={{ 
-                    flex: 1, 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    gap: 2,
-                    p: 4,
-                    textAlign: 'center'
-                  }}>
-                    <AttachmentIcon sx={{ fontSize: 64, color: 'primary.main' }} />
-                    <Typography variant="h6" color="text.primary">
-                      {documentModal.fileName}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Preview not available for this file type
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-                      <Button
-                        variant="contained"
-                        startIcon={<DownloadIcon />}
-                        onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
-                      >
-                        Download File
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        startIcon={<OpenInNewIcon />}
-                        onClick={() => window.open(documentModal.url, '_blank')}
-                      >
-                        Open in Browser
-                      </Button>
-                    </Box>
-                  </Box>
-                )}
-              </Box>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ 
-            borderTop: 1, 
-            borderColor: 'divider',
-            p: 2,
-            backgroundColor: 'grey.50'
-          }}>
-            <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-              File: {documentModal.fileName}
-            </Typography>
-            <Button 
-              onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
-              variant="contained"
-              startIcon={<DownloadIcon />}
-              sx={{ mr: 1 }}
-            >
-              Download
-            </Button>
-            <Button 
-              onClick={() => window.open(documentModal.url, '_blank')}
-              variant="outlined"
-              startIcon={<OpenInNewIcon />}
-              sx={{ mr: 1 }}
-            >
-              Open in New Tab
-            </Button>
-            <Button onClick={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })}>
-              Close
-            </Button>
-          </DialogActions>
-        </Dialog>
+        <LeaveDocumentPreviewDialog
+          documentModal={documentModal}
+          setDocumentModal={setDocumentModal}
+          notifyError={notifyError}
+        />
 
         {/* Remarks Modal */}
-        <Dialog open={remarksModal.open} onClose={() => setRemarksModal({ open: false, title: "", text: "" })} maxWidth="xs" fullWidth>
+        <Dialog
+          open={remarksModal.open}
+          onClose={() => setRemarksModal({ open: false, title: "", text: "" })}
+          maxWidth="xs"
+          fullWidth
+        >
           <DialogTitle sx={{ fontWeight: 700 }}>{remarksModal.title}</DialogTitle>
           <DialogContent dividers>
             <Typography variant="body1">{remarksModal.text}</Typography>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setRemarksModal({ open: false, title: "", text: "" })}>Close</Button>
+            <Button onClick={() => setRemarksModal({ open: false, title: "", text: "" })}>
+              Close
+            </Button>
           </DialogActions>
         </Dialog>
       </Box>

@@ -70,16 +70,31 @@ jobs:
         POSTGRES_HOST: 127.0.0.1
         POSTGRES_PORT: 5432
       run: |
-        python -m coverage run --rcfile=.coveragerc manage.py test
+        python -m coverage run --rcfile=.coveragerc manage.py test --keepdb --noinput
+
+    - name: Run isolated HR Copilot pytest coverage
+      working-directory: backend
+      env:
+        DJANGO_SECRET_KEY: ci-only-not-a-deployment-secret
+        POSTGRES_DB: test_attendance_db
+        POSTGRES_USER: attendance_user
+        POSTGRES_PASSWORD: ci-only-test-password
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: 5432
+      run: |
+        python -m coverage run --append --rcfile=.coveragerc ../.github/scripts/run_backend_pytest.py hr_copilot/test_api.py hr_copilot/test_llm.py hr_copilot/test_providers.py hr_copilot/test_intent_normalization.py
         python -m coverage report --rcfile=.coveragerc
         python -m coverage xml --rcfile=.coveragerc -o coverage.xml
+        python -m coverage json --rcfile=.coveragerc -o coverage.json
         python ../.github/scripts/normalize_coverage_xml.py coverage.xml backend
 
     - name: Upload backend coverage
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: backend-coverage
-        path: backend/coverage.xml
+        path: |
+          backend/coverage.xml
+          backend/coverage.json
         if-no-files-found: error
 
   frontend-build:
@@ -102,6 +117,14 @@ jobs:
         cd frontend
         npm ci --ignore-scripts --no-audit --no-fund
 
+    - name: Run frontend lint
+      working-directory: frontend
+      run: npm run lint
+
+    - name: Check frontend formatting
+      working-directory: frontend
+      run: npx prettier --check .
+
     - name: Build frontend
       run: |
         cd frontend
@@ -115,7 +138,11 @@ jobs:
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: frontend-coverage
-        path: frontend/coverage/lcov.info
+        path: |
+          frontend/coverage/lcov.info
+          frontend/coverage/coverage-final.json
+          frontend/coverage/index.html
+          frontend/coverage/lcov-report/
         if-no-files-found: error
 
   facial-recognition-checks:
@@ -150,16 +177,19 @@ jobs:
     - name: Run facial-recognition tests with coverage
       working-directory: facial-recognition
       run: |
-        python -m coverage run --rcfile=.coveragerc -m unittest test_service
+        python -m coverage run --rcfile=.coveragerc -m unittest test_service test_face_utils test_regeneration_utilities test_operational_utilities
         python -m coverage report --rcfile=.coveragerc
         python -m coverage xml --rcfile=.coveragerc -o coverage.xml
+        python -m coverage json --rcfile=.coveragerc -o coverage.json
         python ../.github/scripts/normalize_coverage_xml.py coverage.xml facial-recognition
 
     - name: Upload facial-recognition coverage
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: facial-recognition-coverage
-        path: facial-recognition/coverage.xml
+        path: |
+          facial-recognition/coverage.xml
+          facial-recognition/coverage.json
         if-no-files-found: error
 
   sonarqube:

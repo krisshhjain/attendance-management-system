@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "../lib/auth.jsx";
 
@@ -25,34 +24,102 @@ function Icon({ d, className = "" }) {
 }
 
 const ICONS = {
-  dashboard: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
-  attendance: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
-  employees: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>,
-  leave: <><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 18 2 18 2c1 5.5-.7 12.2-7 14.5"/><path d="M2 21c2-5 5.5-8.5 10-11"/></>,
-  administration: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></>,
-  hrcopilot: <><circle cx="12" cy="8" r="4"/><path d="M5.5 21a6.5 6.5 0 0 1 13 0M9 14.75l3 3 3-3"/></>,
-  settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.08A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.08A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z"/></>,
-  logout: <><path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></>,
-  close: <path d="M18 6 6 18M6 6l12 12"/>,
-  usercheck: <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><path d="M8.5 11a4 4 0 1 0 0-8"/><path d="M17 11l2 2 4-4"/></>,
-  regularization: <><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></>,
-  logs: <><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></>,
+  dashboard: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="2" />
+      <rect x="14" y="3" width="7" height="7" rx="2" />
+      <rect x="3" y="14" width="7" height="7" rx="2" />
+      <rect x="14" y="14" width="7" height="7" rx="2" />
+    </>
+  ),
+  attendance: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  employees: (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
+  leave: (
+    <>
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 18 2 18 2c1 5.5-.7 12.2-7 14.5" />
+      <path d="M2 21c2-5 5.5-8.5 10-11" />
+    </>
+  ),
+  administration: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6M8 13h8M8 17h5" />
+    </>
+  ),
+  hrcopilot: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5.5 21a6.5 6.5 0 0 1 13 0M9 14.75l3 3 3-3" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.08A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.08A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+    </>
+  ),
+  close: <path d="M18 6 6 18M6 6l12 12" />,
+  usercheck: (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <path d="M8.5 11a4 4 0 1 0 0-8" />
+      <path d="M17 11l2 2 4-4" />
+    </>
+  ),
+  regularization: (
+    <>
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4" />
+    </>
+  ),
+  logs: (
+    <>
+      <path d="M4 4h16v16H4z" />
+      <path d="M8 8h8M8 12h8M8 16h5" />
+    </>
+  ),
 };
 
 // ── Nav items — all existing routes preserved ─────────────────────────────────
 function getNavItems(loginType, user) {
   const canReviewRegularization = Boolean(
-    user?.is_staff || user?.is_superuser || user?.is_system_admin ||
-    loginType === "admin" || loginType === "systemadmin",
+    user?.is_staff ||
+    user?.is_superuser ||
+    user?.is_system_admin ||
+    loginType === "admin" ||
+    loginType === "systemadmin",
   );
   const items = [
-    { text: "Dashboard",       icon: ICONS.dashboard,       path: "/dashboard" },
-    { text: "Attendance",      icon: ICONS.attendance,      path: "/attendance" },
-    { text: "Employees",       icon: ICONS.employees,       path: "/employees" },
-    { text: "My Leave",        icon: ICONS.leave,           path: "/leave" },
-    { text: "Administration",  icon: ICONS.administration,  path: "/administration" },
+    { text: "Dashboard", icon: ICONS.dashboard, path: "/dashboard" },
+    { text: "Attendance", icon: ICONS.attendance, path: "/attendance" },
+    { text: "Employees", icon: ICONS.employees, path: "/employees" },
+    { text: "My Leave", icon: ICONS.leave, path: "/leave" },
+    { text: "Administration", icon: ICONS.administration, path: "/administration" },
     ...(canReviewRegularization
-      ? [{ text: "Regularization", icon: ICONS.regularization, path: "/admin-regularization", activePath: "/administration/regularization/" }]
+      ? [
+          {
+            text: "Regularization",
+            icon: ICONS.regularization,
+            path: "/admin-regularization",
+            activePath: "/administration/regularization/",
+          },
+        ]
       : []),
     ...(loginType === "systemadmin"
       ? [{ text: "HR Copilot", icon: ICONS.hrcopilot, path: "/hr-copilot" }]
@@ -123,19 +190,26 @@ function DrawerContent({ onClose, isMobile }) {
               flexShrink: 0,
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-              <path d="M8.5 11a4 4 0 1 0 0-8"/>
-              <path d="M17 11l2 2 4-4"/>
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#fff"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <path d="M8.5 11a4 4 0 1 0 0-8" />
+              <path d="M17 11l2 2 4-4" />
             </svg>
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", lineHeight: 1.2 }}>
               AttendPro
             </div>
-            <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 500 }}>
-              Management Suite
-            </div>
+            <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 500 }}>Management Suite</div>
           </div>
         </div>
         {isMobile && (
@@ -215,8 +289,24 @@ function DrawerContent({ onClose, isMobile }) {
                     }
                   }}
                 >
-                  <span style={{ color: isActive ? "#4f46e5" : "#94a3b8", flexShrink: 0, display: "flex" }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <span
+                    style={{
+                      color: isActive ? "#4f46e5" : "#94a3b8",
+                      flexShrink: 0,
+                      display: "flex",
+                    }}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
                       {item.icon}
                     </svg>
                   </span>
@@ -268,8 +358,24 @@ function DrawerContent({ onClose, isMobile }) {
                 }
               }}
             >
-              <span style={{ color: location.pathname === "/settings" ? "#4f46e5" : "#94a3b8", display: "flex", flexShrink: 0 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <span
+                style={{
+                  color: location.pathname === "/settings" ? "#4f46e5" : "#94a3b8",
+                  display: "flex",
+                  flexShrink: 0,
+                }}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   {ICONS.settings}
                 </svg>
               </span>
@@ -324,7 +430,11 @@ function DrawerContent({ onClose, isMobile }) {
               {displayName}
             </div>
             <div style={{ fontSize: 10, color: "#94a3b8" }}>
-              {loginType === "systemadmin" ? "System Manager" : loginType === "admin" ? "Super Admin" : "Employee"}
+              {loginType === "systemadmin"
+                ? "System Manager"
+                : loginType === "admin"
+                  ? "Super Admin"
+                  : "Employee"}
             </div>
           </div>
         </div>
@@ -357,7 +467,17 @@ function DrawerContent({ onClose, isMobile }) {
             e.currentTarget.style.color = "#64748b";
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             {ICONS.logout}
           </svg>
           Logout

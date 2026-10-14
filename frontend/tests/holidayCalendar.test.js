@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { classifyDate, formatHolidayDate, indexActiveHolidays, localDateKey } from "../src/data/holidayDateUtils.js";
+import { test } from "vitest";
+import {
+  classifyDate,
+  formatHolidayDate,
+  indexActiveHolidays,
+  localDateKey,
+} from "../src/data/holidayDateUtils.js";
 
 test("active holiday records are indexed by exact date and inactive records are ignored", () => {
   const holidayByDate = indexActiveHolidays([
@@ -22,15 +27,24 @@ test("weekday holiday and weekend holiday retain distinct date classifications",
   assert.deepEqual(weekdayHoliday, { status: "HOLIDAY", holidayName: "Republic Day" });
   assert.notEqual(weekdayHoliday.status, "ABSENT");
   assert.notEqual(weekdayHoliday.status, "YET_TO_CHECK_IN");
-  assert.deepEqual(classifyDate("2026-01-31", holidayByDate, true), { status: "WEEKEND", holidayName: "Weekend Event" });
-  assert.deepEqual(classifyDate("2026-01-27", holidayByDate, false), { status: null, holidayName: null });
+  assert.deepEqual(classifyDate("2026-01-31", holidayByDate, true), {
+    status: "WEEKEND",
+    holidayName: "Weekend Event",
+  });
+  assert.deepEqual(classifyDate("2026-01-27", holidayByDate, false), {
+    status: null,
+    holidayName: null,
+  });
 });
 
 test("date-only holiday formatting does not shift the calendar date across timezone boundaries", () => {
   const originalTimezone = process.env.TZ;
   process.env.TZ = "Pacific/Honolulu";
   try {
-    assert.equal(formatHolidayDate("2026-01-01", { year: "numeric", month: "2-digit", day: "2-digit" }), "01/01/2026");
+    assert.equal(
+      formatHolidayDate("2026-01-01", { year: "numeric", month: "2-digit", day: "2-digit" }),
+      "01/01/2026",
+    );
     assert.equal(localDateKey(new Date(2026, 0, 1, 0, 5)), "2026-01-01");
   } finally {
     if (originalTimezone === undefined) delete process.env.TZ;

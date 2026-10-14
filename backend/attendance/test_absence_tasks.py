@@ -13,7 +13,6 @@ from holidays.models import Holiday
 from leave_management.models import LeaveRequest, LeaveType
 from notifications.models import Notification
 
-
 User = get_user_model()
 
 
@@ -59,10 +58,16 @@ class ConsecutiveAbsenceTaskTests(TestCase):
 
         self.run_task(date(2026, 9, 30))
 
-        self.assertFalse(Notification.objects.filter(notification_type="ABSENCE_ALERT").exists())
+        self.assertFalse(
+            Notification.objects.filter(
+                notification_type="ABSENCE_ALERT"
+            ).exists()
+        )
 
     @patch("notifications.services.send_notification_email.delay")
-    def test_two_consecutive_required_days_alert_manager_and_queue_email(self, delay):
+    def test_two_consecutive_required_days_alert_manager_and_queue_email(
+        self, delay
+    ):
         with self.captureOnCommitCallbacks(execute=True):
             result = check_consecutive_absences.run(run_date=date(2026, 9, 30))
 
@@ -89,31 +94,47 @@ class ConsecutiveAbsenceTaskTests(TestCase):
 
         self.run_task(date(2026, 10, 1))
 
-        self.assertFalse(Notification.objects.filter(notification_type="ABSENCE_ALERT").exists())
+        self.assertFalse(
+            Notification.objects.filter(
+                notification_type="ABSENCE_ALERT"
+            ).exists()
+        )
 
     def test_friday_and_monday_absence_alerts(self):
         # Evaluation on Tuesday selects Monday and Friday as the two required days.
         self.run_task(date(2026, 9, 29))
 
         self.assertTrue(
-            Notification.objects.filter(notification_type="ABSENCE_ALERT").exists()
+            Notification.objects.filter(
+                notification_type="ABSENCE_ALERT"
+            ).exists()
         )
 
-    def test_active_holiday_is_skipped_when_selecting_recent_required_dates(self):
+    def test_active_holiday_is_skipped_when_selecting_recent_required_dates(
+        self,
+    ):
         Holiday.objects.create(date=date(2026, 10, 5), name="Monday holiday")
         result = self.run_task(date(2026, 10, 6))
         self.assertEqual(result["first_absence_date"], "2026-10-01")
         self.assertEqual(result["second_absence_date"], "2026-10-02")
-        self.assertTrue(Notification.objects.filter(notification_type="ABSENCE_ALERT").exists())
+        self.assertTrue(
+            Notification.objects.filter(
+                notification_type="ABSENCE_ALERT"
+            ).exists()
+        )
 
-    def test_friday_and_tuesday_absence_with_monday_attendance_does_not_alert(self):
+    def test_friday_and_tuesday_absence_with_monday_attendance_does_not_alert(
+        self,
+    ):
         # Evaluation on Wednesday selects Tuesday and Monday; Friday is outside
         # the two most recent required attendance days.
         self.mark_attendance(date(2026, 9, 28))
         self.run_task(date(2026, 9, 30))
 
         self.assertFalse(
-            Notification.objects.filter(notification_type="ABSENCE_ALERT").exists()
+            Notification.objects.filter(
+                notification_type="ABSENCE_ALERT"
+            ).exists()
         )
 
     def test_rerunning_same_period_is_idempotent(self):
@@ -121,7 +142,9 @@ class ConsecutiveAbsenceTaskTests(TestCase):
         self.run_task(date(2026, 9, 30))
 
         self.assertEqual(
-            Notification.objects.filter(notification_type="ABSENCE_ALERT").count(),
+            Notification.objects.filter(
+                notification_type="ABSENCE_ALERT"
+            ).count(),
             1,
         )
 
@@ -131,7 +154,11 @@ class ConsecutiveAbsenceTaskTests(TestCase):
 
         self.run_task(date(2026, 9, 30))
 
-        self.assertFalse(Notification.objects.filter(notification_type="ABSENCE_ALERT").exists())
+        self.assertFalse(
+            Notification.objects.filter(
+                notification_type="ABSENCE_ALERT"
+            ).exists()
+        )
 
     def test_unscoped_manager_does_not_receive_alert(self):
         unscoped_manager = User.objects.create_user(
@@ -234,8 +261,9 @@ class ConsecutiveAbsenceTaskTests(TestCase):
 
         self.assertEqual(
             set(
-                Notification.objects.filter(notification_type="ABSENCE_ALERT")
-                .values_list("user_id", flat=True)
+                Notification.objects.filter(
+                    notification_type="ABSENCE_ALERT"
+                ).values_list("user_id", flat=True)
             ),
             {self.manager.id},
         )

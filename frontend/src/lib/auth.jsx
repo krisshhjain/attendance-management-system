@@ -19,10 +19,10 @@ function clearStoredLoginType() {
 
 export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser]                       = useState(null);
-  const [ready, setReady]                     = useState(false);
+  const [user, setUser] = useState(null);
+  const [ready, setReady] = useState(false);
   // loginType state mirrors localStorage — initialised synchronously
-  const [loginType, setLoginType]             = useState(getStoredLoginType);
+  const [loginType, setLoginType] = useState(getStoredLoginType);
 
   const fetchUser = useCallback(async () => {
     const data = await apiRequest("/auth/me/");
@@ -56,33 +56,34 @@ export function AuthProvider({ children }) {
     });
   }, [fetchUser]);
 
-  const login = useCallback(async (email, password, type = "employee") => {
-    const loginEndpoint = type === "systemadmin"
-      ? "/auth/systemadmin-login/"
-      : "/auth/login/";
-    const data = await apiRequest(loginEndpoint, {
-      method: "POST",
-      auth: false,
-      body: { email, password },
-    });
-    if (!data?.access) throw new Error("Invalid email or password.");
-    tokenStore.set(data.access, data.refresh);
+  const login = useCallback(
+    async (email, password, type = "employee") => {
+      const loginEndpoint = type === "systemadmin" ? "/auth/systemadmin-login/" : "/auth/login/";
+      const data = await apiRequest(loginEndpoint, {
+        method: "POST",
+        auth: false,
+        body: { email, password },
+      });
+      if (!data?.access) throw new Error("Invalid email or password.");
+      tokenStore.set(data.access, data.refresh);
 
-    const userData = await fetchUser();
+      const userData = await fetchUser();
 
-    if (type === "admin" && !userData.is_superuser) {
-      // Roll back — not an admin
-      tokenStore.clear();
-      setUser(null);
-      throw new Error("You do not have administrative privileges.");
-    }
+      if (type === "admin" && !userData.is_superuser) {
+        // Roll back — not an admin
+        tokenStore.clear();
+        setUser(null);
+        throw new Error("You do not have administrative privileges.");
+      }
 
-    // Persist BEFORE flipping isAuthenticated so RequireAuth never sees
-    // a frame where user is set but loginType is stale
-    setStoredLoginType(type);
-    setLoginType(type);
-    setIsAuthenticated(true);
-  }, [fetchUser]);
+      // Persist BEFORE flipping isAuthenticated so RequireAuth never sees
+      // a frame where user is set but loginType is stale
+      setStoredLoginType(type);
+      setLoginType(type);
+      setIsAuthenticated(true);
+    },
+    [fetchUser],
+  );
 
   const logout = useCallback(() => {
     tokenStore.clear();

@@ -7,9 +7,21 @@ import { useEffect } from "react";
 
 function NotFoundComponent() {
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", bgcolor: "background.default", px: 2 }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: "background.default",
+        px: 2,
+      }}
+    >
       <Box sx={{ maxWidth: 400, textAlign: "center" }}>
-        <Typography variant="h1" sx={{ fontWeight: "bold", color: "text.primary", fontSize: "4rem" }}>
+        <Typography
+          variant="h1"
+          sx={{ fontWeight: "bold", color: "text.primary", fontSize: "4rem" }}
+        >
           404
         </Typography>
         <Typography variant="h6" sx={{ mt: 2, fontWeight: 600, color: "text.primary" }}>
@@ -33,7 +45,16 @@ function ErrorComponent({ error, reset }) {
   const router = useRouter();
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", bgcolor: "background.default", px: 2 }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: "background.default",
+        px: 2,
+      }}
+    >
       <Box sx={{ maxWidth: 400, textAlign: "center" }}>
         <Typography variant="h6" sx={{ fontWeight: 600, color: "text.primary" }}>
           This page didn't load
@@ -80,12 +101,12 @@ function ThemeProviderWrapper({ children }) {
         dark: "#4338ca", // indigo-700
         contrastText: "#ffffff",
         ...(themeMode === "light" && {
-          "50": "#eef2ff", // indigo-50 for light theme
-          "100": "#e0e7ff", // indigo-100 for light theme
+          50: "#eef2ff", // indigo-50 for light theme
+          100: "#e0e7ff", // indigo-100 for light theme
         }),
         ...(themeMode === "dark" && {
-          "50": "rgba(99, 102, 241, 0.1)", // indigo with opacity for dark theme
-          "100": "rgba(99, 102, 241, 0.2)", // indigo with opacity for dark theme
+          50: "rgba(99, 102, 241, 0.1)", // indigo with opacity for dark theme
+          100: "rgba(99, 102, 241, 0.2)", // indigo with opacity for dark theme
         }),
       },
       success: {
@@ -143,7 +164,8 @@ function ThemeProviderWrapper({ children }) {
       borderRadius: 8,
     },
     typography: {
-      fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica", "Arial", sans-serif',
+      fontFamily:
+        '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica", "Arial", sans-serif',
       fontSize: 14,
       fontWeightLight: 300,
       fontWeightRegular: 400,
@@ -161,7 +183,12 @@ function ThemeProviderWrapper({ children }) {
       body2: { fontWeight: 400, fontSize: "0.8125rem" },
       button: { fontWeight: 600, fontSize: "0.875rem", textTransform: "none" },
       caption: { fontWeight: 400, fontSize: "0.75rem" },
-      overline: { fontWeight: 600, fontSize: "0.625rem", textTransform: "uppercase", letterSpacing: "0.08em" },
+      overline: {
+        fontWeight: 600,
+        fontSize: "0.625rem",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+      },
     },
     shadows: [
       "none",

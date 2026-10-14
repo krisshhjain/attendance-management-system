@@ -1,0 +1,171 @@
+[1mdiff --git a/backend/attendance/models.py b/backend/attendance/models.py[m
+[1mindex baa382b..31fcc5b 100644[m
+[1m--- a/backend/attendance/models.py[m
+[1m+++ b/backend/attendance/models.py[m
+[36m@@ -1,6 +1,7 @@[m
+[32m+[m[32mfrom datetime import datetime, time, timedelta[m
+[32m+[m
+ from django.conf import settings[m
+ from django.db import models[m
+[31m-from datetime import datetime, time, timedelta[m
+ [m
+ [m
+ def attendance_day_end(target_date):[m
+[36m@@ -119,17 +120,26 @@[m [mclass Attendance(models.Model):[m
+ [m
+     def recompute_from_events(self):[m
+         """[m
+[31m-        Recompute check_in, check_out, status, and working_duration from AttendanceEvents.[m
+[31m-        First CHECK_IN -> check_in, Latest CHECK_OUT that comes AFTER the last CHECK_IN -> check_out.[m
+[32m+[m[32m        Recompute attendance fields from AttendanceEvents.[m
+[32m+[m[32m        Use the first CHECK_IN and latest CHECK_OUT after the last CHECK_IN.[m
+         Falls back to existing Attendance fields if no events exist.[m
+         """[m
+[31m-        from django.utils import timezone[m
+[31m-[m
+         # Filter events by matching the date part of timestamp (aware datetime)[m
+         # Use simple __date lookup which works with timezone-aware datetimes[m
+[31m-        effective_events = get_effective_attendance_events(self.employee, self.date)[m
+[31m-        check_in_events = [event for event in effective_events if event.event_type == "CHECK_IN"][m
+[31m-        check_out_events = [event for event in effective_events if event.event_type == "CHECK_OUT"][m
+[32m+[m[32m        effective_events = get_effective_attendance_events([m
+[32m+[m[32m            self.employee,[m
+[32m+[m[32m            self.date,[m
+[32m+[m[32m        )[m
+[32m+[m[32m        check_in_events = [[m
+[32m+[m[32m            event[m
+[32m+[m[32m            for event in effective_events[m
+[32m+[m[32m            if event.event_type == "CHECK_IN"[m
+[32m+[m[32m        ][m
+[32m+[m[32m        check_out_events = [[m
+[32m+[m[32m            event[m
+[32m+[m[32m            for event in effective_events[m
+[32m+[m[32m            if event.event_type == "CHECK_OUT"[m
+[32m+[m[32m        ][m
+ [m
+         first_check_in = check_in_events[0] if check_in_events else None[m
+         last_check_out = check_out_events[-1] if check_out_events else None[m
+[36m@@ -161,7 +171,11 @@[m [mclass Attendance(models.Model):[m
+                 effective_events,[m
+                 end_at=attendance_day_end(self.date),[m
+             )[m
+[31m-            self.status = "INCOMPLETE" if latest_event and latest_event.event_type == "CHECK_IN" else "PRESENT"[m
+[32m+[m[32m            self.status = ([m
+[32m+[m[32m                "INCOMPLETE"[m
+[32m+[m[32m                if latest_event and latest_event.event_type == "CHECK_IN"[m
+[32m+[m[32m                else "PRESENT"[m
+[32m+[m[32m            )[m
+         else:[m
+             self.working_duration = None[m
+             # If no events at all and status was INCOMPLETE, keep it[m
+[36m@@ -169,12 +183,15 @@[m [mclass Attendance(models.Model):[m
+             if self.status not in {"LEAVE", "ABSENT"}:[m
+                 self.status = "INCOMPLETE"[m
+ [m
+[31m-        self.save(update_fields=[[m
+[31m-            "check_in", "check_out", "status", "working_duration",[m
+[31m-            "check_in_latitude", "check_in_longitude", "check_in_accuracy",[m
+[31m-            "check_in_distance", "check_out_latitude", "check_out_longitude",[m
+[31m-            "check_out_accuracy", "check_out_distance", "updated_at"[m
+[31m-        ])[m
+[32m+[m[32m        self.save([m
+[32m+[m[32m            update_fields=[[m
+[32m+[m[32m                "check_in", "check_out", "status", "working_duration",[m
+[32m+[m[32m                "check_in_latitude", "check_in_longitude", "check_in_accuracy",[m
+[32m+[m[32m                "check_in_distance", "check_out_latitude",[m
+[32m+[m[32m                "check_out_longitude", "check_out_accuracy",[m
+[32m+[m[32m                "check_out_distance", "updated_at",[m
+[32m+[m[32m            ][m
+[32m+[m[32m        )[m
+ [m
+     def get_shift_adherence(self):[m
+         """[m
+[36m@@ -189,30 +206,30 @@[m [mclass Attendance(models.Model):[m
+         effective_shift = self.employee.get_effective_shift()[m
+         if not effective_shift or not effective_shift.is_active:[m
+             return None[m
+[31m-        [m
+[32m+[m
+         shift = effective_shift[m
+         first_check_in = self.check_in[m
+[31m-        [m
+[32m+[m
+         if not first_check_in:[m
+             return None[m
+[31m-        [m
+[32m+[m
+         # Compare first check-in time with shift start time (same date)[m
+[31m-        from datetime import datetime, time[m
+[31m-        [m
+         shift_start = datetime.combine(self.date, shift.start_time)[m
+         shift_end = datetime.combine(self.date, shift.end_time)[m
+[31m-        [m
+[32m+[m
+         # Make timezone-aware if needed[m
+         from django.utils import timezone[m
+         if timezone.is_naive(shift_start):[m
+             shift_start = timezone.make_aware(shift_start)[m
+         if timezone.is_naive(shift_end):[m
+             shift_end = timezone.make_aware(shift_end)[m
+[31m-        [m
+[32m+[m
+         # Allow 5-minute grace period[m
+         grace_period = 5 * 60  # seconds[m
+[31m-        [m
+[31m-        if first_check_in <= shift_start + timezone.timedelta(seconds=grace_period):[m
+[32m+[m
+[32m+[m[32m        if first_check_in <= shift_start + timezone.timedelta([m
+[32m+[m[32m            seconds=grace_period[m
+[32m+[m[32m        ):[m
+             return "ON_TIME"[m
+         else:[m
+             return "LATE"[m
+[36m@@ -222,9 +239,11 @@[m [mclass Attendance(models.Model):[m
+         """Atomically get or create attendance record for employee/date."""[m
+         from django.db import transaction[m
+         with transaction.atomic():[m
+[31m-            attendance, created = cls.objects.select_for_update().get_or_create([m
+[31m-                employee=employee,[m
+[31m-                date=date,[m
+[32m+[m[32m            attendance, created = ([m
+[32m+[m[32m                cls.objects.select_for_update().get_or_create([m
+[32m+[m[32m                    employee=employee,[m
+[32m+[m[32m                    date=date,[m
+[32m+[m[32m                )[m
+             )[m
+             return attendance, created[m
+ [m
+[36m@@ -235,7 +254,7 @@[m [mclass Shift(models.Model):[m
+         ("CONTRACT", "Contract"),[m
+         ("INTERN", "Intern"),[m
+     ][m
+[31m-    [m
+[32m+[m
+     name = models.CharField(max_length=100)[m
+     code = models.CharField(max_length=20, unique=True)[m
+     start_time = models.TimeField()[m
+[36m@@ -293,7 +312,11 @@[m [mclass AttendanceEvent(models.Model):[m
+     )[m
+     timestamp = models.DateTimeField()[m
+     event_type = models.CharField(max_length=10, choices=EVENT_TYPES)[m
+[31m-    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="MOBILE")[m
+[32m+[m[32m    source = models.CharField([m
+[32m+[m[32m        max_length=20,[m
+[32m+[m[32m        choices=SOURCE_CHOICES,[m
+[32m+[m[32m        default="MOBILE",[m
+[32m+[m[32m    )[m
+     latitude = models.FloatField(null=True, blank=True)[m
+     longitude = models.FloatField(null=True, blank=True)[m
+     accuracy = models.FloatField(null=True, blank=True)[m
+[36m@@ -339,10 +362,14 @@[m [mdef get_effective_attendance_events(employee, target_date):[m
+         if correction.previous_data.get("effective_event_mode") == "REPLACE"[m
+     ][m
+     replacement_boundary = ([m
+[31m-        replacement_corrections[-1].timestamp if replacement_corrections else None[m
+[32m+[m[32m        replacement_corrections[-1].timestamp[m
+[32m+[m[32m        if replacement_corrections[m
+[32m+[m[32m        else None[m
+     )[m
+     replacement_event_id = ([m
+[31m-        replacement_corrections[-1].previous_data.get("effective_event_after_event_id")[m
+[32m+[

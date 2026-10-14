@@ -16,9 +16,13 @@ class Holiday(models.Model):
         self.name = (self.name or "").strip()
         if not self.name:
             raise ValidationError({"name": "Holiday name cannot be empty."})
-        duplicate = type(self).objects.filter(date=self.date).exclude(pk=self.pk)
+        duplicate = (
+            type(self).objects.filter(date=self.date).exclude(pk=self.pk)
+        )
         if self.date and duplicate.exists():
-            raise ValidationError({"date": "A holiday already exists for this date."})
+            raise ValidationError(
+                {"date": "A holiday already exists for this date."}
+            )
 
     def save(self, *args, **kwargs):
         self.full_clean()

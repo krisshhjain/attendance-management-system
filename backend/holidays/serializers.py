@@ -6,7 +6,14 @@ from .models import Holiday
 class HolidaySerializer(serializers.ModelSerializer):
     class Meta:
         model = Holiday
-        fields = ["id", "date", "name", "is_active", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "date",
+            "name",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_name(self, value):
@@ -20,5 +27,7 @@ class HolidaySerializer(serializers.ModelSerializer):
         if self.instance:
             matches = matches.exclude(pk=self.instance.pk)
         if matches.exists():
-            raise serializers.ValidationError("A holiday already exists for this date.")
+            raise serializers.ValidationError(
+                "A holiday already exists for this date."
+            )
         return value

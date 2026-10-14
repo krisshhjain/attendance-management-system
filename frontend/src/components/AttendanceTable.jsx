@@ -1,4 +1,4 @@
-import { formatDate, formatDuration, formatTime } from "../lib/date.js";
+import { formatDuration, formatTime } from "../lib/date.js";
 import { StatusBadge } from "./StatusBadge.jsx";
 import {
   Table,
@@ -48,18 +48,30 @@ export function AttendanceTable({ records }) {
           {records.map((record, index) => (
             <TableRow
               key={`${record.date}-${index}`}
-              sx={{ "&:last-child td, &:last-child th": { border: 0 }, "&:hover": { bgcolor: "action.hover" } }}
+              sx={{
+                "&:last-child td, &:last-child th": { border: 0 },
+                "&:hover": { bgcolor: "action.hover" },
+              }}
             >
               <TableCell sx={{ fontWeight: 600 }}>
-                {new Date(record.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                {new Date(record.date).toLocaleDateString("en-US", {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
               </TableCell>
               <TableCell>
                 <StatusBadge status={record.status} />
               </TableCell>
-              <TableCell sx={{ color: "text.secondary", fontFamily: "monospace", fontSize: "0.95rem" }}>
+              <TableCell
+                sx={{ color: "text.secondary", fontFamily: "monospace", fontSize: "0.95rem" }}
+              >
                 {record.check_in ? formatTime(record.check_in) : "--:--"}
               </TableCell>
-              <TableCell sx={{ color: "text.secondary", fontFamily: "monospace", fontSize: "0.95rem" }}>
+              <TableCell
+                sx={{ color: "text.secondary", fontFamily: "monospace", fontSize: "0.95rem" }}
+              >
                 {record.check_out ? formatTime(record.check_out) : "--:--"}
               </TableCell>
               <TableCell sx={{ fontFamily: "monospace", fontSize: "0.95rem", fontWeight: 500 }}>

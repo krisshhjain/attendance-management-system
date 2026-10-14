@@ -1,4 +1,4 @@
-const fs = require('fs');
+const fs = require("fs");
 const content = `import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
@@ -166,5 +166,5 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </StrictMode>,
 );
 `;
-fs.writeFileSync('src/main.jsx', content, 'utf8');
-console.log('Done');
+fs.writeFileSync("src/main.jsx", content, "utf8");
+console.log("Done");

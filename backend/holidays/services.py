@@ -22,14 +22,20 @@ def get_day_classifications(target_dates) -> dict:
     dates = set(target_dates)
     holidays_by_date = {
         holiday.date: holiday
-        for holiday in Holiday.objects.filter(date__in=dates, is_active=True).only("date", "name")
+        for holiday in Holiday.objects.filter(
+            date__in=dates, is_active=True
+        ).only("date", "name")
     }
     classifications = {}
     for target_date in dates:
         holiday = holidays_by_date.get(target_date)
         weekend = is_weekend(target_date)
         classifications[target_date] = {
-            "day_type": "WEEKEND" if weekend else "HOLIDAY" if holiday else "WORKING_DAY",
+            "day_type": "WEEKEND"
+            if weekend
+            else "HOLIDAY"
+            if holiday
+            else "WORKING_DAY",
             "is_weekend": weekend,
             "is_company_holiday": holiday is not None,
             "is_working_day": not weekend and holiday is None,
@@ -49,11 +55,16 @@ def get_non_working_dates(start_date: date, end_date: date) -> list[date]:
     dates = []
     current = start_date
     from datetime import timedelta
+
     while current <= end_date:
         dates.append(current)
         current += timedelta(days=1)
     classifications = get_day_classifications(dates)
-    return [target for target in dates if not classifications[target]["attendance_required"]]
+    return [
+        target
+        for target in dates
+        if not classifications[target]["attendance_required"]
+    ]
 
 
 def is_working_day(target_date: date) -> bool:

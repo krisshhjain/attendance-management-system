@@ -4,8 +4,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .serializers import ChangePasswordSerializer, UserProfileSerializer
 from system_logs.services import record_event
+
+from .serializers import ChangePasswordSerializer, UserProfileSerializer
 
 
 class LoginView(TokenObtainPairView):
@@ -48,6 +49,7 @@ class SystemAdminLoginView(TokenObtainPairView):
     Allows ONLY users with is_system_admin=True (Managers).
     SuperUsers must use the regular admin login.
     """
+
     def post(self, request, *args, **kwargs):
         try:
             serializer = self.get_serializer(data=request.data)
@@ -56,7 +58,7 @@ class SystemAdminLoginView(TokenObtainPairView):
             # Only allow is_system_admin users (Managers), NOT superusers
             if not serializer.user.is_system_admin:
                 raise Exception("You do not have Manager privileges.")
-            
+
             # Explicitly reject superusers from this endpoint
             if serializer.user.is_superuser:
                 raise Exception("SuperUser accounts must use the admin login.")
@@ -72,7 +74,9 @@ class SystemAdminLoginView(TokenObtainPairView):
                 source="API",
                 request=request,
             )
-            return Response(serializer.validated_data, status=status.HTTP_200_OK)
+            return Response(
+                serializer.validated_data, status=status.HTTP_200_OK
+            )
         except Exception as e:
             email = request.data.get("email", "unknown")
             record_event(
@@ -85,9 +89,16 @@ class SystemAdminLoginView(TokenObtainPairView):
                 request=request,
             )
             # Re-raise the correct error depending on what happened
-            from rest_framework.exceptions import ValidationError, AuthenticationFailed
-            if str(e) in ["You do not have Manager privileges.", "SuperUser accounts must use the admin login."]:
-                return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
+            from rest_framework.exceptions import (AuthenticationFailed,
+                                                   ValidationError)
+
+            if str(e) in [
+                "You do not have Manager privileges.",
+                "SuperUser accounts must use the admin login.",
+            ]:
+                return Response(
+                    {"detail": str(e)}, status=status.HTTP_403_FORBIDDEN
+                )
             raise e
 
 
@@ -102,9 +113,7 @@ class ChangePasswordView(APIView):
 
         serializer.is_valid(raise_exception=True)
 
-        request.user.set_password(
-            serializer.validated_data["new_password"]
-        )
+        request.user.set_password(serializer.validated_data["new_password"])
         request.user.save()
 
         # Clear the forced-change flag if set

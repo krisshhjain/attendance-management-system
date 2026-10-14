@@ -1,15 +1,14 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-from unittest.mock import patch
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from .models import Notification
-
 
 User = get_user_model()
 
@@ -51,14 +50,19 @@ class NotificationAPITests(TestCase):
         response = self.client.get(reverse("notification-list"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([item["id"] for item in response.data], [self.unread.id, self.older.id])
+        self.assertEqual(
+            [item["id"] for item in response.data],
+            [self.unread.id, self.older.id],
+        )
 
     def test_user_cannot_see_another_users_notifications(self):
         self.client.force_authenticate(user=self.user)
 
         response = self.client.get(reverse("notification-list"))
 
-        self.assertNotIn(self.other_notification.id, [item["id"] for item in response.data])
+        self.assertNotIn(
+            self.other_notification.id, [item["id"] for item in response.data]
+        )
 
     def test_user_can_mark_own_notification_as_read(self):
         self.client.force_authenticate(user=self.user)
@@ -94,7 +98,9 @@ class NotificationAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Notification.objects.filter(pk=self.unread.pk).exists())
+        self.assertFalse(
+            Notification.objects.filter(pk=self.unread.pk).exists()
+        )
 
     def test_persistent_notification_cannot_be_deleted(self):
         notification = Notification.objects.create(
@@ -110,7 +116,9 @@ class NotificationAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
+        self.assertTrue(
+            Notification.objects.filter(pk=notification.pk).exists()
+        )
 
     def test_regularization_notification_cannot_be_deleted(self):
         notification = Notification.objects.create(
@@ -126,7 +134,9 @@ class NotificationAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
+        self.assertTrue(
+            Notification.objects.filter(pk=notification.pk).exists()
+        )
 
     def test_persistent_notification_remains_after_read(self):
         notification = Notification.objects.create(
@@ -144,7 +154,9 @@ class NotificationAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
+        self.assertTrue(
+            Notification.objects.filter(pk=notification.pk).exists()
+        )
 
     def test_manager_recipient_strategy_queues_notification_after_commit(self):
         manager = User.objects.create_user(
@@ -162,7 +174,9 @@ class NotificationAPITests(TestCase):
             )
 
         self.assertTrue(
-            Notification.objects.filter(user=manager, notification_type="LEAVE").exists()
+            Notification.objects.filter(
+                user=manager, notification_type="LEAVE"
+            ).exists()
         )
 
     @patch("notifications.tasks.send_mail", return_value=1)
@@ -176,7 +190,10 @@ class NotificationAPITests(TestCase):
         self.assertEqual(result["sent"], 1)
         send_mail_mock.assert_called_once()
 
-    @patch("notifications.tasks.send_mail", side_effect=OSError("temporary failure"))
+    @patch(
+        "notifications.tasks.send_mail",
+        side_effect=OSError("temporary failure"),
+    )
     def test_email_task_retries_temporary_failure(self, send_mail_mock):
         from .tasks import send_notification_email
 
@@ -207,10 +224,14 @@ class NotificationAPITests(TestCase):
         self.older.save(update_fields=["is_read"])
         self.client.force_authenticate(user=self.user)
 
-        response = self.client.get(reverse("notification-list") + "?unread=true")
+        response = self.client.get(
+            reverse("notification-list") + "?unread=true"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([item["id"] for item in response.data], [self.unread.id])
+        self.assertEqual(
+            [item["id"] for item in response.data], [self.unread.id]
+        )
 
     def test_unauthenticated_access_is_denied(self):
         list_response = self.client.get(reverse("notification-list"))
@@ -223,6 +244,12 @@ class NotificationAPITests(TestCase):
             reverse("notification-delete", args=[self.unread.pk])
         )
 
-        self.assertEqual(list_response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(read_response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(delete_response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(
+            list_response.status_code, status.HTTP_401_UNAUTHORIZED
+        )
+        self.assertEqual(
+            read_response.status_code, status.HTTP_401_UNAUTHORIZED
+        )
+        self.assertEqual(
+            delete_response.status_code, status.HTTP_401_UNAUTHORIZED
+        )

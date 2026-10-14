@@ -10,6 +10,7 @@ import os
 import json
 import shutil
 import logging
+import tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Set
@@ -36,6 +37,25 @@ VAL_DIR = DATASET_ROOT / "val"
 CACHE_DIR = Path("embeddings")
 TRAIN_CACHE = CACHE_DIR / "train"
 VAL_CACHE = CACHE_DIR / "val"
+
+
+def _save_embedding_atomically(cache_path: Path, embedding: np.ndarray) -> None:
+    """Write a valid embedding without truncating an existing cache on failure."""
+    vector = np.asarray(embedding, dtype=np.float32)
+    if vector.ndim != 1 or vector.size == 0 or not np.isfinite(vector).all():
+        raise ValueError("Face model returned an invalid embedding")
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=cache_path.parent, prefix=f".{cache_path.name}.", suffix=".tmp", delete=False
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            np.save(temporary_file, vector)
+        os.replace(temporary_path, cache_path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
 
 # Exact file list from original experiment (based on backup)
 ORIGINAL_FILES = {
@@ -123,7 +143,7 @@ class ScopedRegenerationStats:
         
         # Categorize failure
         error_msg = str(error).lower()
-        if 'no such file' in error_msg or 'cannot find the path' in error_msg:
+        if isinstance(error, FileNotFoundError) or 'file not found' in error_msg or 'no such file' in error_msg or 'cannot find the path' in error_msg:
             self.file_not_found.append(failure_info)
         elif isinstance(error, FaceExtractionError):
             if 'no faces detected' in error_msg or 'detection failed' in error_msg:
@@ -211,6 +231,7 @@ def regenerate_scoped_embeddings():
         identity_successful = 0
         
         for filename in filenames:
+            img_path = None
             try:
                 # Find the actual image file
                 img_path = find_image_file(identity_dir, filename)
@@ -227,7 +248,7 @@ def regenerate_scoped_embeddings():
                 # Save to cache using original flat naming convention
                 cache_filename = f"{identity}_{filename}.npy"
                 cache_path = TRAIN_CACHE / cache_filename
-                np.save(cache_path, embedding)
+                _save_embedding_atomically(cache_path, embedding)
                 
                 stats.add_success(identity, filename, img_path)
                 identity_successful += 1
@@ -235,10 +256,13 @@ def regenerate_scoped_embeddings():
             except Exception as error:
                 # Get face details for better failure reporting
                 face_details = None
-                if 'img_path' in locals() and img_path and img_path.exists():
-                    face_details = get_face_details(str(img_path), "retinaface")
-                
-                stats.add_failure(identity, filename, img_path if 'img_path' in locals() else None, error, face_details)
+                if img_path is not None and img_path.exists():
+                    try:
+                        face_details = get_face_details(str(img_path), "retinaface")
+                    except Exception:
+                        logger.exception("Unable to collect face details for %s", img_path)
+
+                stats.add_failure(identity, filename, img_path, error, face_details)
         
         logger.info(f"Identity {identity}: {identity_successful}/{len(filenames)} files successful")
     
