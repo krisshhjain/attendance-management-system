@@ -28,23 +28,24 @@ export function RequireAuth({ children }) {
 
   const effectiveLoginType = loginType || localStorage.getItem("loginType") || "employee";
   const isEmployeeSession =
-    effectiveLoginType === "employee" &&
-    !user?.is_superuser &&
-    !user?.is_staff;
+    effectiveLoginType === "employee" && !user?.is_superuser && !user?.is_staff;
 
   const routeAccessKey = {
     "/dashboard": "dashboard",
     "/attendance": "attendance",
     "/leave": "leave",
   }[location.pathname];
-  const hasSectionAccess = effectiveLoginType !== "employee"
-    || !routeAccessKey
-    || (user?.app_access?.[routeAccessKey] !== false);
+  const hasSectionAccess =
+    effectiveLoginType !== "employee" ||
+    !routeAccessKey ||
+    user?.app_access?.[routeAccessKey] !== false;
 
   useEffect(() => {
     if (ready && isAuthenticated && !hasSectionAccess) {
       const access = user?.app_access || {};
-      const firstAllowed = ["dashboard", "attendance", "leave"].find((key) => access[key] !== false);
+      const firstAllowed = ["dashboard", "attendance", "leave"].find(
+        (key) => access[key] !== false,
+      );
       if (firstAllowed) navigate({ to: `/${firstAllowed}`, replace: true });
     }
   }, [ready, isAuthenticated, hasSectionAccess, user, navigate]);
@@ -90,7 +91,9 @@ export function RequireAuth({ children }) {
   if (!hasSectionAccess) {
     return (
       <Box sx={{ minHeight: "100vh", display: "grid", placeItems: "center", p: 3 }}>
-        <Alert severity="warning">You don't have access to this section. Contact your app administrator.</Alert>
+        <Alert severity="warning">
+          You don't have access to this section. Contact your app administrator.
+        </Alert>
       </Box>
     );
   }
@@ -129,16 +132,13 @@ export function RequireAuth({ children }) {
             px: 2,
           }}
         >
-          <Alert
-            severity="error"
-            sx={{ maxWidth: 420, width: "100%" }}
-          >
+          <Alert severity="error" sx={{ maxWidth: 420, width: "100%" }}>
             <Typography variant="body2" fontWeight={600} gutterBottom>
               Could not verify your shift assignment.
             </Typography>
             <Typography variant="body2">
-              Please check your connection and try again. You must have a
-              shift assigned before accessing the dashboard.
+              Please check your connection and try again. You must have a shift assigned before
+              accessing the dashboard.
             </Typography>
           </Alert>
           <Button
@@ -154,11 +154,7 @@ export function RequireAuth({ children }) {
 
     // 3. No shift assigned — show selection screen
     if (!myShiftData?.shift) {
-      return (
-        <ShiftSelectionScreen
-          onAssigned={() => setShiftConfirmed(true)}
-        />
-      );
+      return <ShiftSelectionScreen onAssigned={() => setShiftConfirmed(true)} />;
     }
 
     // 4. Shift confirmed by API — fall through to normal layout

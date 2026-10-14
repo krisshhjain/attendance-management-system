@@ -27,7 +27,7 @@ function ActionButton({ icon, label, path, disabled }) {
           bgcolor: disabled ? "action.disabledBackground" : "action.hover",
           borderColor: disabled ? "divider" : "primary.main",
           color: disabled ? "text.disabled" : "primary.main",
-        }
+        },
       }}
     >
       <Box sx={{ color: disabled ? "inherit" : "primary.main" }}>{icon}</Box>
@@ -40,7 +40,9 @@ function ActionButton({ icon, label, path, disabled }) {
 
 export function QuickActions() {
   return (
-    <Paper sx={{ p: 3, borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none" }}>
+    <Paper
+      sx={{ p: 3, borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none" }}
+    >
       <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: "-0.5px", mb: 2 }}>
         Quick Actions
       </Typography>

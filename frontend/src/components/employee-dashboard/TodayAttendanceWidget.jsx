@@ -8,7 +8,7 @@ import { StatusBadge } from "../StatusBadge.jsx";
 import { ErrorState } from "../States.jsx";
 import { Alert, Box, Button, Typography, Paper, CircularProgress, Chip } from "@mui/material";
 import { FaceVerificationModal } from "./FaceVerificationModal.jsx";
-import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined';
+import CameraAltOutlinedIcon from "@mui/icons-material/CameraAltOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMyShift } from "../../lib/api.js";
@@ -63,11 +63,18 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
     if (typeof value !== "string") return 0;
     const match = /^(?:(\d+)\s+days?,\s*)?(\d+):(\d{2}):(\d{2})/.exec(value);
     if (!match) return Number(value) || 0;
-    return (Number(match[1] || 0) * 86400) + (Number(match[2]) * 3600) + (Number(match[3]) * 60) + Number(match[4]);
+    return (
+      Number(match[1] || 0) * 86400 +
+      Number(match[2]) * 3600 +
+      Number(match[3]) * 60 +
+      Number(match[4])
+    );
   };
 
   useEffect(() => {
-    const activeCheckIn = data?.active_check_in ? new Date(data.active_check_in).getTime() : Number.NaN;
+    const activeCheckIn = data?.active_check_in
+      ? new Date(data.active_check_in).getTime()
+      : Number.NaN;
     if (status !== "CHECKED_IN" || !Number.isFinite(activeCheckIn)) {
       setLiveWorkingSeconds(null);
       return;
@@ -84,45 +91,56 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
     return () => clearInterval(interval);
   }, [data?.active_check_in, data?.completed_working_duration, status]);
 
-  const workingDisplay = liveWorkingSeconds !== null
-    ? formatWorkingDuration(liveWorkingSeconds)
-    : formatWorkingDuration(data?.working_duration);
+  const workingDisplay =
+    liveWorkingSeconds !== null
+      ? formatWorkingDuration(liveWorkingSeconds)
+      : formatWorkingDuration(data?.working_duration);
 
-  const handleFaceAction = useCallback(async (type) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setPending(true);
-    setPendingText("Verifying location...");
+  const handleFaceAction = useCallback(
+    async (type) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setPending(true);
+      setPendingText("Verifying location...");
 
-    try {
-      const coords = await getCurrentCoordinates();
-
-      if (coords.accuracy > ATTENDANCE_GEOFENCE.maxAccuracyMeters) {
-        throw new Error("Your location accuracy is too low. Please enable precise location and try again.");
-      }
-
-      let locations = [];
       try {
-        locations = await fetchOfficeLocations();
-      } catch {
-        // The geofence helper falls back to the configured default location.
-      }
+        const coords = await getCurrentCoordinates();
 
-      if (!isLocationInsideGeofence(coords.latitude, coords.longitude, locations)) {
-        throw new Error("You are outside the allowed attendance area. Please move closer to an office location and try again.");
-      }
+        if (coords.accuracy > ATTENDANCE_GEOFENCE.maxAccuracyMeters) {
+          throw new Error(
+            "Your location accuracy is too low. Please enable precise location and try again.",
+          );
+        }
 
-      setLocationData(coords);
-      setFaceModalType(type);
-      setFaceModalOpen(true);
-    } catch (error) {
-      notifyError(error, { title: "Location unavailable", fallback: "Could not get your location. Please enable location access and try again." });
-    } finally {
-      inFlight.current = false;
-      setPending(false);
-      setPendingText("");
-    }
-  }, [notifyError]);
+        let locations = [];
+        try {
+          locations = await fetchOfficeLocations();
+        } catch {
+          // The geofence helper falls back to the configured default location.
+        }
+
+        if (!isLocationInsideGeofence(coords.latitude, coords.longitude, locations)) {
+          throw new Error(
+            "You are outside the allowed attendance area. Please move closer to an office location and try again.",
+          );
+        }
+
+        setLocationData(coords);
+        setFaceModalType(type);
+        setFaceModalOpen(true);
+      } catch (error) {
+        notifyError(error, {
+          title: "Location unavailable",
+          fallback: "Could not get your location. Please enable location access and try again.",
+        });
+      } finally {
+        inFlight.current = false;
+        setPending(false);
+        setPendingText("");
+      }
+    },
+    [notifyError],
+  );
 
   const runAction = useCallback(
     async (action) => {
@@ -138,7 +156,10 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         success(action === "in" ? "Attendance marked successfully." : "Checked out successfully.");
         await reloadData();
       } catch (error) {
-        notifyError(error, { title: "Attendance unavailable", fallback: "Attendance could not be updated." });
+        notifyError(error, {
+          title: "Attendance unavailable",
+          fallback: "Attendance could not be updated.",
+        });
       } finally {
         inFlight.current = false;
         setPending(false);
@@ -148,36 +169,115 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
     [notifyError, reloadData, success],
   );
 
-  if (loading) return <Paper sx={{ p: 4, display: "flex", justifyContent: "center", borderRadius: 3, border: "1px solid", borderColor: "divider", boxShadow: "none" }}><CircularProgress /></Paper>;
+  if (loading)
+    return (
+      <Paper
+        sx={{
+          p: 4,
+          display: "flex",
+          justifyContent: "center",
+          borderRadius: 3,
+          border: "1px solid",
+          borderColor: "divider",
+          boxShadow: "none",
+        }}
+      >
+        <CircularProgress />
+      </Paper>
+    );
   if (loadError || !data) return <ErrorState onRetry={reloadData} />;
 
   const canCheckIn = status === "NOT_CHECKED_IN" || status === "COMPLETED";
   const canCheckOut = status === "CHECKED_IN";
 
   return (
-    <Paper sx={{ overflow: "visible", height: "auto", borderRadius: 3, border: "1px solid", borderColor: "#dbe3ee", boxShadow: "0 2px 8px rgba(15, 23, 42, 0.06)" }}>
-      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 1.75, borderBottom: "1px solid", borderColor: "#e5ebf2", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
+    <Paper
+      sx={{
+        overflow: "visible",
+        height: "auto",
+        borderRadius: 3,
+        border: "1px solid",
+        borderColor: "#dbe3ee",
+        boxShadow: "0 2px 8px rgba(15, 23, 42, 0.06)",
+      }}
+    >
+      <Box
+        sx={{
+          px: { xs: 2, sm: 2.5 },
+          py: 1.75,
+          borderBottom: "1px solid",
+          borderColor: "#e5ebf2",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 2,
+        }}
+      >
         <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#718096" }}>
+          <Typography
+            sx={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "#718096",
+            }}
+          >
             Today&apos;s Attendance
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8, mt: 0.5 }}>
-            <Box sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: canCheckOut ? "#22c55e" : "#cbd5e1" }} />
+            <Box
+              sx={{
+                width: 9,
+                height: 9,
+                borderRadius: "50%",
+                bgcolor: canCheckOut ? "#22c55e" : "#cbd5e1",
+              }}
+            />
             <Typography sx={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
-              {status === "HOLIDAY" ? "Holiday" : status === "WEEKEND" ? "Weekend" : status === "LEAVE" ? "On Leave" : canCheckOut ? "Checked In" : status === "COMPLETED" ? "Checked Out" : "Not Checked In"}
+              {status === "HOLIDAY"
+                ? "Holiday"
+                : status === "WEEKEND"
+                  ? "Weekend"
+                  : status === "LEAVE"
+                    ? "On Leave"
+                    : canCheckOut
+                      ? "Checked In"
+                      : status === "COMPLETED"
+                        ? "Checked Out"
+                        : "Not Checked In"}
             </Typography>
           </Box>
         </Box>
         <StatusBadge status={status} />
       </Box>
 
-      {status === "HOLIDAY" && data.holiday_name && <Typography sx={{ px: 2.5, pt: 1.5, color: "#64748b", fontSize: 13 }}>{data.holiday_name}</Typography>}
+      {status === "HOLIDAY" && data.holiday_name && (
+        <Typography sx={{ px: 2.5, pt: 1.5, color: "#64748b", fontSize: 13 }}>
+          {data.holiday_name}
+        </Typography>
+      )}
 
       {shift && (
-        <Box sx={{ mx: 2.5, mt: 2, display: "flex", alignItems: "center", gap: 1, color: "text.secondary" }}>
+        <Box
+          sx={{
+            mx: 2.5,
+            mt: 2,
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            color: "text.secondary",
+          }}
+        >
           <ScheduleOutlinedIcon sx={{ fontSize: 18 }} />
-          <Typography variant="caption" fontWeight={600}>{shift.name}</Typography>
-          <Chip label={`${shift.start_time} - ${shift.end_time}`} size="small" sx={{ height: 20, fontSize: 10, fontWeight: 700 }} />
+          <Typography variant="caption" fontWeight={600}>
+            {shift.name}
+          </Typography>
+          <Chip
+            label={`${shift.start_time} - ${shift.end_time}`}
+            size="small"
+            sx={{ height: 20, fontSize: 10, fontWeight: 700 }}
+          />
         </Box>
       )}
 
@@ -185,7 +285,7 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         <Alert
           severity="warning"
           sx={{ mx: 2.5, mt: 2, alignItems: "center" }}
-          action={(
+          action={
             <Button
               color="inherit"
               size="small"
@@ -194,28 +294,78 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
             >
               Regularize
             </Button>
-          )}
+          }
         >
-          Your attendance for {previousIncomplete.date} is incomplete. Please submit a regularization request.
+          Your attendance for {previousIncomplete.date} is incomplete. Please submit a
+          regularization request.
         </Alert>
       )}
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
-        <Box sx={{ p: { xs: 2, sm: 2.5 }, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, bgcolor: "#f8fafc", borderRight: { md: "1px solid" }, borderBottom: { xs: "1px solid", md: 0 }, borderColor: "#e5ebf2" }}>
+        <Box
+          sx={{
+            p: { xs: 2, sm: 2.5 },
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 1,
+            bgcolor: "#f8fafc",
+            borderRight: { md: "1px solid" },
+            borderBottom: { xs: "1px solid", md: 0 },
+            borderColor: "#e5ebf2",
+          }}
+        >
           <Metric label="Check In" value={formatAttendanceTime(data.check_in)} />
           <Metric label="Check Out" value={formatAttendanceTime(data.check_out)} />
           <Metric label="Working" value={workingDisplay} />
         </Box>
 
         <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
-          <Typography sx={{ mb: 1.25, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#718096" }}>
+          <Typography
+            sx={{
+              mb: 1.25,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "#718096",
+            }}
+          >
             Quick Actions
           </Typography>
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 1 }}>
-            <ActionButton label={pending && canCheckIn ? pendingText || "Checking in..." : "Check In"} icon={<ScheduleOutlinedIcon />} primary disabled={!canCheckIn || pending} onClick={() => runAction("in")} />
-            <ActionButton label={pending && canCheckOut ? pendingText || "Checking out..." : "Check Out"} icon={<ScheduleOutlinedIcon />} disabled={!canCheckOut || pending} onClick={() => runAction("out")} />
-            <ActionButton label={pending && canCheckIn && pendingText.includes("location") ? pendingText : "Face Check In"} icon={<CameraAltOutlinedIcon />} disabled={!canCheckIn || pending} onClick={() => handleFaceAction("in")} />
-            <ActionButton label={pending && canCheckOut && pendingText.includes("location") ? pendingText : "Face Check Out"} icon={<CameraAltOutlinedIcon />} disabled={!canCheckOut || pending} onClick={() => handleFaceAction("out")} />
+            <ActionButton
+              label={pending && canCheckIn ? pendingText || "Checking in..." : "Check In"}
+              icon={<ScheduleOutlinedIcon />}
+              primary
+              disabled={!canCheckIn || pending}
+              onClick={() => runAction("in")}
+            />
+            <ActionButton
+              label={pending && canCheckOut ? pendingText || "Checking out..." : "Check Out"}
+              icon={<ScheduleOutlinedIcon />}
+              disabled={!canCheckOut || pending}
+              onClick={() => runAction("out")}
+            />
+            <ActionButton
+              label={
+                pending && canCheckIn && pendingText.includes("location")
+                  ? pendingText
+                  : "Face Check In"
+              }
+              icon={<CameraAltOutlinedIcon />}
+              disabled={!canCheckIn || pending}
+              onClick={() => handleFaceAction("in")}
+            />
+            <ActionButton
+              label={
+                pending && canCheckOut && pendingText.includes("location")
+                  ? pendingText
+                  : "Face Check Out"
+              }
+              icon={<CameraAltOutlinedIcon />}
+              disabled={!canCheckOut || pending}
+              onClick={() => handleFaceAction("out")}
+            />
           </Box>
         </Box>
       </Box>
@@ -228,7 +378,10 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
         onSuccess={() => {
           setFaceModalOpen(false);
           reloadData().catch((error) => {
-            notifyError(error, { title: "Attendance refresh failed", fallback: "Attendance was saved, but the latest status could not be loaded." });
+            notifyError(error, {
+              title: "Attendance refresh failed",
+              fallback: "Attendance was saved, but the latest status could not be loaded.",
+            });
           });
         }}
       />
@@ -238,9 +391,26 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
 
 function Metric({ label, value }) {
   return (
-    <Box sx={{ minWidth: 0, px: { xs: 0.5, sm: 1 }, borderRight: "1px solid", borderColor: "#e2e8f0", "&:last-child": { borderRight: 0 } }}>
+    <Box
+      sx={{
+        minWidth: 0,
+        px: { xs: 0.5, sm: 1 },
+        borderRight: "1px solid",
+        borderColor: "#e2e8f0",
+        "&:last-child": { borderRight: 0 },
+      }}
+    >
       <Typography sx={{ fontSize: 11, color: "#718096", mb: 0.5 }}>{label}</Typography>
-      <Typography sx={{ fontSize: { xs: 13, sm: 15 }, fontWeight: 700, color: "#334155", whiteSpace: "nowrap" }}>{value}</Typography>
+      <Typography
+        sx={{
+          fontSize: { xs: 13, sm: 15 },
+          fontWeight: 700,
+          color: "#334155",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {value}
+      </Typography>
     </Box>
   );
 }

@@ -85,7 +85,13 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
   if (!employee) return null;
 
   return (
-    <Dialog open={open} onClose={!loading ? onClose : undefined} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}>
+    <Dialog
+      open={open}
+      onClose={!loading ? onClose : undefined}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
+    >
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" fontWeight={600} letterSpacing="-0.5px">
           Edit Employee
@@ -97,7 +103,11 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
 
       <form onSubmit={handleSubmit}>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2.5, py: 2 }}>
-          {error && <Alert severity="error" sx={{ borderRadius: "8px" }}>{error}</Alert>}
+          {error && (
+            <Alert severity="error" sx={{ borderRadius: "8px" }}>
+              {error}
+            </Alert>
+          )}
 
           {/* Name row */}
           <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
@@ -149,24 +159,26 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
           </Box>
 
           {/* Section + Subsection are organization fields for Interns only. */}
-          {formData.employment_type === "INTERN" && <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
-            <TextField
-              fullWidth
-              label="Section"
-              name="section"
-              value={formData.section}
-              onChange={handleChange}
-              size="small"
-            />
-            <TextField
-              fullWidth
-              label="Subsection"
-              name="subsection"
-              value={formData.subsection}
-              onChange={handleChange}
-              size="small"
-            />
-          </Box>}
+          {formData.employment_type === "INTERN" && (
+            <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
+              <TextField
+                fullWidth
+                label="Section"
+                name="section"
+                value={formData.section}
+                onChange={handleChange}
+                size="small"
+              />
+              <TextField
+                fullWidth
+                label="Subsection"
+                name="subsection"
+                value={formData.subsection}
+                onChange={handleChange}
+                size="small"
+              />
+            </Box>
+          )}
 
           <TextField
             required
@@ -216,10 +228,12 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
                   control={
                     <Checkbox
                       checked={Boolean(formData.app_access?.[key])}
-                      onChange={(event) => setFormData((prev) => ({
-                        ...prev,
-                        app_access: { ...prev.app_access, [key]: event.target.checked },
-                      }))}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          app_access: { ...prev.app_access, [key]: event.target.checked },
+                        }))
+                      }
                     />
                   }
                 />
@@ -229,7 +243,11 @@ export function EditEmployeeDialog({ open, onClose, onSuccess, employee }) {
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2, pt: 1 }}>
-          <Button onClick={onClose} disabled={loading} sx={{ textTransform: "none", fontWeight: 600 }}>
+          <Button
+            onClick={onClose}
+            disabled={loading}
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
             Cancel
           </Button>
           <Button

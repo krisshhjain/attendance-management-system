@@ -34,7 +34,12 @@ import DownloadIcon from "@mui/icons-material/Download";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 import { useAuth } from "../lib/auth.jsx";
-import { deleteSystemLogs, downloadSystemLogs, fetchSystemLogActors, fetchSystemLogs } from "../lib/api.js";
+import {
+  deleteSystemLogs,
+  downloadSystemLogs,
+  fetchSystemLogActors,
+  fetchSystemLogs,
+} from "../lib/api.js";
 
 export const Route = createFileRoute("/system-logs")({
   validateSearch: (search) => ({
@@ -58,21 +63,87 @@ export const Route = createFileRoute("/system-logs")({
   ),
 });
 
-const categories = ["AUTHENTICATION", "EMPLOYEE", "ATTENDANCE", "REGULARIZATION", "LEAVE", "ADMINISTRATION", "NOTIFICATION", "HR_COPILOT", "CELERY", "SECURITY"];
+const categories = [
+  "AUTHENTICATION",
+  "EMPLOYEE",
+  "ATTENDANCE",
+  "REGULARIZATION",
+  "LEAVE",
+  "ADMINISTRATION",
+  "NOTIFICATION",
+  "HR_COPILOT",
+  "CELERY",
+  "SECURITY",
+];
 const severities = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
 const statuses = ["SUCCESS", "FAILED", "DENIED", "PENDING", "RETRY", "CANCELLED", "SKIPPED"];
-const sources = ["API", "ADMIN", "MOBILE", "KIOSK", "FACE_WEB", "FACE_SERVICE", "CELERY", "SYSTEM", "HR_COPILOT"];
+const sources = [
+  "API",
+  "ADMIN",
+  "MOBILE",
+  "KIOSK",
+  "FACE_WEB",
+  "FACE_SERVICE",
+  "CELERY",
+  "SYSTEM",
+  "HR_COPILOT",
+];
 const actorRoles = ["EMPLOYEE", "MANAGER", "STAFF", "SUPERUSER", "USER", "SYSTEM", "ANONYMOUS"];
 const eventTypes = [
-  "LOGIN_SUCCESS", "LOGIN_FAILED", "PASSWORD_CHANGED", "UNAUTHORIZED_ACCESS", "FORBIDDEN_ACCESS",
-  "EMPLOYEE_CREATED", "EMPLOYEE_UPDATED", "EMPLOYEE_ACTIVATED", "EMPLOYEE_DEACTIVATED", "EMPLOYEE_PASSWORD_CHANGED", "FACE_ENROLLMENT",
-  "MANAGER_CREATED", "MANAGER_UPDATED", "MANAGER_ACTIVATED", "MANAGER_DEACTIVATED", "MANAGER_PASSWORD_CHANGED", "ACCESS_CHANGED", "ROLE_CHANGED",
-  "CHECK_IN", "CHECK_OUT", "ADMIN_FORCE_CHECKOUT", "ATTENDANCE_RESET", "ATTENDANCE_EDIT", "ABSENCE_DETECTED",
-  "REGULARIZATION_CREATED", "REGULARIZATION_SUBMITTED", "REGULARIZATION_APPROVED", "REGULARIZATION_REJECTED", "REGULARIZATION_QUOTA_CHANGED",
-  "SHIFT_ASSIGNED", "SHIFT_BULK_ASSIGNED", "SHIFT_CONFIGURATION_CHANGED", "OFFICE_LOCATION_CREATED", "OFFICE_LOCATION_UPDATED", "OFFICE_LOCATION_DELETED",
-  "LEAVE_CREATED", "LEAVE_UPDATED", "LEAVE_APPROVED", "LEAVE_DENIED", "LEAVE_CANCELLED", "LEAVE_TYPE_CREATED", "LEAVE_TYPE_UPDATED", "LEAVE_TYPE_DELETED", "LEAVE_POLICY_CREATED", "LEAVE_POLICY_UPDATED", "LEAVE_POLICY_DELETED",
-  "EMAIL_SENT", "EMAIL_FAILED",
-  "COPILOT_ACTION_REQUESTED", "COPILOT_ACTION_CONFIRMED", "COPILOT_ACTION_EXECUTED", "COPILOT_ACTION_FAILED", "COPILOT_ACTION_CANCELLED", "COPILOT_ACTION_EXPIRED",
+  "LOGIN_SUCCESS",
+  "LOGIN_FAILED",
+  "PASSWORD_CHANGED",
+  "UNAUTHORIZED_ACCESS",
+  "FORBIDDEN_ACCESS",
+  "EMPLOYEE_CREATED",
+  "EMPLOYEE_UPDATED",
+  "EMPLOYEE_ACTIVATED",
+  "EMPLOYEE_DEACTIVATED",
+  "EMPLOYEE_PASSWORD_CHANGED",
+  "FACE_ENROLLMENT",
+  "MANAGER_CREATED",
+  "MANAGER_UPDATED",
+  "MANAGER_ACTIVATED",
+  "MANAGER_DEACTIVATED",
+  "MANAGER_PASSWORD_CHANGED",
+  "ACCESS_CHANGED",
+  "ROLE_CHANGED",
+  "CHECK_IN",
+  "CHECK_OUT",
+  "ADMIN_FORCE_CHECKOUT",
+  "ATTENDANCE_RESET",
+  "ATTENDANCE_EDIT",
+  "ABSENCE_DETECTED",
+  "REGULARIZATION_CREATED",
+  "REGULARIZATION_SUBMITTED",
+  "REGULARIZATION_APPROVED",
+  "REGULARIZATION_REJECTED",
+  "REGULARIZATION_QUOTA_CHANGED",
+  "SHIFT_ASSIGNED",
+  "SHIFT_BULK_ASSIGNED",
+  "SHIFT_CONFIGURATION_CHANGED",
+  "OFFICE_LOCATION_CREATED",
+  "OFFICE_LOCATION_UPDATED",
+  "OFFICE_LOCATION_DELETED",
+  "LEAVE_CREATED",
+  "LEAVE_UPDATED",
+  "LEAVE_APPROVED",
+  "LEAVE_DENIED",
+  "LEAVE_CANCELLED",
+  "LEAVE_TYPE_CREATED",
+  "LEAVE_TYPE_UPDATED",
+  "LEAVE_TYPE_DELETED",
+  "LEAVE_POLICY_CREATED",
+  "LEAVE_POLICY_UPDATED",
+  "LEAVE_POLICY_DELETED",
+  "EMAIL_SENT",
+  "EMAIL_FAILED",
+  "COPILOT_ACTION_REQUESTED",
+  "COPILOT_ACTION_CONFIRMED",
+  "COPILOT_ACTION_EXECUTED",
+  "COPILOT_ACTION_FAILED",
+  "COPILOT_ACTION_CANCELLED",
+  "COPILOT_ACTION_EXPIRED",
 ];
 
 function chipColor(value) {
@@ -110,11 +181,14 @@ function SystemLogsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { success, notifyError } = useFeedback();
 
-  const updateSearch = useCallback((updates) => {
-    navigate({
-      search: (previous) => ({ ...previous, ...updates, page: updates.page ?? 1 }),
-    });
-  }, [navigate]);
+  const updateSearch = useCallback(
+    (updates) => {
+      navigate({
+        search: (previous) => ({ ...previous, ...updates, page: updates.page ?? 1 }),
+      });
+    },
+    [navigate],
+  );
 
   useEffect(() => {
     setSearchInput(search.search);
@@ -140,20 +214,36 @@ function SystemLogsPage() {
     return () => window.clearTimeout(timer);
   }, [searchInput, search.search, updateSearch]);
 
-  const queryParams = useMemo(() => ({
-    search: search.search,
-    category: search.category,
-    event_type: search.event_type,
-    severity: search.severity,
-    status: search.status,
-    source: search.source,
-    actor: search.actor,
-    actor_role: search.actor_role,
-    date_from: search.date_from,
-    date_to: search.date_to,
-    page: search.page,
-    page_size: search.page_size,
-  }), [search.search, search.category, search.event_type, search.severity, search.status, search.source, search.actor, search.actor_role, search.date_from, search.date_to, search.page, search.page_size]);
+  const queryParams = useMemo(
+    () => ({
+      search: search.search,
+      category: search.category,
+      event_type: search.event_type,
+      severity: search.severity,
+      status: search.status,
+      source: search.source,
+      actor: search.actor,
+      actor_role: search.actor_role,
+      date_from: search.date_from,
+      date_to: search.date_to,
+      page: search.page,
+      page_size: search.page_size,
+    }),
+    [
+      search.search,
+      search.category,
+      search.event_type,
+      search.severity,
+      search.status,
+      search.source,
+      search.actor,
+      search.actor_role,
+      search.date_from,
+      search.date_to,
+      search.page,
+      search.page_size,
+    ],
+  );
 
   useEffect(() => {
     let active = true;
@@ -202,7 +292,10 @@ function SystemLogsPage() {
       URL.revokeObjectURL(url);
       success("System logs exported successfully.");
     } catch (exportError) {
-      notifyError(exportError, { title: "Export failed", fallback: "The system logs could not be exported." });
+      notifyError(exportError, {
+        title: "Export failed",
+        fallback: "The system logs could not be exported.",
+      });
     } finally {
       setExporting("");
     }
@@ -218,7 +311,10 @@ function SystemLogsPage() {
       setDeleteDate("");
       setReloadToken((value) => value + 1);
     } catch (err) {
-      notifyError(err, { title: "Log deletion failed", fallback: "The system logs could not be deleted." });
+      notifyError(err, {
+        title: "Log deletion failed",
+        fallback: "The system logs could not be deleted.",
+      });
     } finally {
       setIsDeleting(false);
     }
@@ -248,38 +344,78 @@ function SystemLogsPage() {
       sx={{ minWidth: { xs: "100%", sm: 160 }, flex: 1 }}
     >
       <MenuItem value="">All</MenuItem>
-      {values.map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
+      {values.map((value) => (
+        <MenuItem key={value} value={value}>
+          {value}
+        </MenuItem>
+      ))}
     </TextField>
   );
 
   return (
-    <Box sx={{ width: "100%", maxWidth: 1600, mx: "auto", p: { xs: 2, md: 4 }, color: "text.primary" }}>
-      <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2, flexWrap: "wrap", mb: 3 }}>
+    <Box
+      sx={{ width: "100%", maxWidth: 1600, mx: "auto", p: { xs: 2, md: 4 }, color: "text.primary" }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 2,
+          flexWrap: "wrap",
+          mb: 3,
+        }}
+      >
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 750 }}>System Logs</Typography>
+          <Typography variant="h4" sx={{ fontWeight: 750 }}>
+            System Logs
+          </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             Review immutable security and operational activity.
           </Typography>
         </Box>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
           <Tooltip title="Refresh logs">
-            <IconButton onClick={() => setReloadToken((value) => value + 1)} aria-label="Refresh logs">
+            <IconButton
+              onClick={() => setReloadToken((value) => value + 1)}
+              aria-label="Refresh logs"
+            >
               <RefreshIcon />
             </IconButton>
           </Tooltip>
-          <Button size="small" variant="outlined" startIcon={<DownloadIcon />} disabled={Boolean(exporting)} onClick={() => exportLogs("csv")}>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            disabled={Boolean(exporting)}
+            onClick={() => exportLogs("csv")}
+          >
             {exporting === "csv" ? "Preparing..." : "CSV"}
           </Button>
-          <Button size="small" variant="contained" startIcon={<DownloadIcon />} disabled={Boolean(exporting)} onClick={() => exportLogs("xlsx")}>
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<DownloadIcon />}
+            disabled={Boolean(exporting)}
+            onClick={() => exportLogs("xlsx")}
+          >
             {exporting === "xlsx" ? "Preparing..." : "Excel"}
           </Button>
-          <Button size="small" variant="outlined" color="error" onClick={() => setShowDeleteDialog(true)}>
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            onClick={() => setShowDeleteDialog(true)}
+          >
             Delete Logs
           </Button>
         </Box>
       </Box>
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderColor: "divider", bgcolor: "background.paper" }}>
+      <Paper
+        variant="outlined"
+        sx={{ p: 2, mb: 2, borderColor: "divider", bgcolor: "background.paper" }}
+      >
         <Box sx={{ display: "flex", gap: 1, alignItems: "center", mb: 1.5 }}>
           <SearchIcon color="action" />
           <TextField
@@ -302,9 +438,13 @@ function SystemLogsPage() {
             freeSolo
             size="small"
             options={actorOptions}
-            value={actorOptions.find((option) => String(option.id) === String(search.actor)) || null}
+            value={
+              actorOptions.find((option) => String(option.id) === String(search.actor)) || null
+            }
             inputValue={actorInput}
-            getOptionLabel={(option) => typeof option === "string" ? option : `${option.name} (${option.email})`}
+            getOptionLabel={(option) =>
+              typeof option === "string" ? option : `${option.name} (${option.email})`
+            }
             onInputChange={(_, value, reason) => {
               setActorInput(value);
               if (reason === "clear") updateSearch({ actor: "" });
@@ -318,7 +458,9 @@ function SystemLogsPage() {
               updateSearch({ actor: String(option.id) });
               setActorInput(`${option.name} (${option.email})`);
             }}
-            renderInput={(params) => <TextField {...params} label="Actor" placeholder="Search users" />}
+            renderInput={(params) => (
+              <TextField {...params} label="Actor" placeholder="Search users" />
+            )}
             sx={{ minWidth: { xs: "100%", sm: 230 }, flex: 1 }}
           />
           <TextField
@@ -341,30 +483,54 @@ function SystemLogsPage() {
           />
         </Box>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap", mt: 1.5 }}>
-          <Button onClick={resetFilters} size="small">Reset Filters</Button>
-          {activeFilters.length > 0 && <Typography variant="caption" color="text.secondary">{activeFilters.length} active filter{activeFilters.length === 1 ? "" : "s"}</Typography>}
+          <Button onClick={resetFilters} size="small">
+            Reset Filters
+          </Button>
+          {activeFilters.length > 0 && (
+            <Typography variant="caption" color="text.secondary">
+              {activeFilters.length} active filter{activeFilters.length === 1 ? "" : "s"}
+            </Typography>
+          )}
         </Box>
         {activeFilters.length > 0 && (
           <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1 }}>
             {activeFilters.map(([key, label]) => (
-              <Chip key={key} size="small" label={label} onDelete={() => {
-                if (key === "actor") setActorInput("");
-                updateSearch({ [key]: "" });
-              }} />
+              <Chip
+                key={key}
+                size="small"
+                label={label}
+                onDelete={() => {
+                  if (key === "actor") setActorInput("");
+                  updateSearch({ [key]: "" });
+                }}
+              />
             ))}
           </Box>
         )}
       </Paper>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" onClick={() => setReloadToken((value) => value + 1)}>Retry</Button>}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" onClick={() => setReloadToken((value) => value + 1)}>
+              Retry
+            </Button>
+          }
+        >
           {error}
         </Alert>
       )}
 
-      <Paper variant="outlined" sx={{ overflow: "hidden", borderColor: "divider", bgcolor: "background.paper" }}>
+      <Paper
+        variant="outlined"
+        sx={{ overflow: "hidden", borderColor: "divider", bgcolor: "background.paper" }}
+      >
         {loading ? (
-          <Box sx={{ minHeight: 320, display: "grid", placeItems: "center" }}><CircularProgress /></Box>
+          <Box sx={{ minHeight: 320, display: "grid", placeItems: "center" }}>
+            <CircularProgress />
+          </Box>
         ) : logs.results.length === 0 ? (
           <Box sx={{ minHeight: 320, display: "grid", placeItems: "center", p: 3 }}>
             <Typography color="text.secondary">No logs match the current filters.</Typography>
@@ -374,23 +540,53 @@ function SystemLogsPage() {
             <Table stickyHeader size="small" sx={{ minWidth: 1120 }}>
               <TableHead>
                 <TableRow>
-                  {["Timestamp", "Severity", "Category", "Event", "Actor", "Target", "Status", "Source", "Message"].map((heading) => (
+                  {[
+                    "Timestamp",
+                    "Severity",
+                    "Category",
+                    "Event",
+                    "Actor",
+                    "Target",
+                    "Status",
+                    "Source",
+                    "Message",
+                  ].map((heading) => (
                     <TableCell key={heading}>{heading}</TableCell>
                   ))}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {logs.results.map((log) => (
-                  <TableRow key={log.id} hover onClick={() => setSelectedLog(log)} sx={{ cursor: "pointer" }}>
+                  <TableRow
+                    key={log.id}
+                    hover
+                    onClick={() => setSelectedLog(log)}
+                    sx={{ cursor: "pointer" }}
+                  >
                     <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(log.timestamp)}</TableCell>
-                    <TableCell><Chip size="small" label={log.severity} color={chipColor(log.severity)} /></TableCell>
+                    <TableCell>
+                      <Chip size="small" label={log.severity} color={chipColor(log.severity)} />
+                    </TableCell>
                     <TableCell>{log.category}</TableCell>
                     <TableCell sx={{ fontWeight: 650 }}>{log.event_type}</TableCell>
-                    <TableCell>{log.actor?.name || log.actor?.email || log.actor_role || "System"}</TableCell>
+                    <TableCell>
+                      {log.actor?.name || log.actor?.email || log.actor_role || "System"}
+                    </TableCell>
                     <TableCell>{log.target_label || log.target_id || "-"}</TableCell>
-                    <TableCell><Chip size="small" label={log.status} color={chipColor(log.status)} /></TableCell>
+                    <TableCell>
+                      <Chip size="small" label={log.status} color={chipColor(log.status)} />
+                    </TableCell>
                     <TableCell>{log.source}</TableCell>
-                    <TableCell sx={{ maxWidth: 300, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{log.message}</TableCell>
+                    <TableCell
+                      sx={{
+                        maxWidth: 300,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {log.message}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -404,7 +600,9 @@ function SystemLogsPage() {
             page={search.page - 1}
             onPageChange={(_, page) => updateSearch({ page: page + 1 })}
             rowsPerPage={search.page_size}
-            onRowsPerPageChange={(event) => updateSearch({ page_size: Number(event.target.value), page: 1 })}
+            onRowsPerPageChange={(event) =>
+              updateSearch({ page_size: Number(event.target.value), page: 1 })
+            }
             rowsPerPageOptions={[25, 50, 100]}
           />
         )}
@@ -412,13 +610,29 @@ function SystemLogsPage() {
 
       <Drawer anchor="right" open={Boolean(selectedLog)} onClose={() => setSelectedLog(null)}>
         {selectedLog && (
-          <Box sx={{ width: { xs: "100vw", sm: 520 }, p: 3, bgcolor: "background.paper", color: "text.primary", minHeight: "100%" }}>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+          <Box
+            sx={{
+              width: { xs: "100vw", sm: 520 },
+              p: 3,
+              bgcolor: "background.paper",
+              color: "text.primary",
+              minHeight: "100%",
+            }}
+          >
+            <Box
+              sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}
+            >
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 750 }}>{selectedLog.event_type}</Typography>
-                <Typography variant="caption" color="text.secondary">Log #{selectedLog.id}</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 750 }}>
+                  {selectedLog.event_type}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Log #{selectedLog.id}
+                </Typography>
               </Box>
-              <IconButton onClick={() => setSelectedLog(null)} aria-label="Close log details"><CloseIcon /></IconButton>
+              <IconButton onClick={() => setSelectedLog(null)} aria-label="Close log details">
+                <CloseIcon />
+              </IconButton>
             </Box>
             <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5, mb: 2 }}>
               {[
@@ -434,17 +648,41 @@ function SystemLogsPage() {
                 ["User agent", selectedLog.user_agent || "-"],
               ].map(([label, value]) => (
                 <Box key={label} sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" color="text.secondary">{label}</Typography>
-                  <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{value}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {label}
+                  </Typography>
+                  <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
+                    {value}
+                  </Typography>
                 </Box>
               ))}
             </Box>
-            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Message</Typography>
-            <Typography variant="body2" sx={{ mb: 2, whiteSpace: "pre-wrap" }}>{selectedLog.message || "-"}</Typography>
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+              Message
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2, whiteSpace: "pre-wrap" }}>
+              {selectedLog.message || "-"}
+            </Typography>
             {["before_state", "after_state", "metadata"].map((field) => (
               <Box key={field} sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{field.replace("_", " ")}</Typography>
-                <Box component="pre" sx={{ m: 0, p: 1.5, maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere", bgcolor: "action.hover", borderRadius: 1, fontSize: 12, fontFamily: "monospace" }}>
+                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                  {field.replace("_", " ")}
+                </Typography>
+                <Box
+                  component="pre"
+                  sx={{
+                    m: 0,
+                    p: 1.5,
+                    maxHeight: 220,
+                    overflow: "auto",
+                    whiteSpace: "pre-wrap",
+                    overflowWrap: "anywhere",
+                    bgcolor: "action.hover",
+                    borderRadius: 1,
+                    fontSize: 12,
+                    fontFamily: "monospace",
+                  }}
+                >
                   {jsonText(selectedLog[field])}
                 </Box>
               </Box>
@@ -453,11 +691,17 @@ function SystemLogsPage() {
         )}
       </Drawer>
 
-      <Dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>Delete System Logs</DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
-            Choose a date to permanently delete all system logs on or before that date. This action cannot be undone.
+            Choose a date to permanently delete all system logs on or before that date. This action
+            cannot be undone.
           </DialogContentText>
           <TextField
             fullWidth
@@ -470,8 +714,15 @@ function SystemLogsPage() {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowDeleteDialog(false)} disabled={isDeleting}>Cancel</Button>
-          <Button onClick={handleDeleteLogs} color="error" variant="contained" disabled={!deleteDate || isDeleting}>
+          <Button onClick={() => setShowDeleteDialog(false)} disabled={isDeleting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDeleteLogs}
+            color="error"
+            variant="contained"
+            disabled={!deleteDate || isDeleting}
+          >
             {isDeleting ? "Deleting..." : "Delete Logs"}
           </Button>
         </DialogActions>

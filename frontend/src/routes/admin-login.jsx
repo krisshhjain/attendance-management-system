@@ -63,14 +63,35 @@ function AdminLoginPage() {
   }
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", bgcolor: "background.default", px: 2, py: 6 }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: "background.default",
+        px: 2,
+        py: 6,
+      }}
+    >
       <Box sx={{ width: "100%", maxWidth: 400 }}>
         <Box sx={{ mb: 4, display: "flex", alignItems: "center", gap: 2 }}>
-          <Avatar sx={{ width: 40, height: 40, bgcolor: "primary.main", fontWeight: "bold", borderRadius: 1 }}>
+          <Avatar
+            sx={{
+              width: 40,
+              height: 40,
+              bgcolor: "primary.main",
+              fontWeight: "bold",
+              borderRadius: 1,
+            }}
+          >
             A
           </Avatar>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: "-0.5px", lineHeight: 1.2 }}>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 600, letterSpacing: "-0.5px", lineHeight: 1.2 }}
+            >
               AttendPro
             </Typography>
             <Typography variant="caption" color="text.secondary">
@@ -88,7 +109,11 @@ function AdminLoginPage() {
               Use your admin credentials to access the management dashboard.
             </Typography>
 
-            <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 2.5 }}>
+            <Box
+              component="form"
+              onSubmit={handleSubmit}
+              sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 2.5 }}
+            >
               <TextField
                 label="Email"
                 type="email"
@@ -116,7 +141,12 @@ function AdminLoginPage() {
                       <Button
                         size="small"
                         onClick={() => setShowPassword((v) => !v)}
-                        sx={{ minWidth: "auto", textTransform: "none", color: "text.secondary", fontSize: "0.75rem" }}
+                        sx={{
+                          minWidth: "auto",
+                          textTransform: "none",
+                          color: "text.secondary",
+                          fontSize: "0.75rem",
+                        }}
                       >
                         {showPassword ? "Hide" : "Show"}
                       </Button>
@@ -156,7 +186,13 @@ function AdminLoginPage() {
           </CardContent>
         </Card>
 
-        <Typography variant="caption" display="block" textAlign="center" color="text.secondary" sx={{ mt: 4 }}>
+        <Typography
+          variant="caption"
+          display="block"
+          textAlign="center"
+          color="text.secondary"
+          sx={{ mt: 4 }}
+        >
           Trouble signing in? Contact your HR administrator.
         </Typography>
       </Box>

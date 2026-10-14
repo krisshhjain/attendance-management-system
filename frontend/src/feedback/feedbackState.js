@@ -15,7 +15,10 @@ const DEFAULT_TITLES = {
 };
 
 export function getFeedbackKey(notification) {
-  return notification.dedupeKey || `${notification.severity}:${notification.title}:${notification.message}`;
+  return (
+    notification.dedupeKey ||
+    `${notification.severity}:${notification.title}:${notification.message}`
+  );
 }
 
 export function createNotification(input, id) {
@@ -24,9 +27,10 @@ export function createNotification(input, id) {
 
   if (!message) return null;
 
-  const duration = input?.duration === 0
-    ? 0
-    : Math.max(0, Number(input?.duration ?? DEFAULT_DURATIONS[severity]) || 0);
+  const duration =
+    input?.duration === 0
+      ? 0
+      : Math.max(0, Number(input?.duration ?? DEFAULT_DURATIONS[severity]) || 0);
 
   return {
     id,

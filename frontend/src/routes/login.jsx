@@ -1,13 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth.jsx";
-import {
-  Box,
-  Typography,
-  TextField,
-  Button,
-  InputAdornment,
-} from "@mui/material";
+import { Box, Typography, TextField, Button, InputAdornment } from "@mui/material";
 
 const INK = "#12141F";
 const PAPER = "#F6F4EF";
@@ -164,7 +158,14 @@ function LoginPage() {
               >
                 AttendPro
               </Typography>
-              <Typography sx={{ fontFamily: sansFont, color: "rgba(246,244,239,0.5)", fontSize: "0.8rem", mt: 0.25 }}>
+              <Typography
+                sx={{
+                  fontFamily: sansFont,
+                  color: "rgba(246,244,239,0.5)",
+                  fontSize: "0.8rem",
+                  mt: 0.25,
+                }}
+              >
                 Attendance & leave management
               </Typography>
             </Box>
@@ -182,7 +183,16 @@ function LoginPage() {
               >
                 {timeStr}
               </Typography>
-              <Typography sx={{ fontFamily: monoFont, color: BRASS, fontWeight: 500, fontSize: "0.85rem", mt: 1, letterSpacing: "0.01em" }}>
+              <Typography
+                sx={{
+                  fontFamily: monoFont,
+                  color: BRASS,
+                  fontWeight: 500,
+                  fontSize: "0.85rem",
+                  mt: 1,
+                  letterSpacing: "0.01em",
+                }}
+              >
                 {dateStr}
               </Typography>
             </Box>
@@ -247,7 +257,15 @@ function LoginPage() {
             }}
           >
             <Box>
-              <Typography sx={{ fontFamily: displayFont, fontWeight: 700, fontSize: "1.7rem", color: INK, letterSpacing: "-0.015em" }}>
+              <Typography
+                sx={{
+                  fontFamily: displayFont,
+                  fontWeight: 700,
+                  fontSize: "1.7rem",
+                  color: INK,
+                  letterSpacing: "-0.015em",
+                }}
+              >
                 Sign in
               </Typography>
               <Typography sx={{ fontFamily: sansFont, color: MUTED, fontSize: "0.92rem", mt: 0.5 }}>
@@ -316,7 +334,13 @@ function LoginPage() {
                     <Button
                       size="small"
                       onClick={() => setShowPassword((v) => !v)}
-                      sx={{ minWidth: "auto", textTransform: "none", color: MUTED, fontSize: "0.75rem", fontWeight: 600 }}
+                      sx={{
+                        minWidth: "auto",
+                        textTransform: "none",
+                        color: MUTED,
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                      }}
                     >
                       {showPassword ? "Hide" : "Show"}
                     </Button>
@@ -361,13 +385,24 @@ function LoginPage() {
                 fontWeight: 700,
                 fontSize: "1rem",
                 "&:hover": { backgroundColor: "#1e2136" },
-                "&.Mui-disabled": { backgroundColor: "rgba(18,20,31,0.35)", color: "rgba(246,244,239,0.8)" },
+                "&.Mui-disabled": {
+                  backgroundColor: "rgba(18,20,31,0.35)",
+                  color: "rgba(246,244,239,0.8)",
+                },
               }}
             >
               {submitting ? "Signing in…" : "Sign in"}
             </Button>
 
-            <Typography sx={{ fontFamily: sansFont, color: MUTED, fontSize: "0.8rem", textAlign: "center", mt: 0.5 }}>
+            <Typography
+              sx={{
+                fontFamily: sansFont,
+                color: MUTED,
+                fontSize: "0.8rem",
+                textAlign: "center",
+                mt: 0.5,
+              }}
+            >
               Trouble signing in? Contact your HR administrator.
             </Typography>
           </Box>

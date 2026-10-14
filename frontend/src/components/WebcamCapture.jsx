@@ -30,12 +30,12 @@ export default function WebcamCapture({
 
   const captureBurst = useCallback(() => {
     if (isCapturing || isLoading) return;
-    
+
     setIsCapturing(true);
     setCaptureCount(0);
     let images = [];
     let count = 0;
-    
+
     // Capture 3 images with a small delay between them
     const interval = setInterval(() => {
       if (webcamRef.current) {
@@ -46,7 +46,7 @@ export default function WebcamCapture({
       }
       count++;
       setCaptureCount(count);
-      
+
       if (count >= 3) {
         clearInterval(interval);
         setIsCapturing(false);
@@ -87,20 +87,22 @@ export default function WebcamCapture({
       <Typography variant="body1" color="text.secondary" align="center" sx={{ maxWidth: 400 }}>
         {isAttendanceVerification
           ? "Position your face in the frame"
-          : mode === "burst" 
-          ? "Position face within the frame. The system will capture 3 samples automatically." 
-          : "Position face clearly within the frame."}
+          : mode === "burst"
+            ? "Position face within the frame. The system will capture 3 samples automatically."
+            : "Position face clearly within the frame."}
       </Typography>
-      
-      <Box sx={{ 
-        position: "relative", 
-        width: "100%", 
-        maxWidth: 640, 
-        height: isAttendanceVerification ? { xs: "min(48vh, 360px)", sm: 480 } : 480,
-        backgroundColor: "#000",
-        borderRadius: 2,
-        overflow: "hidden" 
-      }}>
+
+      <Box
+        sx={{
+          position: "relative",
+          width: "100%",
+          maxWidth: 640,
+          height: isAttendanceVerification ? { xs: "min(48vh, 360px)", sm: 480 } : 480,
+          backgroundColor: "#000",
+          borderRadius: 2,
+          overflow: "hidden",
+        }}
+      >
         <Webcam
           audio={false}
           ref={webcamRef}
@@ -109,7 +111,7 @@ export default function WebcamCapture({
           videoConstraints={{
             width: 640,
             height: 480,
-            facingMode: "user"
+            facingMode: "user",
           }}
           style={{
             width: "100%",
@@ -118,33 +120,49 @@ export default function WebcamCapture({
             transform: "scaleX(-1)",
           }}
         />
-        
+
         {/* Subtle Targeting Overlay */}
-        <Box sx={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: "250px",
-          height: "350px",
-          border: "2px dashed rgba(255, 255, 255, 0.5)",
-          borderRadius: "50%",
-          pointerEvents: "none",
-          boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.3)"
-        }} />
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: "250px",
+            height: "350px",
+            border: "2px dashed rgba(255, 255, 255, 0.5)",
+            borderRadius: "50%",
+            pointerEvents: "none",
+            boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.3)",
+          }}
+        />
 
         {isAttendanceVerification && (
-          <Box sx={{
-            position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 2,
-            display: "flex", justifyContent: "center", gap: 1.5,
-            p: { xs: 1.5, sm: 2 }, pt: 5,
-            background: "linear-gradient(transparent, rgba(0,0,0,.78))",
-          }}>
+          <Box
+            sx={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 2,
+              display: "flex",
+              justifyContent: "center",
+              gap: 1.5,
+              p: { xs: 1.5, sm: 2 },
+              pt: 5,
+              background: "linear-gradient(transparent, rgba(0,0,0,.78))",
+            }}
+          >
             <Button
               variant="outlined"
               onClick={onCancel}
               disabled={isLoading || isCapturing}
-              sx={{ color: "white", borderColor: "rgba(255,255,255,.75)", minWidth: 96, "&:hover": { borderColor: "white", bgcolor: "rgba(255,255,255,.12)" } }}
+              sx={{
+                color: "white",
+                borderColor: "rgba(255,255,255,.75)",
+                minWidth: 96,
+                "&:hover": { borderColor: "white", bgcolor: "rgba(255,255,255,.12)" },
+              }}
             >
               Cancel
             </Button>
@@ -160,17 +178,22 @@ export default function WebcamCapture({
         )}
 
         {(isLoading || isCapturing) && (
-          <Box sx={{
-            position: "absolute",
-            top: 0, left: 0, right: 0, bottom: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "rgba(0,0,0,0.6)",
-            color: "white",
-            zIndex: 10
-          }}>
+          <Box
+            sx={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "rgba(0,0,0,0.6)",
+              color: "white",
+              zIndex: 10,
+            }}
+          >
             <CircularProgress color="inherit" size={48} sx={{ mb: 2 }} />
             <Typography variant="h5" sx={{ fontWeight: 600 }}>
               {isCapturing
@@ -191,25 +214,33 @@ export default function WebcamCapture({
           </Box>
         )}
       </Box>
-      
-      {!isAttendanceVerification && <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
-        <Button 
-          variant="outlined" 
-          color="secondary" 
-          onClick={onCancel}
-          disabled={isLoading || isCapturing}
-        >
-          Cancel
-        </Button>
-        <Button 
-          variant="contained" 
-          color="primary" 
-          onClick={isAttendanceVerification ? captureSequence : mode === "burst" ? captureBurst : captureSingle}
-          disabled={isLoading || isCapturing}
-        >
-          {mode === "burst" ? "Start Capture" : "Capture & Verify"}
-        </Button>
-      </Box>}
+
+      {!isAttendanceVerification && (
+        <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={onCancel}
+            disabled={isLoading || isCapturing}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={
+              isAttendanceVerification
+                ? captureSequence
+                : mode === "burst"
+                  ? captureBurst
+                  : captureSingle
+            }
+            disabled={isLoading || isCapturing}
+          >
+            {mode === "burst" ? "Start Capture" : "Capture & Verify"}
+          </Button>
+        </Box>
+      )}
     </Box>
   );
 }

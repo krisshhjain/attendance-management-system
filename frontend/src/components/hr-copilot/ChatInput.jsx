@@ -11,7 +11,16 @@ import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import { createClientId } from "../../lib/clientId.js";
 
 const ACCEPTED_FILE_TYPES = [
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".csv",
+  ".txt",
+  ".png",
+  ".jpg",
+  ".jpeg",
 ];
 const ACCEPTED_FILE_TYPES_ATTRIBUTE = ACCEPTED_FILE_TYPES.join(",");
 
@@ -33,14 +42,23 @@ function formatFileSize(size) {
 
 function getFileIcon(file) {
   const extension = file.name.split(".").pop()?.toLowerCase();
-  if (file.type.startsWith("image/") || ["png", "jpg", "jpeg"].includes(extension)) return <ImageOutlinedIcon fontSize="small" />;
+  if (file.type.startsWith("image/") || ["png", "jpg", "jpeg"].includes(extension))
+    return <ImageOutlinedIcon fontSize="small" />;
   if (extension === "pdf") return <PictureAsPdfOutlinedIcon fontSize="small" />;
-  if (["xls", "xlsx", "csv"].includes(extension)) return <TableChartOutlinedIcon fontSize="small" />;
-  if (["doc", "docx", "txt"].includes(extension)) return <DescriptionOutlinedIcon fontSize="small" />;
+  if (["xls", "xlsx", "csv"].includes(extension))
+    return <TableChartOutlinedIcon fontSize="small" />;
+  if (["doc", "docx", "txt"].includes(extension))
+    return <DescriptionOutlinedIcon fontSize="small" />;
   return <InsertDriveFileOutlinedIcon fontSize="small" />;
 }
 
-export function ChatInput({ value, onChange, onSend, disabled = false, placeholder = "Ask HR Copilot something..." }) {
+export function ChatInput({
+  value,
+  onChange,
+  onSend,
+  disabled = false,
+  placeholder = "Ask HR Copilot something...",
+}) {
   const [attachments, setAttachments] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
@@ -50,11 +68,14 @@ export function ChatInput({ value, onChange, onSend, disabled = false, placehold
     attachmentsRef.current = attachments;
   }, [attachments]);
 
-  useEffect(() => () => {
-    attachmentsRef.current.forEach((attachment) => {
-      if (attachment.file.type.startsWith("image/")) URL.revokeObjectURL(attachment.previewUrl);
-    });
-  }, []);
+  useEffect(
+    () => () => {
+      attachmentsRef.current.forEach((attachment) => {
+        if (attachment.file.type.startsWith("image/")) URL.revokeObjectURL(attachment.previewUrl);
+      });
+    },
+    [],
+  );
 
   function addFiles(fileList) {
     const acceptedFiles = Array.from(fileList).filter((file) => {
@@ -65,7 +86,10 @@ export function ChatInput({ value, onChange, onSend, disabled = false, placehold
 
     setAttachments((current) => [
       ...current,
-      ...acceptedFiles.map((file) => ({ ...createAttachment(file), previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null })),
+      ...acceptedFiles.map((file) => ({
+        ...createAttachment(file),
+        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+      })),
     ]);
   }
 
@@ -90,7 +114,10 @@ export function ChatInput({ value, onChange, onSend, disabled = false, placehold
   function sendCurrentMessage() {
     const content = value.trim();
     if ((!content && !attachments.length) || disabled) return;
-    onSend(content, attachments.map(({ id, name, type, size, file }) => ({ id, name, type, size, file })));
+    onSend(
+      content,
+      attachments.map(({ id, name, type, size, file }) => ({ id, name, type, size, file })),
+    );
     attachments.forEach((attachment) => {
       if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
     });
@@ -114,34 +141,122 @@ export function ChatInput({ value, onChange, onSend, disabled = false, placehold
     <Paper
       component="form"
       onSubmit={handleSubmit}
-      onDragOver={(event) => { event.preventDefault(); if (!disabled) setIsDragging(true); }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        if (!disabled) setIsDragging(true);
+      }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
       variant="outlined"
-      sx={{ borderRadius: 3, overflow: "hidden", borderColor: isDragging ? "primary.main" : "divider", bgcolor: isDragging ? "action.hover" : "background.paper", transition: "border-color 120ms ease, background-color 120ms ease" }}
+      sx={{
+        borderRadius: 3,
+        overflow: "hidden",
+        borderColor: isDragging ? "primary.main" : "divider",
+        bgcolor: isDragging ? "action.hover" : "background.paper",
+        transition: "border-color 120ms ease, background-color 120ms ease",
+      }}
     >
       {attachments.length > 0 && (
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, px: 1.5, pt: 1.5 }}>
           {attachments.map((attachment) => (
-            <Box key={attachment.id} sx={{ display: "flex", alignItems: "center", gap: 0.75, maxWidth: { xs: "100%", sm: 250 }, px: 1, py: 0.75, border: "1px solid", borderColor: "divider", borderRadius: 1.5, bgcolor: "action.hover" }}>
-              {attachment.previewUrl ? <Box component="img" src={attachment.previewUrl} alt="" sx={{ width: 28, height: 28, objectFit: "cover", borderRadius: 0.75 }} /> : <Box sx={{ display: "grid", placeItems: "center", width: 28, height: 28, color: "primary.main" }}>{getFileIcon(attachment.file)}</Box>}
+            <Box
+              key={attachment.id}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 0.75,
+                maxWidth: { xs: "100%", sm: 250 },
+                px: 1,
+                py: 0.75,
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1.5,
+                bgcolor: "action.hover",
+              }}
+            >
+              {attachment.previewUrl ? (
+                <Box
+                  component="img"
+                  src={attachment.previewUrl}
+                  alt=""
+                  sx={{ width: 28, height: 28, objectFit: "cover", borderRadius: 0.75 }}
+                />
+              ) : (
+                <Box
+                  sx={{
+                    display: "grid",
+                    placeItems: "center",
+                    width: 28,
+                    height: 28,
+                    color: "primary.main",
+                  }}
+                >
+                  {getFileIcon(attachment.file)}
+                </Box>
+              )}
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="caption" fontWeight={600} noWrap display="block">{attachment.name}</Typography>
-                <Typography variant="caption" color="text.secondary">{formatFileSize(attachment.size)}</Typography>
+                <Typography variant="caption" fontWeight={600} noWrap display="block">
+                  {attachment.name}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {formatFileSize(attachment.size)}
+                </Typography>
               </Box>
-              <IconButton size="small" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)} disabled={disabled}><CloseRoundedIcon fontSize="small" /></IconButton>
+              <IconButton
+                size="small"
+                aria-label={`Remove ${attachment.name}`}
+                onClick={() => removeAttachment(attachment.id)}
+                disabled={disabled}
+              >
+                <CloseRoundedIcon fontSize="small" />
+              </IconButton>
             </Box>
           ))}
         </Box>
       )}
       <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.5, px: 1, py: 0.75 }}>
-        <input ref={fileInputRef} type="file" multiple accept={ACCEPTED_FILE_TYPES_ATTRIBUTE} onChange={handleFileChange} hidden />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ACCEPTED_FILE_TYPES_ATTRIBUTE}
+          onChange={handleFileChange}
+          hidden
+        />
         <Tooltip title="Attach files">
-          <IconButton type="button" aria-label="Attach files" onClick={() => fileInputRef.current?.click()} disabled={disabled} sx={{ mb: 0.25 }}><AttachFileRoundedIcon /></IconButton>
+          <IconButton
+            type="button"
+            aria-label="Attach files"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            sx={{ mb: 0.25 }}
+          >
+            <AttachFileRoundedIcon />
+          </IconButton>
         </Tooltip>
-        <TextField fullWidth multiline maxRows={4} variant="standard" value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder} disabled={disabled} InputProps={{ disableUnderline: true }} sx={{ px: 0.75, py: 0.5 }} />
+        <TextField
+          fullWidth
+          multiline
+          maxRows={4}
+          variant="standard"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={disabled}
+          InputProps={{ disableUnderline: true }}
+          sx={{ px: 0.75, py: 0.5 }}
+        />
         <Tooltip title="Send message">
-          <IconButton type="submit" aria-label="Send message" color="primary" disabled={disabled || (!value.trim() && !attachments.length)} sx={{ mb: 0.25 }}><SendRoundedIcon /></IconButton>
+          <IconButton
+            type="submit"
+            aria-label="Send message"
+            color="primary"
+            disabled={disabled || (!value.trim() && !attachments.length)}
+            sx={{ mb: 0.25 }}
+          >
+            <SendRoundedIcon />
+          </IconButton>
         </Tooltip>
       </Box>
     </Paper>

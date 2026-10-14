@@ -7,8 +7,14 @@ function cleanMessage(value) {
 
   const withoutMarkup = value.replace(/\s+/g, " ").trim();
   if (!withoutMarkup || withoutMarkup.length > 260) return null;
-  if (/\b(stack trace|traceback| at [\w$.[\]()]+|<!doctype|<html)/i.test(withoutMarkup)) return null;
-  if (/\bbearer\s+\S+|\b(access[_ -]?token|refresh[_ -]?token|password|secret)\s*[:=]/i.test(withoutMarkup)) return null;
+  if (/\b(stack trace|traceback| at [\w$.[\]()]+|<!doctype|<html)/i.test(withoutMarkup))
+    return null;
+  if (
+    /\bbearer\s+\S+|\b(access[_ -]?token|refresh[_ -]?token|password|secret)\s*[:=]/i.test(
+      withoutMarkup,
+    )
+  )
+    return null;
 
   return withoutMarkup;
 }

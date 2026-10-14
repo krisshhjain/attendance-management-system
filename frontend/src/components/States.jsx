@@ -42,12 +42,7 @@ export function ErrorState({ message = "Unable to load attendance.", onRetry }) 
         Please try again.
       </Typography>
       {onRetry && (
-        <Button
-          variant="outlined"
-          color="inherit"
-          onClick={onRetry}
-          sx={{ mt: 2 }}
-        >
+        <Button variant="outlined" color="inherit" onClick={onRetry} sx={{ mt: 2 }}>
           Retry
         </Button>
       )}

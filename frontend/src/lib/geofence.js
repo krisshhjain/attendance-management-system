@@ -46,8 +46,3 @@ export function isLocationInsideGeofence(latitude, longitude, officeLocations = 
   );
   return distance <= ATTENDANCE_GEOFENCE.radiusMeters;
 }
-
-
-
-
-

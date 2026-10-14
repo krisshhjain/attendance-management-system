@@ -21,26 +21,32 @@ export function FeedbackProvider({ children }) {
     return notification.id;
   }, []);
 
-  const notifyError = useCallback((error, options = {}) => {
-    return enqueue({
-      severity: "error",
-      title: options.title || "Unable to complete action",
-      message: getErrorMessage(error, options.fallback),
-      ...options,
-    });
-  }, [enqueue]);
+  const notifyError = useCallback(
+    (error, options = {}) => {
+      return enqueue({
+        severity: "error",
+        title: options.title || "Unable to complete action",
+        message: getErrorMessage(error, options.fallback),
+        ...options,
+      });
+    },
+    [enqueue],
+  );
 
-  const value = useMemo(() => ({
-    enqueue,
-    notify: enqueue,
-    success: (message, options = {}) => enqueue({ ...options, severity: "success", message }),
-    error: (message, options = {}) => enqueue({ ...options, severity: "error", message }),
-    warning: (message, options = {}) => enqueue({ ...options, severity: "warning", message }),
-    info: (message, options = {}) => enqueue({ ...options, severity: "info", message }),
-    notifyError,
-    close,
-    closeAll: () => setNotifications([]),
-  }), [close, enqueue, notifyError]);
+  const value = useMemo(
+    () => ({
+      enqueue,
+      notify: enqueue,
+      success: (message, options = {}) => enqueue({ ...options, severity: "success", message }),
+      error: (message, options = {}) => enqueue({ ...options, severity: "error", message }),
+      warning: (message, options = {}) => enqueue({ ...options, severity: "warning", message }),
+      info: (message, options = {}) => enqueue({ ...options, severity: "info", message }),
+      notifyError,
+      close,
+      closeAll: () => setNotifications([]),
+    }),
+    [close, enqueue, notifyError],
+  );
 
   return (
     <FeedbackContext.Provider value={value}>

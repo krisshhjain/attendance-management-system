@@ -14,7 +14,16 @@ function Employees() {
   if (!(user?.is_superuser && loginType === "admin") && loginType !== "systemadmin") {
     return (
       <RequireAuth>
-        <Box sx={{ p: 4, textAlign: "center", bgcolor: "white", borderRadius: 4, border: "1px solid", borderColor: "divider" }}>
+        <Box
+          sx={{
+            p: 4,
+            textAlign: "center",
+            bgcolor: "white",
+            borderRadius: 4,
+            border: "1px solid",
+            borderColor: "divider",
+          }}
+        >
           <Typography variant="h5" fontWeight={600} gutterBottom color="error">
             Access Denied
           </Typography>
@@ -30,7 +39,10 @@ function Employees() {
     <RequireAuth>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a", fontSize: "24px" }}>
+          <Typography
+            variant="h5"
+            sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "#0f172a", fontSize: "24px" }}
+          >
             Employees
           </Typography>
           <Typography variant="body2" sx={{ color: "#64748b", mt: 0.5, fontSize: "14px" }}>

@@ -58,7 +58,10 @@ export function ShiftSelectionScreen({ onAssigned }) {
       onAssigned(result.shift);
     },
     onError: (err) => {
-      notifyError(err, { title: "Shift assignment failed", fallback: "Failed to assign shift. Please try again." });
+      notifyError(err, {
+        title: "Shift assignment failed",
+        fallback: "Failed to assign shift. Please try again.",
+      });
     },
   });
 
@@ -106,7 +109,7 @@ export function ShiftSelectionScreen({ onAssigned }) {
             Shift Configuration Required
           </Typography>
           <Typography variant="body2">
-            {employmentType 
+            {employmentType
               ? `No shifts have been configured for ${employmentType} employees yet. Please contact your administrator to configure shifts for your employment type.`
               : "No active shifts are available yet. Please contact your administrator."}
           </Typography>
@@ -154,11 +157,7 @@ export function ShiftSelectionScreen({ onAssigned }) {
           >
             Shift Automatically Assigned
           </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ lineHeight: 1.6, mb: 3 }}
-          >
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, mb: 3 }}>
             Your work shift has been automatically configured based on your employment type.
           </Typography>
 
@@ -270,14 +269,10 @@ export function ShiftSelectionScreen({ onAssigned }) {
           >
             Select Your Work Shift
           </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mt: 1, lineHeight: 1.6 }}
-          >
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, lineHeight: 1.6 }}>
             {employmentType && `Multiple shifts are configured for ${employmentType} employees. `}
-            Choose the shift that matches your schedule. This is a one-time
-            selection — contact your manager if you need to change it later.
+            Choose the shift that matches your schedule. This is a one-time selection — contact your
+            manager if you need to change it later.
           </Typography>
         </Box>
 
@@ -305,9 +300,7 @@ export function ShiftSelectionScreen({ onAssigned }) {
                   bgcolor: isSelected ? "#eef2ff" : "#ffffff",
                   cursor: "pointer",
                   transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
-                  boxShadow: isSelected
-                    ? "0 0 0 3px rgba(79,70,229,0.12)"
-                    : "none",
+                  boxShadow: isSelected ? "0 0 0 3px rgba(79,70,229,0.12)" : "none",
                   "&:hover": {
                     borderColor: isSelected ? "#4f46e5" : "#a5b4fc",
                     bgcolor: isSelected ? "#eef2ff" : "#f5f3ff",
@@ -403,9 +396,7 @@ export function ShiftSelectionScreen({ onAssigned }) {
                 </Box>
 
                 {isSelected && (
-                  <CheckCircleOutlineIcon
-                    sx={{ fontSize: 20, color: "#4f46e5", flexShrink: 0 }}
-                  />
+                  <CheckCircleOutlineIcon sx={{ fontSize: 20, color: "#4f46e5", flexShrink: 0 }} />
                 )}
               </Paper>
             );
@@ -443,8 +434,7 @@ export function ShiftSelectionScreen({ onAssigned }) {
           color="text.secondary"
           sx={{ display: "block", textAlign: "center", mt: 2, lineHeight: 1.5 }}
         >
-          You can only select a shift once. To change it later, please contact
-          your administrator.
+          You can only select a shift once. To change it later, please contact your administrator.
         </Typography>
       </Box>
     </Box>
