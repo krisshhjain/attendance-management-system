@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { sortOrganizationScopeValues } from "../src/components/dashboard/organizationScopeSort.js";
 
 test("organization scopes sort numeric suffixes naturally", () => {
