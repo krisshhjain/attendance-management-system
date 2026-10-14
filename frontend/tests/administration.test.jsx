@@ -112,6 +112,17 @@ test("requires reviewer notes to deny a request and submits the final decision",
   expect(state.success).toHaveBeenCalledWith("Leave rejected successfully.");
 }, 15_000);
 
+test("approves a pending leave request and refreshes the review queue", async () => {
+  const user = userEvent.setup();
+  renderPage();
+  expect(await screen.findByText("Avery Lee")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Approve" }));
+  await user.click(screen.getByRole("button", { name: "Confirm Action" }));
+  await waitFor(() => expect(state.api.approveLeaveRequest).toHaveBeenCalledWith(9, ""));
+  expect(state.success).toHaveBeenCalledWith("Leave approved successfully.");
+  expect(state.api.fetchAdminLeaveRequests).toHaveBeenCalledTimes(2);
+}, 15_000);
+
 test("validates office coordinates before creating a location and refreshes the list", async () => {
   const user = userEvent.setup();
   renderPage();

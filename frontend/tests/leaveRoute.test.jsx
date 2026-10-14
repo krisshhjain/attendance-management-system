@@ -25,7 +25,7 @@ function renderPage() {
   );
 }
 
-function leaveApi({ onSubmit = vi.fn(), onUpload = vi.fn() } = {}) {
+function leaveApi({ onSubmit = vi.fn(), onUpload = vi.fn(), attachment = "" } = {}) {
   let requests = [
     {
       id: 31,
@@ -37,7 +37,7 @@ function leaveApi({ onSubmit = vi.fn(), onUpload = vi.fn() } = {}) {
       reason: "Appointment",
       status: "PENDING",
       submitted_at: "2026-10-14T00:00:00Z",
-      attachment: "",
+      attachment,
     },
     {
       id: 32,
@@ -179,4 +179,17 @@ test("submits an eligible leave request with a supporting document link", async 
   );
   expect(await screen.findByText("Leave request submitted successfully.")).toBeInTheDocument();
   expect(await screen.findByText("Medical appointment")).toBeInTheDocument();
+}, 15_000);
+
+test("opens a remote image attachment in its document preview", async () => {
+  leaveApi({ attachment: "https://files.example.test/medical-note.png" });
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("Appointment");
+  await user.click(screen.getAllByRole("button", { name: "View Document" })[0]);
+  expect(screen.getByText("Document for Medical Leave")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Document preview" })).toHaveAttribute(
+    "src",
+    "https://files.example.test/medical-note.png",
+  );
 }, 15_000);
