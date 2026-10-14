@@ -36,7 +36,8 @@ export class ApiError extends Error {
 
 function friendlyMessage(status, payload) {
   if (payload && typeof payload === "object") {
-    const candidate = payload.detail ?? payload.message ?? payload.error ?? payload.non_field_errors;
+    const candidate =
+      payload.detail ?? payload.message ?? payload.error ?? payload.non_field_errors;
     if (typeof candidate === "string") return candidate;
     if (Array.isArray(candidate) && typeof candidate[0] === "string") return candidate[0];
 
@@ -91,11 +92,7 @@ async function refreshAccessToken() {
   return null;
 }
 
-export async function apiRequest(
-  path,
-  options = {},
-  isRetry = false,
-) {
+export async function apiRequest(path, options = {}, isRetry = false) {
   const { method = "GET", body, auth = true } = options;
 
   const headers = { "Content-Type": "application/json" };
@@ -253,7 +250,7 @@ export async function deleteLeavePolicy(id) {
 // File upload for leave attachments
 export async function uploadFile(file) {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append("file", file);
 
   const response = await fetch(`${API_BASE_URL}/leave/upload/`, {
     method: "POST",
@@ -265,10 +262,7 @@ export async function uploadFile(file) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new ApiError(
-      errorData.error || "Failed to upload file",
-      response.status
-    );
+    throw new ApiError(errorData.error || "Failed to upload file", response.status);
   }
 
   return response.json();
@@ -391,7 +385,9 @@ export async function updateHoliday(id, data) {
 
 export async function fetchSystemLogs(params = {}) {
   const query = new URLSearchParams(
-    Object.entries(params).filter(([, value]) => value !== undefined && value !== "" && value !== null),
+    Object.entries(params).filter(
+      ([, value]) => value !== undefined && value !== "" && value !== null,
+    ),
   ).toString();
   return apiRequest(`/system-logs/${query ? `?${query}` : ""}`);
 }

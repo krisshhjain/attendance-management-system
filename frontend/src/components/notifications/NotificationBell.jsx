@@ -36,13 +36,6 @@ function formatNotificationDate(value) {
   });
 }
 
-function isAttendanceNotification(notification) {
-  return (
-    String(notification.notification_type ?? "").toUpperCase() === "ATTENDANCE" ||
-    notification.attendance_event != null
-  );
-}
-
 function notificationType(notification) {
   return String(notification.notification_type ?? "SYSTEM").toUpperCase();
 }
@@ -115,7 +108,10 @@ export function NotificationBell() {
     onError: (error, _notificationId, context) => {
       queryClient.setQueryData(notificationsQueryKey, context?.previousNotifications);
       queryClient.setQueryData(unreadNotificationsQueryKey, context?.previousUnread);
-      notifyError(error, { title: "Notification update failed", fallback: "We couldn't mark that notification as read." });
+      notifyError(error, {
+        title: "Notification update failed",
+        fallback: "We couldn't mark that notification as read.",
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
@@ -141,14 +137,10 @@ export function NotificationBell() {
       const previousUnread = queryClient.getQueryData(unreadNotificationsQueryKey);
 
       queryClient.setQueryData(notificationsQueryKey, (current) =>
-        Array.isArray(current)
-          ? current.filter((item) => item.id !== notification.id)
-          : current,
+        Array.isArray(current) ? current.filter((item) => item.id !== notification.id) : current,
       );
       queryClient.setQueryData(unreadNotificationsQueryKey, (current) =>
-        Array.isArray(current)
-          ? current.filter((item) => item.id !== notification.id)
-          : current,
+        Array.isArray(current) ? current.filter((item) => item.id !== notification.id) : current,
       );
 
       return { previousNotifications, previousUnread };
@@ -156,7 +148,10 @@ export function NotificationBell() {
     onError: (error, _notification, context) => {
       queryClient.setQueryData(notificationsQueryKey, context?.previousNotifications);
       queryClient.setQueryData(unreadNotificationsQueryKey, context?.previousUnread);
-      notifyError(error, { title: "Notification dismissal failed", fallback: "We couldn't dismiss that notification." });
+      notifyError(error, {
+        title: "Notification dismissal failed",
+        fallback: "We couldn't dismiss that notification.",
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
@@ -286,8 +281,12 @@ export function NotificationBell() {
                   mb: 0.5,
                   borderRadius: 2,
                   border: "1px solid",
-                  borderColor: notification.is_read ? "transparent" : alpha(theme.palette.primary.main, 0.2),
-                  bgcolor: notification.is_read ? "transparent" : alpha(theme.palette.primary.main, 0.07),
+                  borderColor: notification.is_read
+                    ? "transparent"
+                    : alpha(theme.palette.primary.main, 0.2),
+                  bgcolor: notification.is_read
+                    ? "transparent"
+                    : alpha(theme.palette.primary.main, 0.07),
                   transition: "background-color 160ms ease, border-color 160ms ease",
                   "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.12) },
                 }}
@@ -310,11 +309,7 @@ export function NotificationBell() {
                   </Box>
                 </ListItemAvatar>
                 <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography
-                    variant="body2"
-                    fontWeight={notification.is_read ? 600 : 800}
-                    noWrap
-                  >
+                  <Typography variant="body2" fontWeight={notification.is_read ? 600 : 800} noWrap>
                     {notification.title}
                   </Typography>
                   <Typography
@@ -327,11 +322,21 @@ export function NotificationBell() {
                   <Typography
                     variant="body2"
                     color="text.secondary"
-                    sx={{ mt: 0.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                    sx={{
+                      mt: 0.35,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
                   >
                     {notification.message}
                   </Typography>
-                  <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.65 }}>
+                  <Typography
+                    variant="caption"
+                    color="text.disabled"
+                    sx={{ display: "block", mt: 0.65 }}
+                  >
                     {formatNotificationDate(notification.created_at)}
                   </Typography>
                 </Box>

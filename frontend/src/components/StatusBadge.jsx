@@ -1,4 +1,4 @@
-import { Box, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 
 const LABELS = {
   NOT_CHECKED_IN: "Not Checked In",
@@ -29,9 +29,13 @@ const TONES = {
 };
 
 export function StatusBadge({ status }) {
-  const tone = TONES[status] ?? { bgcolor: "action.hover", color: "text.secondary", borderColor: "divider" };
+  const tone = TONES[status] ?? {
+    bgcolor: "action.hover",
+    color: "text.secondary",
+    borderColor: "divider",
+  };
   const label = LABELS[status] ?? status.replaceAll("_", " ");
-  
+
   return (
     <Box
       component="span"

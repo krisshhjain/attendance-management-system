@@ -5,7 +5,33 @@ import { useAuth } from "../lib/auth.jsx";
 import { SystemAdminChatWidget } from "./SystemAdminChatWidget.jsx";
 import { NotificationBell } from "./notifications/NotificationBell.jsx";
 
-const DRAWER_WIDTH = 260;
+function ProfileMenuAction({ color, hoverBackground, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "9px 12px",
+        fontSize: 13,
+        fontWeight: 500,
+        color,
+        background: "none",
+        border: "none",
+        borderRadius: 8,
+        cursor: "pointer",
+        textAlign: "left",
+        transition: "all 0.1s",
+      }}
+      onMouseEnter={(event) => (event.currentTarget.style.background = hoverBackground)}
+      onMouseLeave={(event) => (event.currentTarget.style.background = "none")}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function SuperAdminLayout({ children, title }) {
   const { user, loginType, logout } = useAuth();
@@ -105,10 +131,19 @@ export function SuperAdminLayout({ children, title }) {
                 marginRight: 4,
               }}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="4" y1="6" x2="20" y2="6"/>
-                <line x1="4" y1="12" x2="20" y2="12"/>
-                <line x1="4" y1="18" x2="20" y2="18"/>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="18" x2="20" y2="18" />
               </svg>
             </button>
           )}
@@ -185,7 +220,9 @@ export function SuperAdminLayout({ children, title }) {
                 </div>
                 {!isMobile && (
                   <div style={{ textAlign: "left" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", lineHeight: 1.2 }}>
+                    <div
+                      style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", lineHeight: 1.2 }}
+                    >
                       {displayName}
                     </div>
                     <div style={{ fontSize: 10, color: "#94a3b8" }}>
@@ -208,7 +245,7 @@ export function SuperAdminLayout({ children, title }) {
                     flexShrink: 0,
                   }}
                 >
-                  <path d="m6 9 6 6 6-6"/>
+                  <path d="m6 9 6 6 6-6" />
                 </svg>
               </button>
 
@@ -235,66 +272,54 @@ export function SuperAdminLayout({ children, title }) {
                       marginBottom: 4,
                     }}
                   >
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{displayName}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>
+                      {displayName}
+                    </div>
                     <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{email}</div>
                   </div>
-                  <button
+                  <ProfileMenuAction
+                    color="#475569"
+                    hoverBackground="#f8fafc"
                     onClick={() => {
                       setProfileOpen(false);
                       navigate({ to: "/settings" });
                     }}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "9px 12px",
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: "#475569",
-                      background: "none",
-                      border: "none",
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "all 0.1s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
                   >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="3"/>
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.08A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.08A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z"/>
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#94a3b8"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.08A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.08A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z" />
                     </svg>
                     Settings
-                  </button>
+                  </ProfileMenuAction>
                   <div style={{ height: 1, background: "#f1f5f9", margin: "4px 0" }} />
-                  <button
+                  <ProfileMenuAction
+                    color="#e11d48"
+                    hoverBackground="#fff1f2"
                     onClick={handleLogout}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "9px 12px",
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: "#e11d48",
-                      background: "none",
-                      border: "none",
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "all 0.1s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#fff1f2")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
                   >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
                     </svg>
                     Log Out
-                  </button>
+                  </ProfileMenuAction>
                 </div>
               )}
             </div>

@@ -61,8 +61,11 @@ function formatTime(value) {
 function AdminRegularizationPage() {
   const { user, loginType } = useAuth();
   const canReview = Boolean(
-    user?.is_staff || user?.is_superuser || user?.is_system_admin ||
-    loginType === "admin" || loginType === "systemadmin",
+    user?.is_staff ||
+    user?.is_superuser ||
+    user?.is_system_admin ||
+    loginType === "admin" ||
+    loginType === "systemadmin",
   );
   const canConfigureQuota = Boolean(user?.is_superuser && loginType === "admin");
   const [requests, setRequests] = useState([]);
@@ -133,22 +136,40 @@ function AdminRegularizationPage() {
       });
       success("Quota settings saved successfully.");
     } catch (saveError) {
-      notifyError(saveError, { title: "Quota settings failed", fallback: "Could not save the request limits." });
+      notifyError(saveError, {
+        title: "Quota settings failed",
+        fallback: "Could not save the request limits.",
+      });
     } finally {
       setQuotaSaving(false);
     }
   };
 
   if (!canReview) {
-    return <Alert severity="warning">You do not have access to review regularization requests.</Alert>;
+    return (
+      <Alert severity="warning">You do not have access to review regularization requests.</Alert>
+    );
   }
 
   return (
     <Box sx={{ maxWidth: 1400, mx: "auto", p: { xs: 2, md: 4 }, width: "100%" }}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 2, mb: 3 }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 2,
+          mb: 3,
+        }}
+      >
         <Box>
-          <Typography variant="h4" fontWeight={750}>Regularization</Typography>
-          <Typography variant="body2" color="text.secondary">Review employee attendance correction requests.</Typography>
+          <Typography variant="h4" fontWeight={750}>
+            Regularization
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Review employee attendance correction requests.
+          </Typography>
         </Box>
         <TextField
           select
@@ -159,31 +180,63 @@ function AdminRegularizationPage() {
           sx={{ minWidth: 160 }}
         >
           {["PENDING", "APPROVED", "REJECTED", "ALL"].map((status) => (
-            <MenuItem key={status} value={status}>{status}</MenuItem>
+            <MenuItem key={status} value={status}>
+              {status}
+            </MenuItem>
           ))}
         </TextField>
       </Box>
 
       {canConfigureQuota && (
-        <Paper component="form" variant="outlined" onSubmit={saveQuotaPolicy} sx={{ p: 2.5, mb: 3 }}>
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, flexWrap: "wrap", mb: 2 }}>
+        <Paper
+          component="form"
+          variant="outlined"
+          onSubmit={saveQuotaPolicy}
+          sx={{ p: 2.5, mb: 3 }}
+        >
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 2,
+              flexWrap: "wrap",
+              mb: 2,
+            }}
+          >
             <Box>
-              <Typography variant="h6" fontWeight={700}>Employee request limits</Typography>
+              <Typography variant="h6" fontWeight={700}>
+                Employee request limits
+              </Typography>
               <Typography variant="body2" color="text.secondary">
-                Set how many Regularization requests each employee may submit. Updates apply immediately.
+                Set how many Regularization requests each employee may submit. Updates apply
+                immediately.
               </Typography>
             </Box>
             <Button type="submit" variant="contained" disabled={quotaLoading || quotaSaving}>
               {quotaSaving ? "Saving…" : "Save limits"}
             </Button>
           </Box>
-          {quotaError && <Alert severity="error" sx={{ mb: 2 }}>{quotaError}</Alert>}
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2, maxWidth: 680 }}>
+          {quotaError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {quotaError}
+            </Alert>
+          )}
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+              gap: 2,
+              maxWidth: 680,
+            }}
+          >
             <TextField
               type="number"
               label="Requests per calendar week"
               value={quotaDraft.weekly_limit}
-              onChange={(event) => setQuotaDraft((current) => ({ ...current, weekly_limit: event.target.value }))}
+              onChange={(event) =>
+                setQuotaDraft((current) => ({ ...current, weekly_limit: event.target.value }))
+              }
               inputProps={{ min: 0, max: 32767, step: 1 }}
               helperText="Monday through Sunday; enter 0 to disable requests."
               disabled={quotaLoading || quotaSaving}
@@ -193,7 +246,9 @@ function AdminRegularizationPage() {
               type="number"
               label="Requests per calendar month"
               value={quotaDraft.monthly_limit}
-              onChange={(event) => setQuotaDraft((current) => ({ ...current, monthly_limit: event.target.value }))}
+              onChange={(event) =>
+                setQuotaDraft((current) => ({ ...current, monthly_limit: event.target.value }))
+              }
               inputProps={{ min: 0, max: 32767, step: 1 }}
               helperText="Calendar month; enter 0 to disable requests."
               disabled={quotaLoading || quotaSaving}
@@ -202,18 +257,27 @@ function AdminRegularizationPage() {
           </Box>
           {quotaPolicy && (
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-              Current limits: {quotaPolicy.weekly_limit} per week · {quotaPolicy.monthly_limit} per month
+              Current limits: {quotaPolicy.weekly_limit} per week · {quotaPolicy.monthly_limit} per
+              month
             </Typography>
           )}
         </Paper>
       )}
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
       <Paper variant="outlined">
         {loading ? (
-          <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}><CircularProgress size={30} /></Box>
+          <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
+            <CircularProgress size={30} />
+          </Box>
         ) : requests.length === 0 ? (
-          <Typography color="text.secondary" sx={{ p: 3 }}>No regularization requests found.</Typography>
+          <Typography color="text.secondary" sx={{ p: 3 }}>
+            No regularization requests found.
+          </Typography>
         ) : (
           <TableContainer>
             <Table sx={{ minWidth: 850 }}>
@@ -233,15 +297,34 @@ function AdminRegularizationPage() {
                 {requests.map((request) => (
                   <TableRow key={request.id} hover>
                     <TableCell>
-                      <Typography variant="body2" fontWeight={600}>{request.employee_name || request.employee_email}</Typography>
-                      <Typography variant="caption" color="text.secondary">{request.employee_email}</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {request.employee_name || request.employee_email}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {request.employee_email}
+                      </Typography>
                     </TableCell>
                     <TableCell>{requestPeriod(request)}</TableCell>
-                    <TableCell>{request.period_type || "DAY"}{request.request_type ? ` · ${request.request_type.replaceAll("_", " ")}` : ""}</TableCell>
+                    <TableCell>
+                      {request.period_type || "DAY"}
+                      {request.request_type
+                        ? ` · ${request.request_type.replaceAll("_", " ")}`
+                        : ""}
+                    </TableCell>
                     <TableCell>{formatTime(request.requested_check_in)}</TableCell>
                     <TableCell>{formatTime(request.requested_check_out)}</TableCell>
-                    <TableCell sx={{ maxWidth: 240 }}><Typography variant="body2" noWrap title={request.reason}>{request.reason}</Typography></TableCell>
-                    <TableCell><Chip label={request.status} color={statusColor(request.status)} size="small" /></TableCell>
+                    <TableCell sx={{ maxWidth: 240 }}>
+                      <Typography variant="body2" noWrap title={request.reason}>
+                        {request.reason}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={request.status}
+                        color={statusColor(request.status)}
+                        size="small"
+                      />
+                    </TableCell>
                     <TableCell align="right">
                       <Button
                         component={Link}

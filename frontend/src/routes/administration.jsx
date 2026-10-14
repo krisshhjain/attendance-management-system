@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { ShiftConfigurationPanel } from "../components/ShiftConfigurationPanel.jsx";
+import { LeaveDocumentPreviewDialog } from "../components/LeaveDocumentPreviewDialog.jsx";
 import { ManagerManagement } from "../components/ManagerManagement.jsx";
 import { HolidayManagementPanel } from "../components/HolidayManagementPanel.jsx";
 import { useAuth } from "../lib/auth.jsx";
@@ -40,12 +41,8 @@ import ErrorIcon from "@mui/icons-material/Error";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
-import CloseIcon from "@mui/icons-material/Close";
-import InfoIcon from "@mui/icons-material/Info";
 import AttachmentIcon from "@mui/icons-material/Attachment";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import DownloadIcon from "@mui/icons-material/Download";
-import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 import { getErrorMessage } from "../feedback/errorMessage.js";
 import {
@@ -116,7 +113,7 @@ function Administration() {
   const isSuperUser = Boolean(user?.is_superuser || loginType === "admin");
   const canManagePolicies = isSuperUser && !isSystemAdmin;
   const canViewLeaveTypes = isSystemAdmin || isSuperUser;
-  const isStaff = Boolean(user?.is_staff || isSuperUser || isManager);  // Allow Managers too
+  const isStaff = Boolean(user?.is_staff || isSuperUser || isManager); // Allow Managers too
 
   const [currentTab, setCurrentTab] = useState(0);
 
@@ -170,7 +167,16 @@ function Administration() {
     const latitude = Number(locLat);
     const longitude = Number(locLon);
     const radius = Number(locRadius) || 150;
-    if (!name || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180 || radius <= 0) {
+    if (
+      !name ||
+      !Number.isFinite(latitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      !Number.isFinite(longitude) ||
+      longitude < -180 ||
+      longitude > 180 ||
+      radius <= 0
+    ) {
       setLocError("Enter a name, valid coordinates, and a positive radius.");
       return;
     }
@@ -202,7 +208,10 @@ function Administration() {
       success("Office location deleted successfully.");
       await loadOfficeLocations();
     } catch (err) {
-      notifyError(err, { title: "Office location deletion failed", fallback: "Failed to delete office location." });
+      notifyError(err, {
+        title: "Office location deletion failed",
+        fallback: "Failed to delete office location.",
+      });
     }
   };
 
@@ -214,34 +223,22 @@ function Administration() {
   const [statusFilter, setStatusFilter] = useState("PENDING");
 
   // Approve/Deny Modal state
-  const [actionModal, setActionModal] = useState({ open: false, type: "", request: null, remarks: "" });
+  const [actionModal, setActionModal] = useState({
+    open: false,
+    type: "",
+    request: null,
+    remarks: "",
+  });
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState(null);
 
   // Document preview modal
-  const [documentModal, setDocumentModal] = useState({ open: false, url: "", title: "", fileName: "" });
-
-  const handleDownloadFile = (url, fileName) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName || 'document';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const getFileExtension = (url) => {
-    return url.split('.').pop().toLowerCase();
-  };
-
-  const isImageFile = (url) => {
-    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
-    return imageExtensions.includes(getFileExtension(url));
-  };
-
-  const isPdfFile = (url) => {
-    return getFileExtension(url) === 'pdf';
-  };
+  const [documentModal, setDocumentModal] = useState({
+    open: false,
+    url: "",
+    title: "",
+    fileName: "",
+  });
 
   const loadLeaveRequests = useCallback(async () => {
     setLoadingRequests(true);
@@ -297,7 +294,10 @@ function Administration() {
       handleCloseAction();
       await loadLeaveRequests();
     } catch (err) {
-      notifyError(err, { title: "Leave action failed", fallback: "The leave action could not be completed." });
+      notifyError(err, {
+        title: "Leave action failed",
+        fallback: "The leave action could not be completed.",
+      });
     } finally {
       setActionSubmitting(false);
     }
@@ -332,10 +332,7 @@ function Administration() {
   const loadPoliciesAndTypes = async () => {
     setLoadingPolicies(true);
     try {
-      const [pData, tData] = await Promise.all([
-        fetchLeavePoliciesAll(),
-        fetchLeaveTypesAll(),
-      ]);
+      const [pData, tData] = await Promise.all([fetchLeavePoliciesAll(), fetchLeaveTypesAll()]);
       setPolicies(pData ?? []);
       setAllTypes(tData ?? []);
     } catch (err) {
@@ -535,7 +532,10 @@ function Administration() {
       setDeleteConfirm({ open: false, kind: "", id: null, name: "" });
       await loadPoliciesAndTypes();
     } catch (err) {
-      notifyError(err, { title: "Deactivation failed", fallback: "The item could not be deactivated." });
+      notifyError(err, {
+        title: "Deactivation failed",
+        fallback: "The item could not be deactivated.",
+      });
       setDeleteConfirm({ open: false, kind: "", id: null, name: "" });
     } finally {
       setDeleteSubmitting(false);
@@ -572,7 +572,16 @@ function Administration() {
   if (!isStaff) {
     return (
       <RequireAuth>
-        <Box sx={{ p: 4, textAlign: "center", bgcolor: "white", borderRadius: 4, border: "1px solid", borderColor: "divider" }}>
+        <Box
+          sx={{
+            p: 4,
+            textAlign: "center",
+            bgcolor: "white",
+            borderRadius: 4,
+            border: "1px solid",
+            borderColor: "divider",
+          }}
+        >
           <Typography variant="h5" fontWeight={600} gutterBottom color="error">
             Access Denied
           </Typography>
@@ -586,20 +595,20 @@ function Administration() {
 
   const filteredPolicies = policies.filter((p) => p.employee_type === policyTypeFilter);
   const filteredBalances = adminBalances.filter((b) =>
-    b.employee_email.toLowerCase().includes(searchEmp.toLowerCase())
+    b.employee_email.toLowerCase().includes(searchEmp.toLowerCase()),
   );
 
   return (
     <RequireAuth>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 3, pb: 4 }}>
         {/* Modern Header with Gradient */}
-        <Box 
-          sx={{ 
+        <Box
+          sx={{
             background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
             borderRadius: 4,
             p: 4,
             color: "white",
-            boxShadow: "0 8px 32px rgba(102, 126, 234, 0.2)"
+            boxShadow: "0 8px 32px rgba(102, 126, 234, 0.2)",
           }}
         >
           <Typography variant="h4" sx={{ fontWeight: 800, mb: 1, letterSpacing: "-0.5px" }}>
@@ -612,28 +621,28 @@ function Administration() {
 
         {/* Global Notifications */}
         {error && (
-          <Alert 
-            severity="error" 
-            onClose={() => setError(null)} 
-            sx={{ 
-              borderRadius: 3, 
+          <Alert
+            severity="error"
+            onClose={() => setError(null)}
+            sx={{
+              borderRadius: 3,
               border: "1px solid",
               borderColor: "error.light",
-              "& .MuiAlert-icon": { fontSize: 24 }
+              "& .MuiAlert-icon": { fontSize: 24 },
             }}
           >
             {error}
           </Alert>
         )}
         {/* Modern Navigation Tabs */}
-        <Paper 
+        <Paper
           elevation={0}
-          sx={{ 
-            borderRadius: 4, 
-            border: "1px solid", 
-            borderColor: "divider", 
+          sx={{
+            borderRadius: 4,
+            border: "1px solid",
+            borderColor: "divider",
             overflow: "hidden",
-            bgcolor: "white"
+            bgcolor: "white",
           }}
         >
           <Tabs
@@ -641,8 +650,8 @@ function Administration() {
             onChange={(e, val) => setCurrentTab(val)}
             variant="scrollable"
             scrollButtons="auto"
-            sx={{ 
-              borderBottom: "2px solid", 
+            sx={{
+              borderBottom: "2px solid",
               borderColor: "divider",
               px: 2,
               "& .MuiTab-root": {
@@ -652,24 +661,45 @@ function Administration() {
                 minHeight: 64,
                 color: "#64748b",
                 "&.Mui-selected": {
-                  color: "#667eea"
-                }
+                  color: "#667eea",
+                },
               },
               "& .MuiTabs-indicator": {
                 backgroundColor: "#667eea",
                 height: 3,
-                borderRadius: "3px 3px 0 0"
-              }
+                borderRadius: "3px 3px 0 0",
+              },
             }}
           >
             <Tab label="Leave Requests" value={0} />
-            {(canManagePolicies || isSystemAdmin) && <Tab label={isSystemAdmin ? "Leave Policies (View Only)" : "Leave Policies"} value={1} />}
-            {canViewLeaveTypes && <Tab label={isSystemAdmin ? "Leave Types (View Only)" : "Leave Types"} value={2} />}
+            {(canManagePolicies || isSystemAdmin) && (
+              <Tab
+                label={isSystemAdmin ? "Leave Policies (View Only)" : "Leave Policies"}
+                value={1}
+              />
+            )}
+            {canViewLeaveTypes && (
+              <Tab label={isSystemAdmin ? "Leave Types (View Only)" : "Leave Types"} value={2} />
+            )}
             <Tab label="Employee Balances" value={3} />
             {isSuperUser && <Tab label="Manager Management" value={5} />}
-            {isStaff && loginType !== "systemadmin" && <Tab label="Configure Shifts" value={6} sx={{ fontWeight: 600, textTransform: "none" }} />}
-            {isSuperUser && <Tab label="Office Locations" value={7} sx={{ fontWeight: 600, textTransform: "none" }} />}
-            {isSuperUser && <Tab label="Holidays" value={8} sx={{ fontWeight: 600, textTransform: "none" }} />}
+            {isStaff && loginType !== "systemadmin" && (
+              <Tab
+                label="Configure Shifts"
+                value={6}
+                sx={{ fontWeight: 600, textTransform: "none" }}
+              />
+            )}
+            {isSuperUser && (
+              <Tab
+                label="Office Locations"
+                value={7}
+                sx={{ fontWeight: 600, textTransform: "none" }}
+              />
+            )}
+            {isSuperUser && (
+              <Tab label="Holidays" value={8} sx={{ fontWeight: 600, textTransform: "none" }} />
+            )}
           </Tabs>
 
           {/* TAB 0: LEAVE REQUESTS */}
@@ -686,17 +716,19 @@ function Administration() {
               </Box>
 
               {/* Filter Chips */}
-              <Box sx={{ 
-                display: "flex", 
-                gap: 1.5, 
-                mb: 3, 
-                flexWrap: "wrap",
-                p: 2,
-                bgcolor: "#f8fafc",
-                borderRadius: 3,
-                border: "1px solid",
-                borderColor: "#e2e8f0"
-              }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 1.5,
+                  mb: 3,
+                  flexWrap: "wrap",
+                  p: 2,
+                  bgcolor: "#f8fafc",
+                  borderRadius: 3,
+                  border: "1px solid",
+                  borderColor: "#e2e8f0",
+                }}
+              >
                 {["PENDING", "APPROVED", "DENIED", "CANCELLED", "ALL"].map((st) => (
                   <Chip
                     key={st}
@@ -705,7 +737,7 @@ function Administration() {
                     color={statusFilter === st ? "primary" : "default"}
                     variant={statusFilter === st ? "filled" : "outlined"}
                     onClick={() => setStatusFilter(st)}
-                    sx={{ 
+                    sx={{
                       fontWeight: 600,
                       fontSize: "13px",
                       height: 36,
@@ -713,9 +745,9 @@ function Administration() {
                         bgcolor: "#667eea",
                         color: "white",
                         "&:hover": {
-                          bgcolor: "#5568d3"
-                        }
-                      })
+                          bgcolor: "#5568d3",
+                        },
+                      }),
                     }}
                   />
                 ))}
@@ -736,12 +768,79 @@ function Administration() {
                   <Table sx={{ minWidth: 700 }}>
                     <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Employee</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Dates & Duration</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Reason</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
-                        <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Employee
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Leave Type
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Dates & Duration
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Reason
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Status
+                        </TableCell>
+                        <TableCell
+                          align="right"
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Actions
+                        </TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -752,15 +851,23 @@ function Administration() {
                               {req.employee_name}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {req.employee_email} • {req.employment_type} ({req.employee_department})
+                              {req.employee_email} • {req.employment_type} (
+                              {req.employee_department})
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Chip label={req.leave_type_name} size="small" variant="outlined" sx={{ fontWeight: 600 }} />
+                            <Chip
+                              label={req.leave_type_name}
+                              size="small"
+                              variant="outlined"
+                              sx={{ fontWeight: 600 }}
+                            />
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2" fontWeight={600}>
-                              {req.start_date === req.end_date ? req.start_date : `${req.start_date} → ${req.end_date}`}
+                              {req.start_date === req.end_date
+                                ? req.start_date
+                                : `${req.start_date} → ${req.end_date}`}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
                               {req.duration_days} day(s) • {req.day_type.replace("_", " ")}
@@ -771,7 +878,9 @@ function Administration() {
                               {req.reason}
                             </Typography>
                             {req.attachment && (
-                              <Box sx={{ mt: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
+                              <Box
+                                sx={{ mt: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}
+                              >
                                 <AttachmentIcon fontSize="small" color="primary" />
                                 <Button
                                   size="small"
@@ -779,32 +888,34 @@ function Administration() {
                                   color="primary"
                                   startIcon={<OpenInNewIcon fontSize="small" />}
                                   onClick={() => {
-                                    if (req.attachment.startsWith('http')) {
+                                    if (req.attachment.startsWith("http")) {
                                       setDocumentModal({
                                         open: true,
                                         url: req.attachment,
                                         title: `Document for ${req.employee_name} - ${req.leave_type_name} Leave`,
-                                        fileName: req.attachment.split('/').pop() || 'document'
+                                        fileName: req.attachment.split("/").pop() || "document",
                                       });
                                     } else {
-                                      const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://127.0.0.1:8000';
-                                      const fullUrl = req.attachment.startsWith('/') ? 
-                                        `${baseUrl}${req.attachment}` : 
-                                        req.attachment;
+                                      const baseUrl =
+                                        import.meta.env.VITE_API_BASE_URL?.replace("/api", "") ||
+                                        "http://127.0.0.1:8000";
+                                      const fullUrl = req.attachment.startsWith("/")
+                                        ? `${baseUrl}${req.attachment}`
+                                        : req.attachment;
                                       setDocumentModal({
                                         open: true,
                                         url: fullUrl,
                                         title: `Document for ${req.employee_name} - ${req.leave_type_name} Leave`,
-                                        fileName: req.attachment.split('/').pop() || 'document'
+                                        fileName: req.attachment.split("/").pop() || "document",
                                       });
                                     }
                                   }}
-                                  sx={{ 
-                                    p: 0, 
-                                    minWidth: 'auto', 
-                                    textTransform: 'none',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 500
+                                  sx={{
+                                    p: 0,
+                                    minWidth: "auto",
+                                    textTransform: "none",
+                                    fontSize: "0.75rem",
+                                    fontWeight: 500,
                                   }}
                                 >
                                   View Document
@@ -815,7 +926,12 @@ function Administration() {
                           <TableCell>
                             <StatusChip status={req.status} />
                             {req.reviewer_remarks && (
-                              <Typography variant="caption" color="text.secondary" display="block" title={req.reviewer_remarks}>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                display="block"
+                                title={req.reviewer_remarks}
+                              >
                                 Remarks: {req.reviewer_remarks}
                               </Typography>
                             )}
@@ -829,7 +945,11 @@ function Administration() {
                                     variant="contained"
                                     color="success"
                                     onClick={() => handleOpenAction(req, "APPROVE")}
-                                    sx={{ borderRadius: 1.5, textTransform: "none", fontSize: "0.75rem" }}
+                                    sx={{
+                                      borderRadius: 1.5,
+                                      textTransform: "none",
+                                      fontSize: "0.75rem",
+                                    }}
                                   >
                                     Approve
                                   </Button>
@@ -838,7 +958,11 @@ function Administration() {
                                     variant="contained"
                                     color="error"
                                     onClick={() => handleOpenAction(req, "DENY")}
-                                    sx={{ borderRadius: 1.5, textTransform: "none", fontSize: "0.75rem" }}
+                                    sx={{
+                                      borderRadius: 1.5,
+                                      textTransform: "none",
+                                      fontSize: "0.75rem",
+                                    }}
                                   >
                                     Deny
                                   </Button>
@@ -850,7 +974,11 @@ function Administration() {
                                   variant="outlined"
                                   color="warning"
                                   onClick={() => handleOpenAction(req, "CANCEL")}
-                                  sx={{ borderRadius: 1.5, textTransform: "none", fontSize: "0.75rem" }}
+                                  sx={{
+                                    borderRadius: 1.5,
+                                    textTransform: "none",
+                                    fontSize: "0.75rem",
+                                  }}
                                 >
                                   Cancel Approved
                                 </Button>
@@ -869,7 +997,16 @@ function Administration() {
           {/* TAB 1: LEAVE POLICIES (Super Admin) */}
           {(canManagePolicies || isSystemAdmin) && currentTab === 1 && (
             <Box sx={{ p: 3 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5, flexWrap: "wrap", gap: 1.5 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2.5,
+                  flexWrap: "wrap",
+                  gap: 1.5,
+                }}
+              >
                 <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
                   <Typography variant="h6" fontWeight={700} sx={{ mr: 1 }}>
                     Leave Policy Rules per Employee Tier:
@@ -885,15 +1022,17 @@ function Administration() {
                     />
                   ))}
                 </Box>
-                {!isSystemAdmin && <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<AddIcon />}
-                  onClick={() => handleOpenPolicyModal(null)}
-                  sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
-                >
-                  Configure New Policy
-                </Button>}
+                {!isSystemAdmin && (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<AddIcon />}
+                    onClick={() => handleOpenPolicyModal(null)}
+                    sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+                  >
+                    Configure New Policy
+                  </Button>
+                )}
               </Box>
 
               {loadingPolicies ? (
@@ -911,13 +1050,93 @@ function Administration() {
                   <Table sx={{ minWidth: 700 }}>
                     <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Entitlement (Yr/Mo)</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Carry Forward</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Notice & Rules</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Effective From</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
-                        {!isSystemAdmin && <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>}
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Leave Type
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Entitlement (Yr/Mo)
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Carry Forward
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Notice & Rules
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Effective From
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Status
+                        </TableCell>
+                        {!isSystemAdmin && (
+                          <TableCell
+                            align="right"
+                            sx={{
+                              textTransform: "uppercase",
+                              fontSize: "0.75rem",
+                              fontWeight: 700,
+                              letterSpacing: 0.5,
+                              color: "#64748b",
+                              py: 2,
+                            }}
+                          >
+                            Actions
+                          </TableCell>
+                        )}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -943,9 +1162,15 @@ function Administration() {
                           </TableCell>
                           <TableCell>
                             {pol.allow_carry_forward ? (
-                              <Chip label={`Max ${pol.max_carry_forward} days`} size="small" color="info" />
+                              <Chip
+                                label={`Max ${pol.max_carry_forward} days`}
+                                size="small"
+                                color="info"
+                              />
                             ) : (
-                              <Typography variant="caption" color="text.secondary">No carry forward</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                No carry forward
+                              </Typography>
                             )}
                           </TableCell>
                           <TableCell>
@@ -959,7 +1184,12 @@ function Administration() {
                               • Half-day: {pol.allow_half_day ? "Allowed" : "Not allowed"}
                             </Typography>
                             {pol.requires_document && (
-                              <Chip label="Doc Required" size="small" color="warning" sx={{ height: 18, fontSize: "0.65rem", mt: 0.5 }} />
+                              <Chip
+                                label="Doc Required"
+                                size="small"
+                                color="warning"
+                                sx={{ height: 18, fontSize: "0.65rem", mt: 0.5 }}
+                              />
                             )}
                           </TableCell>
                           <TableCell>
@@ -972,23 +1202,35 @@ function Administration() {
                               size="small"
                             />
                           </TableCell>
-                          {!isSystemAdmin && <TableCell align="right">
-                            <Tooltip title="Edit policy">
-                              <IconButton size="small" color="primary" onClick={() => handleOpenPolicyModal(pol)}>
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Deactivate policy">
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => handleDeleteConfirm("policy", pol.id, `${pol.leave_type_name} (${pol.employee_type})`)}
-                                disabled={!pol.is_active}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </TableCell>}
+                          {!isSystemAdmin && (
+                            <TableCell align="right">
+                              <Tooltip title="Edit policy">
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={() => handleOpenPolicyModal(pol)}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Deactivate policy">
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() =>
+                                    handleDeleteConfirm(
+                                      "policy",
+                                      pol.id,
+                                      `${pol.leave_type_name} (${pol.employee_type})`,
+                                    )
+                                  }
+                                  disabled={!pol.is_active}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1001,19 +1243,28 @@ function Administration() {
           {/* TAB 2: LEAVE TYPES (Super Admin) */}
           {canViewLeaveTypes && currentTab === 2 && (
             <Box sx={{ p: 3 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2.5,
+                }}
+              >
                 <Typography variant="h6" fontWeight={700}>
                   System Leave Types Registry
                 </Typography>
-                {!isSystemAdmin && <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<AddIcon />}
-                  onClick={() => handleOpenTypeModal(null)}
-                  sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
-                >
-                  Create Leave Type
-                </Button>}
+                {!isSystemAdmin && (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<AddIcon />}
+                    onClick={() => handleOpenTypeModal(null)}
+                    sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+                  >
+                    Create Leave Type
+                  </Button>
+                )}
               </Box>
 
               {loadingPolicies ? (
@@ -1025,12 +1276,81 @@ function Administration() {
                   <Table sx={{ minWidth: 700 }}>
                     <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                       <TableRow>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Name & Code</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Category</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Half Day & Dates</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Notice & Docs</TableCell>
-                        <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Status</TableCell>
-                        {!isSystemAdmin && <TableCell align="right" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Actions</TableCell>}
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Name & Code
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Category
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Half Day & Dates
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Notice & Docs
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            color: "#64748b",
+                            py: 2,
+                          }}
+                        >
+                          Status
+                        </TableCell>
+                        {!isSystemAdmin && (
+                          <TableCell
+                            align="right"
+                            sx={{
+                              textTransform: "uppercase",
+                              fontSize: "0.75rem",
+                              fontWeight: 700,
+                              letterSpacing: 0.5,
+                              color: "#64748b",
+                              py: 2,
+                            }}
+                          >
+                            Actions
+                          </TableCell>
+                        )}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -1045,7 +1365,11 @@ function Administration() {
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Chip label={t.is_paid ? "Paid Leave" : "Unpaid Leave"} color={t.is_paid ? "success" : "default"} size="small" />
+                            <Chip
+                              label={t.is_paid ? "Paid Leave" : "Unpaid Leave"}
+                              color={t.is_paid ? "success" : "default"}
+                              size="small"
+                            />
                           </TableCell>
                           <TableCell>
                             <Typography variant="caption" display="block">
@@ -1064,25 +1388,35 @@ function Administration() {
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Chip label={t.is_active ? "Active" : "Inactive"} color={t.is_active ? "success" : "default"} size="small" />
+                            <Chip
+                              label={t.is_active ? "Active" : "Inactive"}
+                              color={t.is_active ? "success" : "default"}
+                              size="small"
+                            />
                           </TableCell>
-                          {!isSystemAdmin && <TableCell align="right">
-                            <Tooltip title="Edit leave type">
-                              <IconButton size="small" color="primary" onClick={() => handleOpenTypeModal(t)}>
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Deactivate leave type">
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => handleDeleteConfirm("type", t.id, t.name)}
-                                disabled={!t.is_active}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </TableCell>}
+                          {!isSystemAdmin && (
+                            <TableCell align="right">
+                              <Tooltip title="Edit leave type">
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={() => handleOpenTypeModal(t)}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Deactivate leave type">
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleDeleteConfirm("type", t.id, t.name)}
+                                  disabled={!t.is_active}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1095,7 +1429,16 @@ function Administration() {
           {/* TAB 3: EMPLOYEE BALANCES OVERVIEW */}
           {currentTab === 3 && (
             <Box sx={{ p: 3 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2.5, flexWrap: "wrap", gap: 2 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2.5,
+                  flexWrap: "wrap",
+                  gap: 2,
+                }}
+              >
                 <Typography variant="h6" fontWeight={700}>
                   Employee Leave Balances Audit
                 </Typography>
@@ -1119,35 +1462,141 @@ function Administration() {
               ) : (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {filteredBalances.map((empObj) => (
-                    <Paper key={empObj.employee_id} elevation={0} sx={{ p: 3, borderRadius: "16px", border: "1px solid", borderColor: "divider", bgcolor: "white", boxShadow: "0px 1px 3px rgba(15,23,42,0.03)", mb: 2 }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5 }}>
+                    <Paper
+                      key={empObj.employee_id}
+                      elevation={0}
+                      sx={{
+                        p: 3,
+                        borderRadius: "16px",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        bgcolor: "white",
+                        boxShadow: "0px 1px 3px rgba(15,23,42,0.03)",
+                        mb: 2,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          mb: 1.5,
+                        }}
+                      >
                         <Typography variant="subtitle1" fontWeight={700} color="primary.main">
                           {empObj.employee_email}
                         </Typography>
-                        <Chip label={`Employment Tier: ${empObj.employment_type}`} size="small" color="secondary" />
+                        <Chip
+                          label={`Employment Tier: ${empObj.employment_type}`}
+                          size="small"
+                          color="secondary"
+                        />
                       </Box>
 
                       <TableContainer>
                         <Table size="small">
                           <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
                             <TableRow>
-                              <TableCell sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Leave Type</TableCell>
-                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Annual Entitlement</TableCell>
-                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Carried Forward</TableCell>
-                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Used (Approved)</TableCell>
-                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Pending</TableCell>
-                              <TableCell align="center" sx={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 700, letterSpacing: 0.5, color: "#64748b", py: 2 }}>Available Balance</TableCell>
+                              <TableCell
+                                sx={{
+                                  textTransform: "uppercase",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 700,
+                                  letterSpacing: 0.5,
+                                  color: "#64748b",
+                                  py: 2,
+                                }}
+                              >
+                                Leave Type
+                              </TableCell>
+                              <TableCell
+                                align="center"
+                                sx={{
+                                  textTransform: "uppercase",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 700,
+                                  letterSpacing: 0.5,
+                                  color: "#64748b",
+                                  py: 2,
+                                }}
+                              >
+                                Annual Entitlement
+                              </TableCell>
+                              <TableCell
+                                align="center"
+                                sx={{
+                                  textTransform: "uppercase",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 700,
+                                  letterSpacing: 0.5,
+                                  color: "#64748b",
+                                  py: 2,
+                                }}
+                              >
+                                Carried Forward
+                              </TableCell>
+                              <TableCell
+                                align="center"
+                                sx={{
+                                  textTransform: "uppercase",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 700,
+                                  letterSpacing: 0.5,
+                                  color: "#64748b",
+                                  py: 2,
+                                }}
+                              >
+                                Used (Approved)
+                              </TableCell>
+                              <TableCell
+                                align="center"
+                                sx={{
+                                  textTransform: "uppercase",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 700,
+                                  letterSpacing: 0.5,
+                                  color: "#64748b",
+                                  py: 2,
+                                }}
+                              >
+                                Pending
+                              </TableCell>
+                              <TableCell
+                                align="center"
+                                sx={{
+                                  textTransform: "uppercase",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 700,
+                                  letterSpacing: 0.5,
+                                  color: "#64748b",
+                                  py: 2,
+                                }}
+                              >
+                                Available Balance
+                              </TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
                             {empObj.balances.map((b) => (
                               <TableRow key={b.leave_type_id}>
-                                <TableCell fontWeight={600}>{b.leave_type_name} ({b.leave_type_code})</TableCell>
+                                <TableCell fontWeight={600}>
+                                  {b.leave_type_name} ({b.leave_type_code})
+                                </TableCell>
                                 <TableCell align="center">{b.annual_entitlement}</TableCell>
                                 <TableCell align="center">{b.carried_forward}</TableCell>
                                 <TableCell align="center">{b.used}</TableCell>
-                                <TableCell align="center" sx={{ color: "warning.main", fontWeight: 600 }}>{b.pending}</TableCell>
-                                <TableCell align="center" sx={{ color: "primary.main", fontWeight: 700 }}>{b.available}</TableCell>
+                                <TableCell
+                                  align="center"
+                                  sx={{ color: "warning.main", fontWeight: 600 }}
+                                >
+                                  {b.pending}
+                                </TableCell>
+                                <TableCell
+                                  align="center"
+                                  sx={{ color: "primary.main", fontWeight: 700 }}
+                                >
+                                  {b.available}
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -1161,9 +1610,7 @@ function Administration() {
           )}
 
           {/* TAB 5: MANAGER MANAGEMENT */}
-          {isSuperUser && currentTab === 5 && (
-            <ManagerManagement />
-          )}
+          {isSuperUser && currentTab === 5 && <ManagerManagement />}
 
           {/* TAB 6: SHIFT CONFIGURATION */}
           {isStaff && loginType !== "systemadmin" && currentTab === 6 && (
@@ -1173,19 +1620,36 @@ function Administration() {
           {/* TAB 7: OFFICE LOCATIONS */}
           {isSuperUser && currentTab === 7 && (
             <Box sx={{ p: 3 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, gap: 2, flexWrap: "wrap" }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                  gap: 2,
+                  flexWrap: "wrap",
+                }}
+              >
                 <Box>
-                  <Typography variant="h6" fontWeight={700}>Workplace Office Locations</Typography>
+                  <Typography variant="h6" fontWeight={700}>
+                    Workplace Office Locations
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Manage geofenced locations used for attendance validation.
                   </Typography>
                 </Box>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenLocationModal()}>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => handleOpenLocationModal()}
+                >
                   Add Location
                 </Button>
               </Box>
               {loadingLocations ? (
-                <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}><CircularProgress /></Box>
+                <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
+                  <CircularProgress />
+                </Box>
               ) : officeLocations.length === 0 ? (
                 <Alert severity="info">No office locations configured.</Alert>
               ) : (
@@ -1209,11 +1673,26 @@ function Administration() {
                           <TableCell align="right">{location.longitude}</TableCell>
                           <TableCell align="right">{location.radius_meters} m</TableCell>
                           <TableCell>
-                            <Chip label={location.is_active ? "Active" : "Inactive"} color={location.is_active ? "success" : "default"} size="small" />
+                            <Chip
+                              label={location.is_active ? "Active" : "Inactive"}
+                              color={location.is_active ? "success" : "default"}
+                              size="small"
+                            />
                           </TableCell>
                           <TableCell align="right">
-                            <IconButton size="small" onClick={() => handleOpenLocationModal(location)}><EditIcon fontSize="small" /></IconButton>
-                            <IconButton size="small" color="error" onClick={() => handleDeleteLocation(location.id, location.name)}><DeleteIcon fontSize="small" /></IconButton>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenLocationModal(location)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDeleteLocation(location.id, location.name)}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1226,20 +1705,69 @@ function Administration() {
           {isSuperUser && currentTab === 8 && <HolidayManagementPanel />}
         </Paper>
 
-        <Dialog open={locationModal.open} onClose={() => setLocationModal({ open: false, location: null })} maxWidth="xs" fullWidth>
+        <Dialog
+          open={locationModal.open}
+          onClose={() => setLocationModal({ open: false, location: null })}
+          maxWidth="xs"
+          fullWidth
+        >
           <form onSubmit={handleSaveLocation}>
-            <DialogTitle>{locationModal.location ? "Edit Office Location" : "Add Office Location"}</DialogTitle>
+            <DialogTitle>
+              {locationModal.location ? "Edit Office Location" : "Add Office Location"}
+            </DialogTitle>
             <DialogContent dividers sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {locError && <Alert severity="error">{locError}</Alert>}
-              <TextField label="Location Name" required fullWidth value={locName} onChange={(event) => setLocName(event.target.value)} />
-              <TextField label="Latitude" required fullWidth type="number" inputProps={{ step: "any" }} value={locLat} onChange={(event) => setLocLat(event.target.value)} />
-              <TextField label="Longitude" required fullWidth type="number" inputProps={{ step: "any" }} value={locLon} onChange={(event) => setLocLon(event.target.value)} />
-              <TextField label="Radius (meters)" required fullWidth type="number" inputProps={{ min: 1 }} value={locRadius} onChange={(event) => setLocRadius(event.target.value)} />
-              <FormControlLabel control={<Switch checked={locActive} onChange={(event) => setLocActive(event.target.checked)} />} label="Active location" />
+              <TextField
+                label="Location Name"
+                required
+                fullWidth
+                value={locName}
+                onChange={(event) => setLocName(event.target.value)}
+              />
+              <TextField
+                label="Latitude"
+                required
+                fullWidth
+                type="number"
+                inputProps={{ step: "any" }}
+                value={locLat}
+                onChange={(event) => setLocLat(event.target.value)}
+              />
+              <TextField
+                label="Longitude"
+                required
+                fullWidth
+                type="number"
+                inputProps={{ step: "any" }}
+                value={locLon}
+                onChange={(event) => setLocLon(event.target.value)}
+              />
+              <TextField
+                label="Radius (meters)"
+                required
+                fullWidth
+                type="number"
+                inputProps={{ min: 1 }}
+                value={locRadius}
+                onChange={(event) => setLocRadius(event.target.value)}
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={locActive}
+                    onChange={(event) => setLocActive(event.target.checked)}
+                  />
+                }
+                label="Active location"
+              />
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setLocationModal({ open: false, location: null })}>Cancel</Button>
-              <Button type="submit" variant="contained" disabled={locSubmitting}>{locSubmitting ? "Saving..." : "Save Location"}</Button>
+              <Button onClick={() => setLocationModal({ open: false, location: null })}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="contained" disabled={locSubmitting}>
+                {locSubmitting ? "Saving..." : "Save Location"}
+              </Button>
             </DialogActions>
           </form>
         </Dialog>
@@ -1247,17 +1775,26 @@ function Administration() {
         {/* APPROVE / DENY / CANCEL ACTION DIALOG */}
         <Dialog open={actionModal.open} onClose={handleCloseAction} maxWidth="xs" fullWidth>
           <DialogTitle sx={{ fontWeight: 700 }}>
-            {actionModal.type === "APPROVE" ? "Approve Leave Request" : actionModal.type === "DENY" ? "Deny Leave Request" : "Cancel Approved Leave"}
+            {actionModal.type === "APPROVE"
+              ? "Approve Leave Request"
+              : actionModal.type === "DENY"
+                ? "Deny Leave Request"
+                : "Cancel Approved Leave"}
           </DialogTitle>
           <DialogContent dividers>
-            {actionError && <Alert severity="error" sx={{ mb: 2 }}>{actionError}</Alert>}
+            {actionError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {actionError}
+              </Alert>
+            )}
             {actionModal.request && (
               <Box sx={{ mb: 2 }}>
                 <Typography variant="body2" fontWeight={600}>
                   Employee: {actionModal.request.employee_email}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Leave: {actionModal.request.leave_type_name} ({actionModal.request.duration_days} days)
+                  Leave: {actionModal.request.leave_type_name} ({actionModal.request.duration_days}{" "}
+                  days)
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   Dates: {actionModal.request.start_date} to {actionModal.request.end_date}
@@ -1268,7 +1805,11 @@ function Administration() {
               fullWidth
               multiline
               rows={3}
-              label={actionModal.type === "DENY" ? "Reviewer Remarks (Required)" : "Reviewer Remarks (Optional)"}
+              label={
+                actionModal.type === "DENY"
+                  ? "Reviewer Remarks (Required)"
+                  : "Reviewer Remarks (Optional)"
+              }
               value={actionModal.remarks}
               onChange={(e) => setActionModal((prev) => ({ ...prev, remarks: e.target.value }))}
               placeholder="Add reviewer notes or reason..."
@@ -1276,10 +1817,18 @@ function Administration() {
             />
           </DialogContent>
           <DialogActions sx={{ px: 3, py: 2 }}>
-            <Button onClick={handleCloseAction} color="inherit">Cancel</Button>
+            <Button onClick={handleCloseAction} color="inherit">
+              Cancel
+            </Button>
             <Button
               variant="contained"
-              color={actionModal.type === "APPROVE" ? "success" : actionModal.type === "DENY" ? "error" : "warning"}
+              color={
+                actionModal.type === "APPROVE"
+                  ? "success"
+                  : actionModal.type === "DENY"
+                    ? "error"
+                    : "warning"
+              }
               onClick={handleExecuteAction}
               disabled={actionSubmitting}
             >
@@ -1289,7 +1838,12 @@ function Administration() {
         </Dialog>
 
         {/* POLICY FORM MODAL */}
-        <Dialog open={policyModal.open} onClose={() => setPolicyModal({ open: false, policy: null })} maxWidth="sm" fullWidth>
+        <Dialog
+          open={policyModal.open}
+          onClose={() => setPolicyModal({ open: false, policy: null })}
+          maxWidth="sm"
+          fullWidth
+        >
           <DialogTitle sx={{ fontWeight: 700 }}>
             {policyModal.policy ? "Edit Leave Policy" : "Create Leave Policy Rule"}
           </DialogTitle>
@@ -1322,7 +1876,9 @@ function Administration() {
                     required
                   >
                     {allTypes.map((t) => (
-                      <MenuItem key={t.id} value={t.id}>{t.name} ({t.code})</MenuItem>
+                      <MenuItem key={t.id} value={t.id}>
+                        {t.name} ({t.code})
+                      </MenuItem>
                     ))}
                   </TextField>
                 </Grid2>
@@ -1376,7 +1932,12 @@ function Administration() {
 
               <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 2 }}>
                 <FormControlLabel
-                  control={<Switch checked={polCarryForward} onChange={(e) => setPolCarryForward(e.target.checked)} />}
+                  control={
+                    <Switch
+                      checked={polCarryForward}
+                      onChange={(e) => setPolCarryForward(e.target.checked)}
+                    />
+                  }
                   label="Allow Carry Forward to Next Year"
                 />
                 {polCarryForward && (
@@ -1396,13 +1957,23 @@ function Administration() {
               <Grid2 container spacing={2}>
                 <Grid2 size={{ xs: 6 }}>
                   <FormControlLabel
-                    control={<Switch checked={polAllowHalfDay} onChange={(e) => setPolAllowHalfDay(e.target.checked)} />}
+                    control={
+                      <Switch
+                        checked={polAllowHalfDay}
+                        onChange={(e) => setPolAllowHalfDay(e.target.checked)}
+                      />
+                    }
                     label="Allow Half Day"
                   />
                 </Grid2>
                 <Grid2 size={{ xs: 6 }}>
                   <FormControlLabel
-                    control={<Switch checked={polReqDoc} onChange={(e) => setPolReqDoc(e.target.checked)} />}
+                    control={
+                      <Switch
+                        checked={polReqDoc}
+                        onChange={(e) => setPolReqDoc(e.target.checked)}
+                      />
+                    }
                     label="Require Document"
                   />
                 </Grid2>
@@ -1418,7 +1989,12 @@ function Administration() {
         </Dialog>
 
         {/* LEAVE TYPE FORM MODAL */}
-        <Dialog open={typeModal.open} onClose={() => setTypeModal({ open: false, typeObj: null })} maxWidth="sm" fullWidth>
+        <Dialog
+          open={typeModal.open}
+          onClose={() => setTypeModal({ open: false, typeObj: null })}
+          maxWidth="sm"
+          fullWidth
+        >
           <DialogTitle sx={{ fontWeight: 700 }}>
             {typeModal.typeObj ? "Edit Leave Type" : "Create Leave Type"}
           </DialogTitle>
@@ -1461,13 +2037,20 @@ function Administration() {
               <Grid2 container spacing={2}>
                 <Grid2 size={{ xs: 6 }}>
                   <FormControlLabel
-                    control={<Switch checked={typePaid} onChange={(e) => setTypePaid(e.target.checked)} />}
+                    control={
+                      <Switch checked={typePaid} onChange={(e) => setTypePaid(e.target.checked)} />
+                    }
                     label="Paid Leave"
                   />
                 </Grid2>
                 <Grid2 size={{ xs: 6 }}>
                   <FormControlLabel
-                    control={<Switch checked={typeHalfDay} onChange={(e) => setTypeHalfDay(e.target.checked)} />}
+                    control={
+                      <Switch
+                        checked={typeHalfDay}
+                        onChange={(e) => setTypeHalfDay(e.target.checked)}
+                      />
+                    }
                     label="Allow Half Day"
                   />
                 </Grid2>
@@ -1476,13 +2059,23 @@ function Administration() {
               <Grid2 container spacing={2}>
                 <Grid2 size={{ xs: 6 }}>
                   <FormControlLabel
-                    control={<Switch checked={typePastDates} onChange={(e) => setTypePastDates(e.target.checked)} />}
+                    control={
+                      <Switch
+                        checked={typePastDates}
+                        onChange={(e) => setTypePastDates(e.target.checked)}
+                      />
+                    }
                     label="Allow Past Dates"
                   />
                 </Grid2>
                 <Grid2 size={{ xs: 6 }}>
                   <FormControlLabel
-                    control={<Switch checked={typeFutureDates} onChange={(e) => setTypeFutureDates(e.target.checked)} />}
+                    control={
+                      <Switch
+                        checked={typeFutureDates}
+                        onChange={(e) => setTypeFutureDates(e.target.checked)}
+                      />
+                    }
                     label="Allow Future Dates"
                   />
                 </Grid2>
@@ -1505,8 +2098,7 @@ function Administration() {
           </DialogTitle>
           <DialogContent>
             <Typography variant="body1">
-              Are you sure you want to deactivate{" "}
-              <strong>{deleteConfirm.name}</strong>?
+              Are you sure you want to deactivate <strong>{deleteConfirm.name}</strong>?
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
               This will mark it as inactive. Existing leave records will not be affected.
@@ -1519,7 +2111,9 @@ function Administration() {
             <Button
               variant="contained"
               color="error"
-              startIcon={deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon />}
+              startIcon={
+                deleteSubmitting ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon />
+              }
               onClick={handleDeleteExecute}
               disabled={deleteSubmitting}
             >
@@ -1528,204 +2122,11 @@ function Administration() {
           </DialogActions>
         </Dialog>
 
-        {/* Document Preview Modal */}
-        <Dialog 
-          open={documentModal.open} 
-          onClose={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })} 
-          maxWidth="lg" 
-          fullWidth
-          PaperProps={{
-            sx: { height: '90vh', maxHeight: '90vh' }
-          }}
-        >
-          <DialogTitle sx={{ 
-            fontWeight: 700, 
-            display: "flex", 
-            justifyContent: "space-between", 
-            alignItems: "center",
-            borderBottom: 1,
-            borderColor: 'divider'
-          }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <AttachmentIcon color="primary" />
-              <Typography variant="h6" component="span">
-                {documentModal.title}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Tooltip title="Download Document">
-                <IconButton 
-                  size="small" 
-                  color="primary"
-                  onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
-                >
-                  <DownloadIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Open in New Tab">
-                <IconButton 
-                  size="small" 
-                  color="primary"
-                  onClick={() => window.open(documentModal.url, '_blank')}
-                >
-                  <OpenInNewIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Fullscreen">
-                <IconButton 
-                  size="small" 
-                  color="primary"
-                  onClick={async () => {
-                    const elem = document.querySelector('[data-document-preview]');
-                    if (elem?.requestFullscreen) {
-                      try {
-                        await elem.requestFullscreen();
-                      } catch (fullscreenError) {
-                        notifyError(fullscreenError, {
-                          title: "Fullscreen unavailable",
-                          fallback: "Could not open the document preview in fullscreen.",
-                        });
-                      }
-                    }
-                  }}
-                >
-                  <FullscreenIcon />
-                </IconButton>
-              </Tooltip>
-              <IconButton size="small" onClick={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })}>
-                <CloseIcon />
-              </IconButton>
-            </Box>
-          </DialogTitle>
-          <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {documentModal.url && (
-              <Box 
-                sx={{ 
-                  flex: 1, 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  backgroundColor: '#f5f5f5',
-                  position: 'relative'
-                }}
-                data-document-preview
-              >
-                {isImageFile(documentModal.url) ? (
-                  <Box sx={{ 
-                    flex: 1, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    p: 2
-                  }}>
-                    <img
-                      src={documentModal.url}
-                      alt="Document preview"
-                      style={{ 
-                        maxWidth: '100%', 
-                        maxHeight: '100%',
-                        objectFit: 'contain',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                      }}
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextElementSibling.style.display = 'flex';
-                      }}
-                    />
-                    <Box sx={{ 
-                      display: 'none', 
-                      flexDirection: 'column', 
-                      alignItems: 'center', 
-                      gap: 2,
-                      p: 4,
-                      textAlign: 'center'
-                    }}>
-                      <ErrorIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
-                      <Typography variant="body1" color="text.secondary">
-                        Unable to preview this image
-                      </Typography>
-                    </Box>
-                  </Box>
-                ) : isPdfFile(documentModal.url) ? (
-                  <iframe
-                    src={`${documentModal.url}#toolbar=1&navpanes=1&scrollbar=1`}
-                    width="100%"
-                    height="100%"
-                    style={{ border: 'none', flex: 1 }}
-                    title="PDF Preview"
-                    onError={() => {
-                      console.log('PDF preview failed');
-                    }}
-                  />
-                ) : (
-                  <Box sx={{ 
-                    flex: 1, 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    gap: 2,
-                    p: 4,
-                    textAlign: 'center'
-                  }}>
-                    <AttachmentIcon sx={{ fontSize: 64, color: 'primary.main' }} />
-                    <Typography variant="h6" color="text.primary">
-                      {documentModal.fileName}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Preview not available for this file type
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-                      <Button
-                        variant="contained"
-                        startIcon={<DownloadIcon />}
-                        onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
-                      >
-                        Download File
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        startIcon={<OpenInNewIcon />}
-                        onClick={() => window.open(documentModal.url, '_blank')}
-                      >
-                        Open in Browser
-                      </Button>
-                    </Box>
-                  </Box>
-                )}
-              </Box>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ 
-            borderTop: 1, 
-            borderColor: 'divider',
-            p: 2,
-            backgroundColor: 'grey.50'
-          }}>
-            <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-              File: {documentModal.fileName}
-            </Typography>
-            <Button 
-              onClick={() => handleDownloadFile(documentModal.url, documentModal.fileName)}
-              variant="contained"
-              startIcon={<DownloadIcon />}
-              sx={{ mr: 1 }}
-            >
-              Download
-            </Button>
-            <Button 
-              onClick={() => window.open(documentModal.url, '_blank')}
-              variant="outlined"
-              startIcon={<OpenInNewIcon />}
-              sx={{ mr: 1 }}
-            >
-              Open in New Tab
-            </Button>
-            <Button onClick={() => setDocumentModal({ open: false, url: "", title: "", fileName: "" })}>
-              Close
-            </Button>
-          </DialogActions>
-        </Dialog>
+        <LeaveDocumentPreviewDialog
+          documentModal={documentModal}
+          setDocumentModal={setDocumentModal}
+          notifyError={notifyError}
+        />
       </Box>
     </RequireAuth>
   );

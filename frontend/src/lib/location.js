@@ -25,11 +25,14 @@ export function getCurrentCoordinates() {
         // 2: POSITION_UNAVAILABLE
         // 3: TIMEOUT
         if (error.code === 1) {
-          message = "Location permission is required to mark attendance. Please allow location access and try again.";
+          message =
+            "Location permission is required to mark attendance. Please allow location access and try again.";
         } else if (error.code === 2) {
-          message = "Location information is unavailable. Please check your device location settings and try again.";
+          message =
+            "Location information is unavailable. Please check your device location settings and try again.";
         } else if (error.code === 3) {
-          message = "Location request timed out. Please check your device connection and try again.";
+          message =
+            "Location request timed out. Please check your device connection and try again.";
         }
         const err = new Error(message);
         err.code = error.code;
@@ -39,7 +42,7 @@ export function getCurrentCoordinates() {
         enableHighAccuracy: true,
         timeout: 10000,
         maximumAge: 0,
-      }
+      },
     );
   });
 }

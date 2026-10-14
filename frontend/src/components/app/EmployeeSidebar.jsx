@@ -44,16 +44,30 @@ export function EmployeeSidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
   const workspaceItems = [
     { text: "Dashboard", icon: <DashboardOutlinedIcon fontSize="small" />, path: "/dashboard" },
     { text: "My Team", icon: <GroupsOutlinedIcon fontSize="small" />, path: "/my-team" },
-    { text: "My Attendance", icon: <CalendarMonthOutlinedIcon fontSize="small" />, path: "/attendance" },
+    {
+      text: "My Attendance",
+      icon: <CalendarMonthOutlinedIcon fontSize="small" />,
+      path: "/attendance",
+    },
     { text: "My Leave", icon: <EventAvailableOutlinedIcon fontSize="small" />, path: "/leave" },
-    { text: "Regularization", icon: <AutorenewOutlinedIcon fontSize="small" />, path: "/regularization" },
-  ].filter((item) => appAccess[item.path.split("/")[1]] !== false || ["attendance", "dashboard", "leave", "my-team"].includes(item.path.split("/")[1]));
+    {
+      text: "Regularization",
+      icon: <AutorenewOutlinedIcon fontSize="small" />,
+      path: "/regularization",
+    },
+  ].filter(
+    (item) =>
+      appAccess[item.path.split("/")[1]] !== false ||
+      ["attendance", "dashboard", "leave", "my-team"].includes(item.path.split("/")[1]),
+  );
 
   const personalItems = [
     { text: "My Profile", icon: <PersonOutlineOutlinedIcon fontSize="small" />, path: "/settings" },
   ];
 
-  const systemItems = [{ text: "Settings", icon: <SettingsOutlinedIcon fontSize="small" />, path: "/settings" }];
+  const systemItems = [
+    { text: "Settings", icon: <SettingsOutlinedIcon fontSize="small" />, path: "/settings" },
+  ];
 
   const renderNav = (items) => (
     <List sx={{ px: 1.5, py: 0 }}>
@@ -169,7 +183,16 @@ export function EmployeeSidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
           A
         </Box>
         <Box>
-          <Typography variant="h6" sx={{ fontWeight: 800, color: "#0f172a", letterSpacing: "-0.5px", lineHeight: 1.1, fontSize: "1.05rem" }}>
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: 800,
+              color: "#0f172a",
+              letterSpacing: "-0.5px",
+              lineHeight: 1.1,
+              fontSize: "1.05rem",
+            }}
+          >
             AttendPro
           </Typography>
           <Typography variant="caption" sx={{ color: "#94a3b8", fontWeight: 500 }}>
@@ -191,21 +214,48 @@ export function EmployeeSidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
         }}
       >
         <Box sx={{ px: 2.75, pb: 1, pt: 0.5 }}>
-          <Typography variant="caption" sx={{ color: "#a3aebe", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", fontSize: "0.68rem" }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: "#a3aebe",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.8px",
+              fontSize: "0.68rem",
+            }}
+          >
             Workspace
           </Typography>
         </Box>
         {renderNav(workspaceItems)}
 
         <Box sx={{ px: 2.75, pb: 1, pt: 1.75 }}>
-          <Typography variant="caption" sx={{ color: "#a3aebe", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", fontSize: "0.68rem" }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: "#a3aebe",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.8px",
+              fontSize: "0.68rem",
+            }}
+          >
             Personal
           </Typography>
         </Box>
         {renderNav(personalItems)}
 
         <Box sx={{ px: 2.75, pb: 1, pt: 1.75 }}>
-          <Typography variant="caption" sx={{ color: "#a3aebe", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", fontSize: "0.68rem" }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: "#a3aebe",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.8px",
+              fontSize: "0.68rem",
+            }}
+          >
             System
           </Typography>
         </Box>
@@ -244,10 +294,18 @@ export function EmployeeSidebar({ mobileOpen, handleDrawerToggle, isMobile }) {
             {initials}
           </Box>
           <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-            <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: "#0f172a", lineHeight: 1.3, fontSize: "0.86rem" }}>
+            <Typography
+              variant="body2"
+              noWrap
+              sx={{ fontWeight: 700, color: "#0f172a", lineHeight: 1.3, fontSize: "0.86rem" }}
+            >
               {displayName}
             </Typography>
-            <Typography variant="caption" noWrap sx={{ color: "#94a3b8", display: "block", fontSize: "0.72rem" }}>
+            <Typography
+              variant="caption"
+              noWrap
+              sx={{ color: "#94a3b8", display: "block", fontSize: "0.72rem" }}
+            >
               {user?.designation || "Employee"}
             </Typography>
           </Box>

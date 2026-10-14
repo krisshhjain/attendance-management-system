@@ -164,7 +164,13 @@ function MemberRow({ member, currentUserId, isLast }) {
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
           <Typography
             noWrap
-            sx={{ fontFamily: FONT, fontSize: "0.84rem", fontWeight: 600, color: INK, lineHeight: 1.35 }}
+            sx={{
+              fontFamily: FONT,
+              fontSize: "0.84rem",
+              fontWeight: 600,
+              color: INK,
+              lineHeight: 1.35,
+            }}
           >
             {member.name}
           </Typography>
@@ -189,15 +195,21 @@ function MemberRow({ member, currentUserId, isLast }) {
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.2, flexWrap: "wrap" }}>
           {member.subsection && (
-            <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}>
+            <Typography
+              sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}
+            >
               {member.subsection}
             </Typography>
           )}
 
           {member.status === "WEEKEND" && (
             <>
-              {member.subsection && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
-              <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}>
+              {member.subsection && (
+                <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />
+              )}
+              <Typography
+                sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}
+              >
                 Weekend
               </Typography>
             </>
@@ -205,8 +217,13 @@ function MemberRow({ member, currentUserId, isLast }) {
 
           {member.status === "HOLIDAY" && (
             <>
-              {(member.subsection || member.holiday_name) && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
-              <Typography title={member.holiday_name || "Holiday"} sx={{ fontFamily: FONT, fontSize: "0.72rem", color: "#b7791f", fontWeight: 600 }}>
+              {(member.subsection || member.holiday_name) && (
+                <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />
+              )}
+              <Typography
+                title={member.holiday_name || "Holiday"}
+                sx={{ fontFamily: FONT, fontSize: "0.72rem", color: "#b7791f", fontWeight: 600 }}
+              >
                 {member.holiday_name || "Holiday"}
               </Typography>
             </>
@@ -214,10 +231,14 @@ function MemberRow({ member, currentUserId, isLast }) {
 
           {member.status === "CHECKED_IN" && member.check_in_time && (
             <>
-              {member.subsection && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
+              {member.subsection && (
+                <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />
+              )}
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.3 }}>
                 <AccessTimeRoundedIcon sx={{ fontSize: 12, color: TEXT_3 }} />
-                <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}>
+                <Typography
+                  sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_3, fontWeight: 500 }}
+                >
                   {formatTime(member.check_in_time)}
                 </Typography>
               </Box>
@@ -226,8 +247,12 @@ function MemberRow({ member, currentUserId, isLast }) {
 
           {member.status === "ON_LEAVE" && member.leave_type && (
             <>
-              {member.subsection && <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />}
-              <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_2, fontWeight: 600 }}>
+              {member.subsection && (
+                <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: BORDER }} />
+              )}
+              <Typography
+                sx={{ fontFamily: FONT, fontSize: "0.72rem", color: TEXT_2, fontWeight: 600 }}
+              >
                 {member.leave_type}
               </Typography>
             </>
@@ -301,7 +326,9 @@ function Column({ col, members, isLoading, currentUserId }) {
               justifyContent: "center",
             }}
           >
-            <Typography sx={{ fontFamily: FONT, fontSize: "0.72rem", fontWeight: 700, color: col.solid }}>
+            <Typography
+              sx={{ fontFamily: FONT, fontSize: "0.72rem", fontWeight: 700, color: col.solid }}
+            >
               {members.length}
             </Typography>
           </Box>
@@ -313,7 +340,11 @@ function Column({ col, members, isLoading, currentUserId }) {
         {isLoading &&
           [...Array(4)].map((_, i) => (
             <Box key={i} sx={{ px: 0.5, py: 1 }}>
-              <Skeleton variant="rounded" height={44} sx={{ borderRadius: "8px", bgcolor: "#f2f3f6" }} />
+              <Skeleton
+                variant="rounded"
+                height={44}
+                sx={{ borderRadius: "8px", bgcolor: "#f2f3f6" }}
+              />
             </Box>
           ))}
 
@@ -330,7 +361,9 @@ function Column({ col, members, isLoading, currentUserId }) {
             }}
           >
             <InboxRoundedIcon sx={{ fontSize: 22, color: BORDER }} />
-            <Typography sx={{ fontFamily: FONT, color: TEXT_3, fontSize: "0.78rem", fontWeight: 500 }}>
+            <Typography
+              sx={{ fontFamily: FONT, color: TEXT_3, fontSize: "0.78rem", fontWeight: 500 }}
+            >
               No members
             </Typography>
           </Box>
@@ -338,7 +371,12 @@ function Column({ col, members, isLoading, currentUserId }) {
 
         {!isLoading &&
           members.map((m, i) => (
-            <MemberRow key={m.id} member={m} currentUserId={currentUserId} isLast={i === members.length - 1} />
+            <MemberRow
+              key={m.id}
+              member={m}
+              currentUserId={currentUserId}
+              isLast={i === members.length - 1}
+            />
           ))}
       </Box>
     </Box>
@@ -366,7 +404,8 @@ function MyTeamPage() {
 
   const grouped = {
     CHECKED_IN: data?.members?.filter((m) => m.status === "CHECKED_IN") ?? [],
-    YET_TO_CHECK_IN: data?.members?.filter((m) => m.status === "YET_TO_CHECK_IN" || m.status === "WEEKEND") ?? [],
+    YET_TO_CHECK_IN:
+      data?.members?.filter((m) => m.status === "YET_TO_CHECK_IN" || m.status === "WEEKEND") ?? [],
     ON_LEAVE: data?.members?.filter((m) => m.status === "ON_LEAVE") ?? [],
     HOLIDAY: data?.members?.filter((m) => m.status === "HOLIDAY") ?? [],
   };
@@ -413,11 +452,26 @@ function MyTeamPage() {
             </Box>
             <Box>
               <Typography
-                sx={{ fontFamily: FONT, color: INK, fontSize: "1.2rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2 }}
+                sx={{
+                  fontFamily: FONT,
+                  color: INK,
+                  fontSize: "1.2rem",
+                  fontWeight: 800,
+                  letterSpacing: "-0.02em",
+                  lineHeight: 1.2,
+                }}
               >
                 My Team
               </Typography>
-              <Typography sx={{ fontFamily: FONT, color: TEXT_2, fontSize: "0.8rem", fontWeight: 500, mt: 0.2 }}>
+              <Typography
+                sx={{
+                  fontFamily: FONT,
+                  color: TEXT_2,
+                  fontSize: "0.8rem",
+                  fontWeight: 500,
+                  mt: 0.2,
+                }}
+              >
                 {today}
                 {data && (
                   <span style={{ color: TEXT_3 }}>
@@ -465,10 +519,26 @@ function MyTeamPage() {
                       <Icon sx={{ fontSize: 14, color: col.solid }} />
                     </Box>
                     <Box>
-                      <Typography sx={{ fontFamily: FONT, fontSize: "0.95rem", fontWeight: 800, color: INK, lineHeight: 1.1 }}>
-                        {col.key === "HOLIDAY" ? grouped.HOLIDAY.length : data[col.countKey] ?? 0}
+                      <Typography
+                        sx={{
+                          fontFamily: FONT,
+                          fontSize: "0.95rem",
+                          fontWeight: 800,
+                          color: INK,
+                          lineHeight: 1.1,
+                        }}
+                      >
+                        {col.key === "HOLIDAY" ? grouped.HOLIDAY.length : (data[col.countKey] ?? 0)}
                       </Typography>
-                      <Typography sx={{ fontFamily: FONT, fontSize: "0.68rem", color: TEXT_3, fontWeight: 600, whiteSpace: "nowrap" }}>
+                      <Typography
+                        sx={{
+                          fontFamily: FONT,
+                          fontSize: "0.68rem",
+                          color: TEXT_3,
+                          fontWeight: 600,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {col.label}
                       </Typography>
                     </Box>
@@ -481,7 +551,13 @@ function MyTeamPage() {
           {isLoading && (
             <Box sx={{ display: "flex", gap: 1 }}>
               {[120, 130, 110].map((w, i) => (
-                <Skeleton key={i} variant="rounded" width={w} height={52} sx={{ borderRadius: "10px" }} />
+                <Skeleton
+                  key={i}
+                  variant="rounded"
+                  width={w}
+                  height={52}
+                  sx={{ borderRadius: "10px" }}
+                />
               ))}
             </Box>
           )}

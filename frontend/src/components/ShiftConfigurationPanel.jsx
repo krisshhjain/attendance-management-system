@@ -9,7 +9,6 @@ import {
   CircularProgress,
   IconButton,
   TextField,
-  MenuItem,
   Table,
   TableBody,
   TableCell,
@@ -20,10 +19,7 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SaveIcon from "@mui/icons-material/Save";
-import {
-  fetchAdminShiftConfiguration,
-  configureEmploymentTypeShifts,
-} from "../lib/api.js";
+import { fetchAdminShiftConfiguration, configureEmploymentTypeShifts } from "../lib/api.js";
 import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 import { getErrorMessage } from "../feedback/errorMessage.js";
 
@@ -80,7 +76,7 @@ export function ShiftConfigurationPanel() {
         name: s.name,
         start_time: s.start_time,
         end_time: s.end_time,
-      }))
+      })),
     );
     // Start with at least one empty shift if none exist
     if (current.length === 0) {
@@ -128,26 +124,23 @@ export function ShiftConfigurationPanel() {
 
     setLoading(true);
     try {
-      await configureEmploymentTypeShifts(
-        selectedType,
-        editingShifts
-      );
+      await configureEmploymentTypeShifts(selectedType, editingShifts);
       success("Shift configuration saved successfully.");
       setEditingShifts([]);
       setHasChanges(false);
       await loadConfiguration();
     } catch (err) {
-      notifyError(err, { title: "Shift configuration failed", fallback: "Failed to save shift configuration." });
+      notifyError(err, {
+        title: "Shift configuration failed",
+        fallback: "Failed to save shift configuration.",
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const cancelEditing = () => {
-    if (
-      hasChanges &&
-      !window.confirm("Discard unsaved changes?")
-    ) {
+    if (hasChanges && !window.confirm("Discard unsaved changes?")) {
       return;
     }
     setEditingShifts([]);
@@ -242,8 +235,8 @@ export function ShiftConfigurationPanel() {
 
           {editingShifts.length === 0 ? (
             <Alert severity="info" sx={{ mb: 2 }}>
-              Click "Add Shift" to configure shifts for this employment type. You
-              can configure 0, 1, or multiple shifts.
+              Click "Add Shift" to configure shifts for this employment type. You can configure 0,
+              1, or multiple shifts.
             </Alert>
           ) : (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mb: 2 }}>
@@ -260,20 +253,14 @@ export function ShiftConfigurationPanel() {
                   }}
                 >
                   <Box sx={{ display: "flex", gap: 2, alignItems: "start" }}>
-                    <Typography
-                      variant="body2"
-                      fontWeight={600}
-                      sx={{ mt: 2, minWidth: 60 }}
-                    >
+                    <Typography variant="body2" fontWeight={600} sx={{ mt: 2, minWidth: 60 }}>
                       Shift {index + 1}
                     </Typography>
                     <TextField
                       size="small"
                       label="Shift Name"
                       value={shift.name}
-                      onChange={(e) =>
-                        updateShift(index, "name", e.target.value)
-                      }
+                      onChange={(e) => updateShift(index, "name", e.target.value)}
                       placeholder="e.g. Morning Shift"
                       sx={{ flexGrow: 1 }}
                       required
@@ -282,9 +269,7 @@ export function ShiftConfigurationPanel() {
                       size="small"
                       label="Shift Code"
                       value={shift.code || ""}
-                      onChange={(e) =>
-                        updateShift(index, "code", e.target.value.toUpperCase())
-                      }
+                      onChange={(e) => updateShift(index, "code", e.target.value.toUpperCase())}
                       placeholder="e.g. MORN"
                       sx={{ width: 120 }}
                       helperText="Optional"
@@ -294,9 +279,7 @@ export function ShiftConfigurationPanel() {
                       type="time"
                       label="Start Time"
                       value={shift.start_time}
-                      onChange={(e) =>
-                        updateShift(index, "start_time", e.target.value)
-                      }
+                      onChange={(e) => updateShift(index, "start_time", e.target.value)}
                       InputLabelProps={{ shrink: true }}
                       sx={{ width: 140 }}
                       required
@@ -306,9 +289,7 @@ export function ShiftConfigurationPanel() {
                       type="time"
                       label="End Time"
                       value={shift.end_time}
-                      onChange={(e) =>
-                        updateShift(index, "end_time", e.target.value)
-                      }
+                      onChange={(e) => updateShift(index, "end_time", e.target.value)}
                       InputLabelProps={{ shrink: true }}
                       sx={{ width: 140 }}
                       required
@@ -316,6 +297,7 @@ export function ShiftConfigurationPanel() {
                     <IconButton
                       size="small"
                       color="error"
+                      aria-label={`Remove shift ${index + 1}`}
                       onClick={() => removeShift(index)}
                       sx={{ mt: 0.5 }}
                     >
@@ -345,9 +327,7 @@ export function ShiftConfigurationPanel() {
       ) : (
         <TableContainer>
           <Table>
-            <TableHead
-              sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}
-            >
+            <TableHead sx={{ bgcolor: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
               <TableRow>
                 <TableCell
                   sx={{
@@ -412,8 +392,7 @@ export function ShiftConfigurationPanel() {
                       display="block"
                       sx={{ mt: 0.5 }}
                     >
-                      Click "Configure Shifts" to set up shifts for this employment
-                      type.
+                      Click "Configure Shifts" to set up shifts for this employment type.
                     </Typography>
                   </TableCell>
                 </TableRow>

@@ -6,8 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/*.test.js",
-    "test:coverage": "c8 --all --reporter=text --reporter=lcov node --test tests/*.test.js && node scripts/normalize-lcov.js",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --maxWorkers=1 && node scripts/normalize-lcov.js",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -26,16 +26,26 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.3",
+    "@emnapi/runtime": "^1.11.3",
     "@eslint/js": "^9.32.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@vitejs/plugin-react": "^5.2.0",
-    "c8": "^12.0.0",
+    "@vitest/coverage-v8": "^5.0.4",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
+    "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "jsdom": "^29.1.1",
+    "msw": "^3.0.3",
     "prettier": "^3.7.3",
-    "vite": "8.1.5"
+    "vite": "8.1.5",
+    "vitest": "^5.0.4"
   }
 }

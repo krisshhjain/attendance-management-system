@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { createHoliday, fetchActiveHolidays, fetchAdminHolidays, updateHoliday } from "../src/lib/api.js";
+import { test } from "vitest";
+import {
+  createHoliday,
+  fetchActiveHolidays,
+  fetchAdminHolidays,
+  updateHoliday,
+} from "../src/lib/api.js";
 
 test("holiday read and SuperUser management API helpers use the backend endpoints", async () => {
   const originalFetch = globalThis.fetch;
@@ -28,7 +33,8 @@ test("holiday read and SuperUser management API helpers use the backend endpoint
 
 test("holiday API failures reject instead of silently returning an empty holiday list", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ detail: "Unavailable" }), { status: 503 });
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ detail: "Unavailable" }), { status: 503 });
   try {
     await assert.rejects(fetchActiveHolidays(), /Unavailable/);
   } finally {

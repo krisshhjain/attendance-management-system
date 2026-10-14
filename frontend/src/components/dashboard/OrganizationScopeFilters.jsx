@@ -13,10 +13,15 @@ export function OrganizationScopeFilters({ user, employees = [] }) {
   const { selectedScope, setSelectedScope } = useOrganizationScope();
   const scope = getOrganizationScope(user);
   const assignedBRs = Array.isArray(scope.assignedBRs) ? scope.assignedBRs : [];
-  const availableEmployees = employees.filter((employee) => !selectedScope.brId || employee.br_id === selectedScope.brId || employee.brId === selectedScope.brId);
+  const availableEmployees = employees.filter(
+    (employee) =>
+      !selectedScope.brId || String(employee.br_id ?? employee.brId) === String(selectedScope.brId),
+  );
   const sections = uniqueValues(availableEmployees, "section");
   const subsections = uniqueValues(
-    availableEmployees.filter((employee) => !selectedScope.sectionId || employee.section === selectedScope.sectionId),
+    availableEmployees.filter(
+      (employee) => !selectedScope.sectionId || employee.section === selectedScope.sectionId,
+    ),
     "subsection",
   );
 
@@ -26,13 +31,29 @@ export function OrganizationScopeFilters({ user, employees = [] }) {
     } else if (selectedScope.subsectionId && !subsections.includes(selectedScope.subsectionId)) {
       setSelectedScope((current) => ({ ...current, subsectionId: null }));
     }
-  }, [selectedScope.sectionId, selectedScope.subsectionId, sections, setSelectedScope, subsections]);
+  }, [
+    selectedScope.sectionId,
+    selectedScope.subsectionId,
+    sections,
+    setSelectedScope,
+    subsections,
+  ]);
 
   function updateScope(field, value) {
     setSelectedScope((current) => ({
       brId: field === "brId" ? value || null : current.brId,
-      sectionId: field === "brId" || field === "sectionId" ? (field === "sectionId" ? value || null : null) : current.sectionId,
-      subsectionId: field === "subsectionId" ? value || null : field === "brId" || field === "sectionId" ? null : current.subsectionId,
+      sectionId:
+        field === "brId" || field === "sectionId"
+          ? field === "sectionId"
+            ? value || null
+            : null
+          : current.sectionId,
+      subsectionId:
+        field === "subsectionId"
+          ? value || null
+          : field === "brId" || field === "sectionId"
+            ? null
+            : current.subsectionId,
     }));
   }
 
@@ -40,23 +61,50 @@ export function OrganizationScopeFilters({ user, employees = [] }) {
     <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
       <FormControl size="small" sx={{ minWidth: 170 }}>
         <InputLabel id="dashboard-br-filter-label">BR</InputLabel>
-        <Select labelId="dashboard-br-filter-label" value={selectedScope.brId || ""} label="BR" onChange={(event) => updateScope("brId", event.target.value)}>
+        <Select
+          labelId="dashboard-br-filter-label"
+          value={selectedScope.brId || ""}
+          label="BR"
+          onChange={(event) => updateScope("brId", event.target.value)}
+        >
           <MenuItem value="">All Assigned BRs</MenuItem>
-          {assignedBRs.map((br) => <MenuItem key={br.id} value={br.id}>{br.name}</MenuItem>)}
+          {assignedBRs.map((br) => (
+            <MenuItem key={br.id} value={br.id}>
+              {br.name}
+            </MenuItem>
+          ))}
         </Select>
       </FormControl>
       <FormControl size="small" sx={{ minWidth: 170 }}>
         <InputLabel id="dashboard-section-filter-label">Section</InputLabel>
-        <Select labelId="dashboard-section-filter-label" value={selectedScope.sectionId || ""} label="Section" onChange={(event) => updateScope("sectionId", event.target.value)}>
+        <Select
+          labelId="dashboard-section-filter-label"
+          value={selectedScope.sectionId || ""}
+          label="Section"
+          onChange={(event) => updateScope("sectionId", event.target.value)}
+        >
           <MenuItem value="">All Sections</MenuItem>
-          {sections.map((section) => <MenuItem key={section} value={section}>{section}</MenuItem>)}
+          {sections.map((section) => (
+            <MenuItem key={section} value={section}>
+              {section}
+            </MenuItem>
+          ))}
         </Select>
       </FormControl>
       <FormControl size="small" sx={{ minWidth: 190 }}>
         <InputLabel id="dashboard-subsection-filter-label">Subsection</InputLabel>
-        <Select labelId="dashboard-subsection-filter-label" value={selectedScope.subsectionId || ""} label="Subsection" onChange={(event) => updateScope("subsectionId", event.target.value)}>
+        <Select
+          labelId="dashboard-subsection-filter-label"
+          value={selectedScope.subsectionId || ""}
+          label="Subsection"
+          onChange={(event) => updateScope("subsectionId", event.target.value)}
+        >
           <MenuItem value="">All Subsections</MenuItem>
-          {subsections.map((subsection) => <MenuItem key={subsection} value={subsection}>{subsection}</MenuItem>)}
+          {subsections.map((subsection) => (
+            <MenuItem key={subsection} value={subsection}>
+              {subsection}
+            </MenuItem>
+          ))}
         </Select>
       </FormControl>
     </Box>

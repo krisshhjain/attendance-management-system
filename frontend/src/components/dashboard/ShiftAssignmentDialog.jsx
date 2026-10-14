@@ -42,13 +42,13 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
 
   const handleAssign = async () => {
     if (!employee) return;
-    
+
     setIsAssigning(true);
     setError(null);
-    
+
     try {
       const shiftId = selectedShiftId === "" ? null : Number.parseInt(selectedShiftId, 10);
-      
+
       await apiRequest("/attendance/admin/shift/assign/", {
         method: "POST",
         body: {
@@ -56,7 +56,7 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
           shift_id: shiftId,
         },
       });
-      
+
       success("Employee shift assigned successfully.");
       onSuccess?.();
     } catch (err) {
@@ -70,10 +70,9 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
 
   // Filter shifts to only show those matching employee's employment type
   const allShifts = shiftsResponse?.shifts || [];
-  const shifts = allShifts.filter(shift => 
-    shift.employment_type === employee.employment_type
-  );
-  const displayName = [employee.first_name, employee.last_name].filter(Boolean).join(" ") || employee.email;
+  const shifts = allShifts.filter((shift) => shift.employment_type === employee.employment_type);
+  const displayName =
+    [employee.first_name, employee.last_name].filter(Boolean).join(" ") || employee.email;
 
   return (
     <Dialog
@@ -84,20 +83,21 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
       PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
     >
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" fontWeight={600}>
+        <Typography component="span" variant="h6" fontWeight={600}>
           Assign Shift to {displayName}
         </Typography>
       </DialogTitle>
-      
+
       <DialogContent>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
         )}
-        
+
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Assign or change the shift for this employee. Leave empty to remove the current shift assignment.
+          Assign or change the shift for this employee. Leave empty to remove the current shift
+          assignment.
         </Typography>
 
         {employee.shift && (
@@ -115,9 +115,13 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
         )}
 
         <FormControl fullWidth disabled={isAssigning || shiftsLoading}>
-          <InputLabel>New Shift</InputLabel>
+          <InputLabel id="new-shift-label">New Shift</InputLabel>
           <Select
-            value={selectedShiftId}
+            id="new-shift-select"
+            labelId="new-shift-label"
+            value={
+              shifts.some((shift) => String(shift.id) === selectedShiftId) ? selectedShiftId : ""
+            }
             onChange={(e) => setSelectedShiftId(e.target.value)}
             label="New Shift"
           >
@@ -145,10 +149,10 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
           </Box>
         )}
       </DialogContent>
-      
+
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button 
-          onClick={onClose} 
+        <Button
+          onClick={onClose}
           disabled={isAssigning}
           sx={{ textTransform: "none", fontWeight: 600 }}
         >
@@ -160,11 +164,7 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
           disabled={isAssigning || shiftsLoading}
           sx={{ textTransform: "none", fontWeight: 600, borderRadius: "8px" }}
         >
-          {isAssigning ? (
-            <CircularProgress size={22} color="inherit" />
-          ) : (
-            "Assign Shift"
-          )}
+          {isAssigning ? <CircularProgress size={22} color="inherit" /> : "Assign Shift"}
         </Button>
       </DialogActions>
     </Dialog>

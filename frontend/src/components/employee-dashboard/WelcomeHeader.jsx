@@ -6,7 +6,12 @@ export function WelcomeHeader() {
   const email = user?.email || "";
   const name = user?.name || email.split("@")[0] || "Employee";
   const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
-  const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const initials = name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 
   // Get current time to determine greeting
   const hour = new Date().getHours();
@@ -30,7 +35,10 @@ export function WelcomeHeader() {
         {initials}
       </Avatar>
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "text.primary", mb: 0.5 }}>
+        <Typography
+          variant="h5"
+          sx={{ fontWeight: 700, letterSpacing: "-0.5px", color: "text.primary", mb: 0.5 }}
+        >
           {greeting}, {formattedName}!
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>

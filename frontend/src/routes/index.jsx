@@ -18,7 +18,15 @@ function Index() {
   }, [ready, isAuthenticated, navigate]);
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", bgcolor: "background.default" }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: "background.default",
+      }}
+    >
       <CircularProgress />
     </Box>
   );

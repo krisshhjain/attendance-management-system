@@ -5,15 +5,7 @@ import { formatDuration, formatTime } from "../lib/date.js";
 import { useFeedback } from "../feedback/FeedbackProvider.jsx";
 import { StatusBadge } from "./StatusBadge.jsx";
 import { ErrorState, LoadingState } from "./States.jsx";
-import {
-  Card,
-  CardHeader,
-  CardContent,
-  Typography,
-  Box,
-  Button,
-  Divider,
-} from "@mui/material";
+import { Card, CardHeader, CardContent, Typography, Box, Button, Divider } from "@mui/material";
 
 export function AttendanceCard({ onChanged }) {
   const [data, setData] = useState(null);
@@ -55,7 +47,10 @@ export function AttendanceCard({ onChanged }) {
         setData(await getToday());
         onChanged?.();
       } catch (error) {
-        notifyError(error, { title: "Attendance unavailable", fallback: "Attendance could not be updated." });
+        notifyError(error, {
+          title: "Attendance unavailable",
+          fallback: "Attendance could not be updated.",
+        });
       } finally {
         inFlight.current = false;
         setPending(false);
@@ -95,7 +90,15 @@ export function AttendanceCard({ onChanged }) {
       <CardHeader
         sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 2 }}
         title={
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+            }}
+          >
             <Box>
               <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: "-0.5px" }}>
                 Today&rsquo;s Attendance
@@ -114,7 +117,14 @@ export function AttendanceCard({ onChanged }) {
         }
       />
 
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: "1px", bgcolor: "divider" }}>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" },
+          gap: "1px",
+          bgcolor: "divider",
+        }}
+      >
         <Metric label="Check-in" value={formatTime(data.check_in)} />
         <Metric label="Check-out" value={formatTime(data.check_out)} />
         <Metric label="Working hours" value={formatDuration(data.working_duration)} />
@@ -132,11 +142,22 @@ export function AttendanceCard({ onChanged }) {
         )}
 
         {status === "CHECKED_IN" && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1, alignItems: { sm: "flex-start" } }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+              alignItems: { sm: "flex-start" },
+            }}
+          >
             <ActionButton
               pending={pending}
               disabled={secondsRemaining > 0}
-              label={secondsRemaining > 0 ? `Check out (${Math.floor(secondsRemaining / 60)}:${(secondsRemaining % 60).toString().padStart(2, "0")} resting period)` : "Check out"}
+              label={
+                secondsRemaining > 0
+                  ? `Check out (${Math.floor(secondsRemaining / 60)}:${(secondsRemaining % 60).toString().padStart(2, "0")} resting period)`
+                  : "Check out"
+              }
               pendingLabel={pendingText || "Checking out..."}
               onClick={() => runAction("out")}
             />
@@ -161,7 +182,15 @@ export function AttendanceCard({ onChanged }) {
 function Metric({ label, value }) {
   return (
     <Box sx={{ bgcolor: "background.paper", px: 3, py: 2.5 }}>
-      <Typography variant="caption" sx={{ fontWeight: 500, textTransform: "uppercase", letterSpacing: 1, color: "text.secondary" }}>
+      <Typography
+        variant="caption"
+        sx={{
+          fontWeight: 500,
+          textTransform: "uppercase",
+          letterSpacing: 1,
+          color: "text.secondary",
+        }}
+      >
         {label}
       </Typography>
       <Typography variant="h5" sx={{ mt: 1, fontWeight: 600, fontFamily: "monospace" }}>
@@ -184,7 +213,7 @@ function ActionButton({ pending, disabled, label, pendingLabel, onClick }) {
         fontWeight: 600,
         textTransform: "uppercase",
         letterSpacing: 1,
-        width: { sm: "auto" }
+        width: { sm: "auto" },
       }}
     >
       {pending ? pendingLabel : label}
