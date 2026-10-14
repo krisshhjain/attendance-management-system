@@ -1,4 +1,4 @@
-import { test, expect, vi } from "vitest";
+import { test, expect } from "vitest";
 import { formatDate, formatDuration, formatTime, greeting } from "../src/lib/date.js";
 
 test("formats supported attendance durations and rejects malformed values", () => {
@@ -13,9 +13,13 @@ test("formats valid dates and returns a safe fallback for invalid dates", () => 
   expect(formatDate(null)).toBe("—");
   expect(formatDate("not-a-date")).toBe("not-a-date");
 
-  vi.stubEnv("TZ", "UTC");
-  expect(formatTime("2026-01-26T13:05:00Z")).toMatch(/1:05/);
-  vi.unstubAllEnvs();
+  const timestamp = "2026-01-26T13:05:00Z";
+  const expectedLocalTime = new Date(timestamp).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  expect(formatTime(timestamp)).toBe(expectedLocalTime);
   expect(formatTime("not-a-date")).toBe("—");
 });
 
