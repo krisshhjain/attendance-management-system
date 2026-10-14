@@ -133,3 +133,57 @@ test("keeps the dashboard usable when attendance data is unavailable", async () 
   const presentCard = screen.getByText("Present Today").closest(".MuiPaper-root");
   await waitFor(() => expect(presentCard).toHaveTextContent("0"));
 }, 15_000);
+
+test("opens attendance categories and resolves employee names from supported records", async () => {
+  const directory = [
+    ...employees.slice(0, 1),
+    { id: 5, user: { first_name: "Morgan", email: "morgan@example.test" }, is_active: true },
+    {
+      id: 6,
+      user: { first_name: "Taylor", last_name: "Ng", email: "taylor@example.test" },
+      is_active: true,
+    },
+    {
+      id: 7,
+      first_name: "Direct",
+      last_name: "Record",
+      email: "direct@example.test",
+      is_active: true,
+    },
+    { id: 8, user: {}, email: "fallback@example.test", is_active: true },
+    { id: 9, user: {}, is_active: true },
+    "string@example.test",
+  ];
+  server.use(
+    http.get(`${API_BASE_URL}/admin/dashboard/`, () =>
+      HttpResponse.json({
+        is_working_day: true,
+        attendance: [
+          { employee: "avery@example.test", status: "PRESENT", employee_name: "Avery Lee" },
+          { employee: "morgan@example.test", status: "INCOMPLETE", employee_name: "Morgan" },
+          { employee: "taylor@example.test", status: "LEAVE", employee_name: "Taylor Ng" },
+        ],
+      }),
+    ),
+    http.get(`${API_BASE_URL}/admin/employees/list/`, () => HttpResponse.json(directory)),
+  );
+  const user = userEvent.setup();
+  renderDashboard();
+  expect(await screen.findByText("Overview")).toBeInTheDocument();
+
+  await user.click(screen.getByText("Incomplete"));
+  let dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Morgan")).toBeInTheDocument();
+  await user.click(within(dialog).getByRole("button"));
+  await user.click(screen.getByText("On Leave"));
+  dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Taylor Ng")).toBeInTheDocument();
+  await user.click(within(dialog).getByRole("button"));
+  await user.click(screen.getByText("Absent Today"));
+  dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Direct Record")).toBeInTheDocument();
+  expect(within(dialog).queryByText("Taylor Ng")).not.toBeInTheDocument();
+  expect(within(dialog).getByText("fallback@example.test")).toBeInTheDocument();
+  expect(within(dialog).getByText("Unknown")).toBeInTheDocument();
+  expect(within(dialog).getByText("string@example.test")).toBeInTheDocument();
+}, 15_000);

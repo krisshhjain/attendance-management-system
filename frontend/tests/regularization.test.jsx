@@ -184,6 +184,21 @@ test("rejects malformed times and a checkout earlier than the corrected check-in
 
   const checkIn = screen.getByLabelText("Corrected check-in");
   await user.clear(checkIn);
+  await user.type(checkIn, "not a time");
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+  expect(screen.getByText(/enter a valid time/)).toBeInTheDocument();
+
+  await user.clear(checkIn);
+  await user.type(checkIn, "13:00 PM");
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+  expect(screen.getByText(/enter a valid time/)).toBeInTheDocument();
+
+  await user.clear(checkIn);
+  await user.type(checkIn, "24:00");
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+  expect(screen.getByText(/enter a valid time/)).toBeInTheDocument();
+
+  await user.clear(checkIn);
   await user.type(checkIn, "9:00");
   await user.type(screen.getByLabelText("Corrected check-out"), "8:00");
   await user.click(screen.getByRole("button", { name: "Submit request" }));
