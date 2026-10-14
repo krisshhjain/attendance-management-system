@@ -165,16 +165,19 @@ jobs:
     - name: Run facial-recognition tests with coverage
       working-directory: facial-recognition
       run: |
-        python -m coverage run --rcfile=.coveragerc -m unittest test_service test_face_utils test_regeneration_utilities
+        python -m coverage run --rcfile=.coveragerc -m unittest test_service test_face_utils test_regeneration_utilities test_operational_utilities
         python -m coverage report --rcfile=.coveragerc
         python -m coverage xml --rcfile=.coveragerc -o coverage.xml
+        python -m coverage json --rcfile=.coveragerc -o coverage.json
         python ../.github/scripts/normalize_coverage_xml.py coverage.xml facial-recognition
 
     - name: Upload facial-recognition coverage
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: facial-recognition-coverage
-        path: facial-recognition/coverage.xml
+        path: |
+          facial-recognition/coverage.xml
+          facial-recognition/coverage.json
         if-no-files-found: error
 
   sonarqube:

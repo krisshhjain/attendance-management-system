@@ -18,6 +18,7 @@ import os
 import json
 import shutil
 import logging
+import tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
@@ -214,13 +215,21 @@ def safe_extract_embedding(img_path: Path, identity: str, stats: RegenerationSta
             normalize=True,  # Use L2 normalization for consistency
             dtype=np.float32
         )
+
+        embedding = np.asarray(embedding, dtype=np.float32)
+        if embedding.ndim != 1 or embedding.size == 0 or not np.isfinite(embedding).all():
+            raise ValueError("Face model returned an invalid embedding")
         
         stats.add_success(img_path, identity)
         return embedding
         
     except Exception as error:
         # Get face detection details for better failure reporting
-        face_details = get_face_details(str(img_path), "retinaface")
+        try:
+            face_details = get_face_details(str(img_path), "retinaface")
+        except Exception:
+            logger.exception("Unable to collect face details for %s", img_path)
+            face_details = None
         stats.add_failure(img_path, identity, error, face_details)
         return None
 
@@ -241,32 +250,49 @@ def regenerate_identity_embeddings(identity_dir: Path, cache_dir: Path, stats: R
     
     logger.info(f"Processing identity {identity}: {len(images)} images")
     
-    # Create cache subdirectory
+    # Build this identity in an isolated directory. Failed/incomplete extraction
+    # must not erase a previously usable cache.
+    cache_dir.mkdir(parents=True, exist_ok=True)
     identity_cache_dir = cache_dir / identity
-    identity_cache_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = Path(tempfile.mkdtemp(prefix=f".{identity}.staging-", dir=cache_dir))
     
-    successful_embeddings = 0
-    
-    # Process all images for this identity
-    for img_path in images:
-        embedding = safe_extract_embedding(img_path, identity, stats)
-        
-        if embedding is not None:
-            # Save embedding to cache
-            cache_path = identity_cache_dir / f"{img_path.stem}.npy"
-            np.save(cache_path, embedding)
-            successful_embeddings += 1
-    
-    # Check if enough images succeeded for enrollment
-    if successful_embeddings < MIN_ENROLLMENT_IMAGES:
-        # Remove partial results to prevent silent quality degradation
-        if identity_cache_dir.exists():
-            shutil.rmtree(identity_cache_dir)
-        stats.add_insufficient_enrollment(identity, successful_embeddings, len(images))
-        return False
-    
-    logger.info(f"Identity {identity}: {successful_embeddings}/{len(images)} embeddings extracted successfully")
-    return True
+    try:
+        successful_embeddings = 0
+
+        # Process all images for this identity into the isolated staging directory.
+        for img_path in images:
+            embedding = safe_extract_embedding(img_path, identity, stats)
+            if embedding is not None:
+                np.save(staging_dir / f"{img_path.stem}.npy", embedding)
+                successful_embeddings += 1
+
+        if successful_embeddings < MIN_ENROLLMENT_IMAGES:
+            stats.add_insufficient_enrollment(identity, successful_embeddings, len(images))
+            return False
+
+        backup_dir = None
+        committed = False
+        try:
+            if identity_cache_dir.exists():
+                backup_dir = Path(tempfile.mkdtemp(prefix=f".{identity}.backup-", dir=cache_dir))
+                backup_dir.rmdir()
+                identity_cache_dir.rename(backup_dir)
+            try:
+                staging_dir.rename(identity_cache_dir)
+            except Exception:
+                if backup_dir is not None and backup_dir.exists():
+                    backup_dir.rename(identity_cache_dir)
+                raise
+            committed = True
+        finally:
+            if committed and backup_dir is not None and backup_dir.exists():
+                shutil.rmtree(backup_dir, ignore_errors=True)
+
+        logger.info(f"Identity {identity}: {successful_embeddings}/{len(images)} embeddings extracted successfully")
+        return True
+    finally:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
 
 
 def regenerate_all_embeddings(dataset_dir: Path, cache_dir: Path, stats: RegenerationStats):
@@ -309,6 +335,12 @@ def main():
     backup_dir = backup_embeddings()
     if backup_dir:
         logger.info(f"Backup created: {backup_dir}")
+
+    def restore_previous_cache():
+        if CACHE_DIR.exists():
+            shutil.rmtree(CACHE_DIR)
+        if backup_dir is not None and backup_dir.exists():
+            shutil.copytree(backup_dir, CACHE_DIR)
     
     # Clean and recreate cache directories
     if CACHE_DIR.exists():
@@ -330,8 +362,13 @@ def main():
         
     except KeyboardInterrupt:
         logger.info("Regeneration interrupted by user")
+        restore_previous_cache()
     except Exception as e:
         logger.error(f"Unexpected error during regeneration: {e}")
+        try:
+            restore_previous_cache()
+        except Exception:
+            logger.exception("Unable to restore the previous embedding cache")
         raise
     
     # Generate final report
