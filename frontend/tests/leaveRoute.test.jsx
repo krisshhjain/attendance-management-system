@@ -193,3 +193,24 @@ test("opens a remote image attachment in its document preview", async () => {
     "https://files.example.test/medical-note.png",
   );
 }, 15_000);
+
+test("shows the server policy message when a leave request is rejected", async () => {
+  leaveApi();
+  server.use(
+    http.post(`${API_BASE_URL}/leave/requests/`, () =>
+      HttpResponse.json({ detail: "The notice period is too short." }, { status: 400 }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("4 Left");
+  await user.click(screen.getByRole("button", { name: "Apply for Leave" }));
+  await user.type(screen.getByRole("textbox", { name: "Reason for Leave" }), "Medical visit");
+  await user.type(
+    screen.getByRole("textbox", { name: "Or enter document URL/link" }),
+    "https://files.example.test/note.pdf",
+  );
+  await user.click(screen.getByRole("button", { name: "Submit Request" }));
+  expect(await screen.findByText("The notice period is too short.")).toBeInTheDocument();
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+}, 15_000);

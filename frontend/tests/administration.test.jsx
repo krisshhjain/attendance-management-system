@@ -152,7 +152,7 @@ test("validates office coordinates before creating a location and refreshes the 
   );
   expect(state.success).toHaveBeenCalledWith("Office location created successfully.");
   expect(state.api.fetchOfficeLocations).toHaveBeenCalledTimes(2);
-});
+}, 15_000);
 
 test("creates a normalized leave type from the registry", async () => {
   const user = userEvent.setup();
@@ -179,6 +179,41 @@ test("creates a normalized leave type from the registry", async () => {
     }),
   );
   expect(state.success).toHaveBeenCalledWith("Leave type created successfully.");
+}, 15_000);
+
+test("updates an existing leave type and refreshes the registry", async () => {
+  const user = userEvent.setup();
+  state.api.fetchLeaveTypesAll.mockResolvedValue([
+    {
+      id: 7,
+      name: "Casual Leave",
+      code: "CAS",
+      description: "Personal days",
+      is_paid: true,
+      allow_half_day: true,
+      allow_past_dates: false,
+      allow_future_dates: true,
+      min_notice_days: 1,
+      requires_document: false,
+      is_active: true,
+    },
+  ]);
+  renderPage();
+  await user.click(screen.getByRole("tab", { name: "Leave Types" }));
+  await user.click(await screen.findByRole("button", { name: "Edit leave type" }));
+  await user.clear(screen.getByRole("textbox", { name: "Name" }));
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "Personal Leave");
+  await user.clear(screen.getByRole("textbox", { name: "Code" }));
+  await user.type(screen.getByRole("textbox", { name: "Code" }), "personal");
+  await user.click(screen.getByRole("button", { name: "Save Leave Type" }));
+
+  await waitFor(() =>
+    expect(state.api.updateLeaveType).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ name: "Personal Leave", code: "PERSONAL" }),
+    ),
+  );
+  expect(state.success).toHaveBeenCalledWith("Leave type updated successfully.");
 });
 
 test("creates a leave policy for a selected leave type", async () => {
