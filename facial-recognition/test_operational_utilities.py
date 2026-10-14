@@ -295,6 +295,29 @@ class EmbeddingRegenerationTests(unittest.TestCase):
             self.assertEqual(list(cache.glob(".*.staging-*")), [])
             self.assertEqual(list(cache.glob(".*.backup-*")), [])
 
+    def test_cache_promotion_failure_without_previous_cache_cleans_staging(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, identity = self._fixture(root)
+            cache = root / "cache"
+            stats = regenerate_embeddings.RegenerationStats()
+            original_rename = Path.rename
+
+            def fail_staged_promotion(path, target):
+                if path.name.startswith(".person.staging-"):
+                    raise OSError("promotion failed")
+                return original_rename(path, target)
+
+            with patch.object(regenerate_embeddings, "DATASET_ROOT", root / "dataset"), patch.object(
+                regenerate_embeddings, "safe_extract_embedding", return_value=np.array([1.0])
+            ), patch.object(Path, "rename", new=fail_staged_promotion):
+                with self.assertRaisesRegex(OSError, "promotion failed"):
+                    regenerate_embeddings.regenerate_identity_embeddings(identity, cache, stats)
+
+            self.assertFalse((cache / "person").exists())
+            self.assertEqual(list(cache.glob(".*.staging-*")), [])
+            self.assertEqual(list(cache.glob(".*.backup-*")), [])
+
     def test_regenerate_all_skips_missing_split_and_continues_after_identity_error(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
