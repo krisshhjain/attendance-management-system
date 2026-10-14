@@ -46,6 +46,25 @@ test("offers download and browser actions for unsupported files", async () => {
   expect(open).toHaveBeenCalledWith("https://files.example.test/policy.docx", "_blank");
 });
 
+test("downloads a leave attachment with its supplied filename", async () => {
+  let clickedLink;
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function () {
+    clickedLink = { href: this.href, download: this.download, connected: this.isConnected };
+  });
+  renderPreview("https://files.example.test/policy.docx");
+  const user = userEvent.setup();
+
+  await user.click(screen.getByRole("button", { name: "Download document" }));
+
+  expect(click).toHaveBeenCalledOnce();
+  expect(clickedLink).toEqual({
+    href: "https://files.example.test/policy.docx",
+    download: "policy.docx",
+    connected: true,
+  });
+  expect(document.querySelector('a[download="policy.docx"]')).toBeNull();
+});
+
 test("shows a fallback when the image cannot load", () => {
   renderPreview("https://files.example.test/missing-image.png");
   const image = screen.getByRole("img", { name: "Document preview" });

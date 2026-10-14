@@ -389,3 +389,30 @@ test("rejects an oversized supporting file before submitting a correction", asyn
   expect(await screen.findByText("Attachment must be 5 MB or smaller.")).toBeInTheDocument();
   expect(screen.queryByText("Selected: evidence.pdf")).not.toBeInTheDocument();
 });
+
+test("keeps a correction editable and shows the server reason after submission fails", async () => {
+  server.use(
+    http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/regularization/quota/`, () =>
+      HttpResponse.json(requestQuota),
+    ),
+    http.get(`${API_BASE_URL}/holidays/`, () => HttpResponse.json([])),
+    http.post(`${API_BASE_URL}/attendance/regularization/`, () =>
+      HttpResponse.json({ detail: "This date is outside the correction window." }, { status: 400 }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("You have not submitted any regularization requests.");
+  await user.click(screen.getByRole("button", { name: "Request correction" }));
+  await user.type(screen.getByLabelText("Corrected check-out"), "17:30");
+  await user.type(screen.getByLabelText("Reason"), "Supervisor verified the final time");
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+
+  expect(
+    await screen.findByText("This date is outside the correction window."),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Submit request" })).toBeEnabled();
+  expect(screen.getByLabelText("Corrected check-out")).toHaveValue("17:30");
+}, 15_000);

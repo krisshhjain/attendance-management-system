@@ -75,3 +75,39 @@ test("hides attendance statuses when holiday verification fails", () => {
     ),
   ).toBeInTheDocument();
 });
+
+test("formats duration variants across an overnight shift and labels holiday and leave days", () => {
+  const today = new Date();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const key = (offset) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + offset);
+    return localDateKey(date);
+  };
+  state.queries.attendanceHistory.data = [
+    { date: key(0), status: "PRESENT", working_duration: 1800 },
+    { date: key(1), status: "LEAVE", working_duration: "1 days, 01:30:00" },
+    { date: key(2), status: "COMPLETED", working_duration: "90" },
+    { date: key(3), status: "UNRECOGNIZED", working_duration: "not-a-duration" },
+    {
+      date: key(4),
+      status: "HOLIDAY",
+      holiday_name: "Founders Day",
+      check_in: "not-a-timestamp",
+      check_out: null,
+      working_duration: "not-a-duration",
+    },
+  ];
+  state.queries.myShift.data = {
+    shift: { name: "Overnight", start_time: "22:00", end_time: "06:00" },
+  };
+  renderTrack();
+
+  expect(screen.getByText("Overnight · 22:00 – 06:00")).toBeInTheDocument();
+  expect(screen.getAllByText("Leave").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Holiday").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Weekend").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Present").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Not recorded").length).toBeGreaterThan(0);
+}, 15_000);

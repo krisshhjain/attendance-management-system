@@ -109,3 +109,63 @@ test("blocks HR Copilot for non system managers", () => {
   expect(screen.getByText("System Manager access is required.")).toBeInTheDocument();
   expect(screen.queryByPlaceholderText("Ask HR Copilot something...")).not.toBeInTheDocument();
 });
+
+test("restores and cancels a pending approval while preserving its response", async () => {
+  sessionStorage.setItem("hr-copilot-current-8", "pending-conversation");
+  server.use(
+    http.get(`${API_BASE_URL}/hr-copilot/conversations/pending-conversation/`, () =>
+      HttpResponse.json({
+        messages: [
+          {
+            id: "assistant-pending",
+            role: "assistant",
+            content: "A correction is ready for review.",
+            pending_action: {
+              action_id: "action-cancel",
+              status: "PENDING",
+              action_type: "attendance_correction",
+              target_data: { employee_name: "Avery Lee", date: "2026-10-12" },
+              proposed_changes: { status: "PRESENT" },
+            },
+          },
+        ],
+      }),
+    ),
+    http.post(`${API_BASE_URL}/hr-copilot/actions/approve/`, async ({ request }) => {
+      expect(await request.json()).toEqual({
+        action_id: "action-cancel",
+        action: "cancel",
+        conversation_id: "pending-conversation",
+      });
+      return HttpResponse.json({});
+    }),
+  );
+  const user = userEvent.setup();
+  renderPage();
+
+  expect(await screen.findByText("A correction is ready for review.")).toBeInTheDocument();
+  expect(screen.getByText("Avery Lee")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Cancel", exact: true }));
+
+  expect(await screen.findByText("Cancelled · no changes made")).toBeInTheDocument();
+  expect(screen.getByText("A correction is ready for review.")).toBeInTheDocument();
+  expect(state.success).toHaveBeenCalledWith("Action cancelled successfully.");
+}, 15_000);
+
+test("shows a recoverable error when the HR assistant request is rejected", async () => {
+  server.use(
+    http.post(`${API_BASE_URL}/hr-copilot/query/`, () =>
+      HttpResponse.json({ detail: "HR records are temporarily unavailable." }, { status: 503 }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await user.type(
+    screen.getByPlaceholderText("Ask HR Copilot something..."),
+    "Show my leave balance",
+  );
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+
+  expect(await screen.findByText("HR records are temporarily unavailable.")).toBeInTheDocument();
+  expect(screen.getByText("Show my leave balance")).toBeInTheDocument();
+}, 15_000);

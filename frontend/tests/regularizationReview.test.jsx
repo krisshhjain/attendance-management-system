@@ -117,3 +117,36 @@ test("shows a recoverable not-found response and returns to the review queue", a
   await user.click(screen.getByRole("button", { name: "Back to Regularization" }));
   expect(state.navigate).toHaveBeenCalledWith({ to: "/admin-regularization" });
 });
+
+test("approves a single-day correction with one final time and reports server rejection", async () => {
+  state.request.mockResolvedValue({
+    id: 77,
+    status: "PENDING",
+    employee_name: "Avery Lee",
+    attendance_date: "2026-10-12",
+    requested_check_in: "not-a-date",
+    requested_check_out: null,
+    can_be_processed: true,
+    days: [],
+  });
+  state.approve.mockRejectedValue(new Error("The record was updated by another reviewer."));
+  const user = userEvent.setup();
+  renderPage();
+
+  expect(await screen.findByText("Avery Lee")).toBeInTheDocument();
+  expect(screen.getByLabelText("Final check-in")).toHaveValue("");
+  expect(screen.getAllByText("Not recorded").length).toBeGreaterThan(0);
+  await user.type(screen.getByLabelText("Final check-in"), "09:15");
+  await user.click(screen.getByRole("button", { name: "Approve" }));
+
+  await waitFor(() =>
+    expect(state.approve).toHaveBeenCalledWith("77", {
+      check_in: "2026-10-12T09:15:00",
+      check_out: null,
+    }),
+  );
+  expect(state.notifyError).toHaveBeenCalledWith(
+    expect.objectContaining({ message: "The record was updated by another reviewer." }),
+    expect.objectContaining({ title: "Regularization approval failed" }),
+  );
+}, 15_000);

@@ -106,3 +106,47 @@ test("keeps holiday labels over stale absences in calendar views but preserves h
   await user.click(screen.getByRole("button", { name: "List" }));
   expect(screen.getByRole("row", { name: /Absent/ })).toBeInTheDocument();
 });
+
+test("renders attendance statuses and narrows the list to leave records", async () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const weekdays = Array.from(
+    { length: new Date(year, month + 1, 0).getDate() },
+    (_, index) => index + 1,
+  )
+    .filter((day) => ![0, 6].includes(new Date(year, month, day).getDay()))
+    .slice(0, 6);
+  const [presentDay, incompleteDay, leaveDay, absentDay, holidayDay, customDay] = weekdays;
+  const key = (day) =>
+    `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  state.query.data = [
+    { date: key(presentDay), status: "PRESENT", working_duration: "08:05:00" },
+    {
+      date: key(incompleteDay),
+      status: "INCOMPLETE",
+      check_in: `${key(incompleteDay)}T09:00:00`,
+      check_out: null,
+    },
+    { date: key(leaveDay), status: "LEAVE", working_duration: 0 },
+    { date: key(absentDay), status: "ABSENT", working_duration: 0 },
+    { date: key(holidayDay), status: "HOLIDAY", holiday_name: "Founders Day", working_duration: 0 },
+    { date: key(customDay), status: "CUSTOM_STATUS", working_duration: 0 },
+  ];
+  state.holidays.data = [{ date: key(holidayDay), name: "Founders Day" }];
+  const user = userEvent.setup();
+  renderPage();
+
+  expect(screen.getAllByText("Present").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Checked In").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("On Leave").length).toBeGreaterThan(0);
+  expect(screen.getByText("Founders Day")).toBeInTheDocument();
+  expect(screen.getByText("CUSTOM_STATUS")).toBeInTheDocument();
+  expect(screen.getAllByText("Weekend").length).toBeGreaterThan(0);
+
+  await user.click(screen.getByRole("button", { name: "List" }));
+  await user.click(screen.getByRole("combobox"));
+  await user.click(screen.getByRole("option", { name: "On Leave" }));
+  expect(screen.getByRole("row", { name: /On Leave/ })).toBeInTheDocument();
+  expect(screen.queryByRole("row", { name: /Present/ })).not.toBeInTheDocument();
+}, 15_000);
