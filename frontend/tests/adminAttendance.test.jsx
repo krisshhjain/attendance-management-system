@@ -8,12 +8,12 @@ import { FeedbackProvider } from "../src/feedback/FeedbackProvider.jsx";
 import { API_BASE_URL } from "../src/lib/api.js";
 import { server } from "./mocks/server.js";
 
-function renderPage() {
+function renderPage(props) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <FeedbackProvider>
-        <AdminAttendancePage />
+        <AdminAttendancePage {...props} />
       </FeedbackProvider>
     </QueryClientProvider>,
   );
@@ -113,3 +113,84 @@ test("shows a recovery action when attendance fails to load", async () => {
   expect(await screen.findByText("Alice Employee")).toBeInTheDocument();
   expect(attempts).toBe(2);
 });
+
+test("checks out every incomplete employee in the selected date", async () => {
+  let payload;
+  server.use(
+    http.get(`${API_BASE_URL}/admin/attendance/`, ({ request }) =>
+      HttpResponse.json(attendanceFor(request)),
+    ),
+    http.post(`${API_BASE_URL}/admin/force-checkout/`, async ({ request }) => {
+      payload = await request.json();
+      return HttpResponse.json({ ok: true });
+    }),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("Alice Employee");
+  await user.click(screen.getByRole("button", { name: "Checkout All" }));
+  await waitFor(() => expect(payload).toEqual({ all: true, date: expect.any(String) }));
+  expect(await screen.findByText("Employees checked out successfully.")).toBeInTheDocument();
+}, 15_000);
+
+test("requires an edit reason and saves attendance corrections", async () => {
+  let payload;
+  server.use(
+    http.get(`${API_BASE_URL}/admin/attendance/`, ({ request }) =>
+      HttpResponse.json(attendanceFor(request)),
+    ),
+    http.post(`${API_BASE_URL}/admin/attendance/edit/`, async ({ request }) => {
+      payload = await request.json();
+      return HttpResponse.json({ ok: true });
+    }),
+  );
+  const user = userEvent.setup();
+  renderPage({ allowEdit: true });
+  await screen.findByText("Alice Employee");
+  const aliceRow = screen.getByText("Alice Employee").closest("tr");
+  await user.click(within(aliceRow).getByRole("button", { name: "Edit" }));
+  const save = screen.getByRole("button", { name: "Save Changes" });
+  expect(save).toBeDisabled();
+  await user.type(screen.getByLabelText("Reason for correction"), "Manager verified the times");
+  await user.click(save);
+  await waitFor(() =>
+    expect(payload).toEqual(
+      expect.objectContaining({
+        employee: "alice@example.test",
+        reason: "Manager verified the times",
+        status: "INCOMPLETE",
+      }),
+    ),
+  );
+  expect(await screen.findByText("Attendance updated successfully.")).toBeInTheDocument();
+}, 15_000);
+
+test("requires a reset reason before clearing today's attendance", async () => {
+  let payload;
+  server.use(
+    http.get(`${API_BASE_URL}/admin/attendance/`, ({ request }) =>
+      HttpResponse.json(attendanceFor(request)),
+    ),
+    http.post(`${API_BASE_URL}/admin/attendance/reset/`, async ({ request }) => {
+      payload = await request.json();
+      return HttpResponse.json({ ok: true });
+    }),
+  );
+  const user = userEvent.setup();
+  renderPage({ allowReset: true });
+  await screen.findByText("Alice Employee");
+  const aliceRow = screen.getByText("Alice Employee").closest("tr");
+  await user.click(within(aliceRow).getByRole("button", { name: "Reset" }));
+  const reset = screen.getByRole("button", { name: "Reset Attendance" });
+  expect(reset).toBeDisabled();
+  await user.type(screen.getByLabelText("Reason for reset"), "Duplicate punch");
+  await user.click(reset);
+  await waitFor(() =>
+    expect(payload).toEqual({
+      employee: "alice@example.test",
+      reason: "Duplicate punch",
+      reset_type: "both",
+    }),
+  );
+  expect(await screen.findByText("Attendance reset successfully.")).toBeInTheDocument();
+}, 15_000);

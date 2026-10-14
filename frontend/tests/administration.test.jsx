@@ -229,3 +229,33 @@ test("filters the employee leave balance audit by email", async () => {
   expect(screen.queryByText("blake@example.test")).not.toBeInTheDocument();
   expect(screen.getByText("17")).toBeInTheDocument();
 });
+
+test("confirms before deactivating a leave policy", async () => {
+  const user = userEvent.setup();
+  state.api.fetchLeavePoliciesAll.mockResolvedValue([
+    {
+      id: 12,
+      employee_type: "PERMANENT",
+      leave_type: 4,
+      leave_type_name: "Annual Leave",
+      leave_type_code: "ANNUAL",
+      annual_entitlement: 20,
+      allow_carry_forward: false,
+      max_carry_forward: 0,
+      max_consecutive_days: 10,
+      min_notice_days: 0,
+      allow_half_day: true,
+      requires_document: false,
+      effective_from: "2026-01-01",
+      is_active: true,
+    },
+  ]);
+  renderPage();
+  await user.click(screen.getByRole("tab", { name: "Leave Policies" }));
+  expect(await screen.findByText("Annual Leave")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Deactivate policy" }));
+  expect(screen.getByText("Annual Leave (PERMANENT)")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Deactivate" }));
+  await waitFor(() => expect(state.api.deleteLeavePolicy).toHaveBeenCalledWith(12));
+  expect(state.success).toHaveBeenCalledWith("Leave policy deactivated successfully.");
+});
