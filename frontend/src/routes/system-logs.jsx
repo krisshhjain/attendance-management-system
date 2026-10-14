@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Alert,
@@ -110,11 +110,11 @@ function SystemLogsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { success, notifyError } = useFeedback();
 
-  const updateSearch = (updates) => {
+  const updateSearch = useCallback((updates) => {
     navigate({
       search: (previous) => ({ ...previous, ...updates, page: updates.page ?? 1 }),
     });
-  };
+  }, [navigate]);
 
   useEffect(() => {
     setSearchInput(search.search);
@@ -138,9 +138,9 @@ function SystemLogsPage() {
       if (searchInput !== search.search) updateSearch({ search: searchInput });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [searchInput, search.search]);
+  }, [searchInput, search.search, updateSearch]);
 
-  const queryParams = {
+  const queryParams = useMemo(() => ({
     search: search.search,
     category: search.category,
     event_type: search.event_type,
@@ -153,8 +153,7 @@ function SystemLogsPage() {
     date_to: search.date_to,
     page: search.page,
     page_size: search.page_size,
-  };
-  const queryKey = JSON.stringify(queryParams);
+  }), [search.search, search.category, search.event_type, search.severity, search.status, search.source, search.actor, search.actor_role, search.date_from, search.date_to, search.page, search.page_size]);
 
   useEffect(() => {
     let active = true;
@@ -173,7 +172,7 @@ function SystemLogsPage() {
     return () => {
       active = false;
     };
-  }, [queryKey, reloadToken]);
+  }, [queryParams, reloadToken]);
 
   if (!user?.is_superuser) {
     return <Alert severity="warning">You do not have access to System Logs.</Alert>;

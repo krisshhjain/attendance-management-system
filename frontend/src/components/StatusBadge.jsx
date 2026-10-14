@@ -1,4 +1,4 @@
-import { Box, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 
 const LABELS = {
   NOT_CHECKED_IN: "Not Checked In",

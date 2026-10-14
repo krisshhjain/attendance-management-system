@@ -36,13 +36,6 @@ function formatNotificationDate(value) {
   });
 }
 
-function isAttendanceNotification(notification) {
-  return (
-    String(notification.notification_type ?? "").toUpperCase() === "ATTENDANCE" ||
-    notification.attendance_event != null
-  );
-}
-
 function notificationType(notification) {
   return String(notification.notification_type ?? "SYSTEM").toUpperCase();
 }

@@ -27,6 +27,8 @@ import { formatDuration, formatTime } from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
 
+const EMPTY_RECORDS = [];
+
 function todayISO() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -84,7 +86,7 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
     queryFn: () => getAdminAttendance(selectedDate),
   });
 
-  const records = Array.isArray(response) ? response : response?.results || [];
+  const records = Array.isArray(response) ? response : response?.results || EMPTY_RECORDS;
   const filteredRecords = useMemo(() => records.filter((record) => {
     if (statusFilter !== "ALL" && record.status !== statusFilter) return false;
     if (!searchQuery) return true;

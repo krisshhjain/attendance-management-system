@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { ShiftConfigurationPanel } from "../components/ShiftConfigurationPanel.jsx";
@@ -41,7 +41,6 @@ import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CloseIcon from "@mui/icons-material/Close";
-import InfoIcon from "@mui/icons-material/Info";
 import AttachmentIcon from "@mui/icons-material/Attachment";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import DownloadIcon from "@mui/icons-material/Download";

@@ -1,6 +1,5 @@
 import { Box, Paper, Typography, ButtonBase } from "@mui/material";
-import { Link, useNavigate } from "@tanstack/react-router";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import { useNavigate } from "@tanstack/react-router";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import EventNoteIcon from "@mui/icons-material/EventNote";
 import SettingsIcon from "@mui/icons-material/Settings";

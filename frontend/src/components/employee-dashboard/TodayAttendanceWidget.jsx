@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { checkIn, checkOut, getToday } from "../../lib/attendance.js";
+import { checkIn, checkOut } from "../../lib/attendance.js";
 import { getCurrentCoordinates } from "../../lib/location.js";
-import { ATTENDANCE_GEOFENCE, calculateHaversineDistance, isLocationInsideGeofence } from "../../lib/geofence.js";
+import { ATTENDANCE_GEOFENCE, isLocationInsideGeofence } from "../../lib/geofence.js";
 import { fetchOfficeLocations } from "../../lib/api.js";
 import { StatusBadge } from "../StatusBadge.jsx";
-import { ErrorState, LoadingState } from "../States.jsx";
+import { ErrorState } from "../States.jsx";
 import { Alert, Box, Button, Typography, Paper, CircularProgress, Chip } from "@mui/material";
 import { FaceVerificationModal } from "./FaceVerificationModal.jsx";
 import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined';
@@ -18,7 +18,6 @@ export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) 
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [pendingText, setPendingText] = useState("");
-  const [secondsRemaining, setSecondsRemaining] = useState(0);
   const [liveWorkingSeconds, setLiveWorkingSeconds] = useState(null);
   const [faceModalOpen, setFaceModalOpen] = useState(false);
   const [faceModalType, setFaceModalType] = useState("in");

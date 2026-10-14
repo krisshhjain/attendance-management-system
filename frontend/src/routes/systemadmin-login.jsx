@@ -9,7 +9,6 @@ import {
   TextField,
   Button,
   InputAdornment,
-  IconButton,
   Avatar,
 } from "@mui/material";
 
@@ -44,7 +43,6 @@ function AdminLoginPage() {
 
   useEffect(() => {
     if (ready && isAuthenticated) {
-      const loginType = localStorage.getItem("loginType");
       navigate({ to: "/dashboard", replace: true });
     }
   }, [ready, isAuthenticated, navigate]);

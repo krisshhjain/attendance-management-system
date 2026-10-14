@@ -1,11 +1,9 @@
-import { Box, Paper, Typography, Divider, useTheme } from "@mui/material";
+import { Box, Paper, Typography, Divider } from "@mui/material";
 import EventNoteIcon from '@mui/icons-material/EventNote';
 import CelebrationIcon from '@mui/icons-material/Celebration';
 import { formatHolidayDate, useUpcomingHolidays } from "../../data/holidayCalendar.js";
 
 export function UpcomingLeaves() {
-  const theme = useTheme();
-
   const { holidays: futureLeaves, isLoading, isError } = useUpcomingHolidays();
 
   return (

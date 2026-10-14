@@ -5,8 +5,6 @@ import { useAuth } from "../lib/auth.jsx";
 import { SystemAdminChatWidget } from "./SystemAdminChatWidget.jsx";
 import { NotificationBell } from "./notifications/NotificationBell.jsx";
 
-const DRAWER_WIDTH = 260;
-
 export function SuperAdminLayout({ children, title }) {
   const { user, loginType, logout } = useAuth();
   const navigate = useNavigate();

@@ -1,4 +1,3 @@
-import React from "react";
 import { Box, Button, Paper, Typography } from "@mui/material";
 
 export default function FaceResultOverlay({ kind, title, message, onRetry, onClose }) {

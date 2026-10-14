@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Box, Typography, Button, Paper } from "@mui/material";
 import WebcamCapture from "../components/WebcamCapture.jsx";

@@ -66,7 +66,7 @@ export function AttendanceChart({ data }) {
               verticalAlign="bottom" 
               height={36} 
               iconType="circle"
-              formatter={(value, entry) => <span style={{ color: "#4b5563", fontWeight: 500, fontSize: "0.875rem" }}>{value}</span>}
+              formatter={(value) => <span style={{ color: "#4b5563", fontWeight: 500, fontSize: "0.875rem" }}>{value}</span>}
             />
           </PieChart>
         </ResponsiveContainer>

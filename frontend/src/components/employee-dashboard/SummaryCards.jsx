@@ -1,19 +1,8 @@
-import { Box, Paper, Typography, Divider, Badge } from "@mui/material";
+import { Box, Paper, Typography, Badge } from "@mui/material";
 import { formatDuration, formatTime } from "../../lib/date.js";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ExitToAppIcon from "@mui/icons-material/ExitToApp";
 import TimerIcon from "@mui/icons-material/Timer";
-import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
-
-function getStatStyles() {
-  return {
-    primary: { main: "#4f46e5", light: "#eef2ff" },
-    success: { main: "#059669", light: "#d1fae5" },
-    warning: { main: "#d97706", light: "#fef3c7" },
-    info: { main: "#0284c7", light: "#e0f2fe" },
-    secondary: { main: "#64748b", light: "#f1f5f9" },
-  };
-}
 
 export function SummaryCards({ data }) {
   if (!data) return null;
@@ -27,8 +16,6 @@ export function SummaryCards({ data }) {
   };
 
   const statusColor = getStatusColor(data.status);
-  const statStyles = getStatStyles();
-
   return (
     <Paper sx={{ 
       borderRadius: 3, 

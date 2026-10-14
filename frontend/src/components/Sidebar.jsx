@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "../lib/auth.jsx";
 

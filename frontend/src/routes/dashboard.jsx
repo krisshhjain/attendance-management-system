@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dialog, DialogTitle, DialogContent, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Divider, Box, Typography, Button } from "@mui/material";
+import { Dialog, DialogTitle, DialogContent, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Divider, Box, Typography } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";

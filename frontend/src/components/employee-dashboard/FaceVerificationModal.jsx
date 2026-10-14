@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogTitle, DialogContent, Box, Typography } from "@mui/material";
 import WebcamCapture from "../WebcamCapture.jsx";
 import { apiRequest } from "../../lib/api.js";

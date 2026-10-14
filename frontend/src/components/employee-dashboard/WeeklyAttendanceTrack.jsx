@@ -298,7 +298,7 @@ export function WeeklyAttendanceTrack({ todayData }) {
           <Box component="span" sx={{ textAlign: "right" }}>Hours</Box>
         </Box>
 
-        {rows.map(({ day, dayName, key, record, status, holiday, isToday, checkIn, checkOut, isLive, startPosition, endPosition, hasBar, duration, meta }) => {
+        {rows.map(({ day, dayName, key, status, holiday, isToday, checkIn, checkOut, isLive, startPosition, endPosition, hasBar, duration, meta }) => {
           const isWeekend = day.getDay() === 0 || day.getDay() === 6;
           const isAbsent = status === "ABSENT";
           const barColor = isLive ? C.brand : meta.color;
