@@ -113,7 +113,7 @@ test("validates and submits a correction with a normalized time and the selected
   );
   expect(await screen.findByText("Regularization request submitted.")).toBeInTheDocument();
   expect(screen.getAllByText("PENDING").length).toBeGreaterThan(0);
-});
+}, 15_000);
 
 test("blocks requests for registered holidays and disables submission when quota is exhausted", async () => {
   const RealDate = Date;

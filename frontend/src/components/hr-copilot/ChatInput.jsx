@@ -248,15 +248,17 @@ export function ChatInput({
           sx={{ px: 0.75, py: 0.5 }}
         />
         <Tooltip title="Send message">
-          <IconButton
-            type="submit"
-            aria-label="Send message"
-            color="primary"
-            disabled={disabled || (!value.trim() && !attachments.length)}
-            sx={{ mb: 0.25 }}
-          >
-            <SendRoundedIcon />
-          </IconButton>
+          <span>
+            <IconButton
+              type="submit"
+              aria-label="Send message"
+              color="primary"
+              disabled={disabled || (!value.trim() && !attachments.length)}
+              sx={{ mb: 0.25 }}
+            >
+              <SendRoundedIcon />
+            </IconButton>
+          </span>
         </Tooltip>
       </Box>
     </Paper>

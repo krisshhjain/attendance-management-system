@@ -15,9 +15,7 @@ export function OrganizationScopeFilters({ user, employees = [] }) {
   const assignedBRs = Array.isArray(scope.assignedBRs) ? scope.assignedBRs : [];
   const availableEmployees = employees.filter(
     (employee) =>
-      !selectedScope.brId ||
-      employee.br_id === selectedScope.brId ||
-      employee.brId === selectedScope.brId,
+      !selectedScope.brId || String(employee.br_id ?? employee.brId) === String(selectedScope.brId),
   );
   const sections = uniqueValues(availableEmployees, "section");
   const subsections = uniqueValues(

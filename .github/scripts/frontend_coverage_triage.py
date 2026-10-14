@@ -112,12 +112,14 @@ def parse_lcov(path: Path, root: Path) -> dict[str, dict]:
 
 
 def normalized_source(filename: str, root: Path) -> tuple[str, Path] | None:
-    path = Path(filename).resolve()
-    try:
-        relative = path.relative_to(root.resolve()).as_posix()
-    except ValueError:
+    raw = filename.replace("\\", "/")
+    marker = "frontend/src/"
+    marker_index = raw.rfind(marker)
+    if marker_index < 0:
         return None
-    if not relative.startswith("frontend/src/") or not path.is_file():
+    relative = raw[marker_index:]
+    path = root / Path(relative)
+    if not path.is_file():
         return None
     return relative, path
 

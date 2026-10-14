@@ -650,11 +650,7 @@ export function EmployeeTable({ scope }) {
         fullWidth
         PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
       >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" fontWeight={600}>
-            Delete Employee?
-          </Typography>
-        </DialogTitle>
+        <DialogTitle sx={{ pb: 1 }}>Delete Employee?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             This will permanently delete{" "}
