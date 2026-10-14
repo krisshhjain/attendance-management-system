@@ -165,7 +165,7 @@ jobs:
     - name: Run facial-recognition tests with coverage
       working-directory: facial-recognition
       run: |
-        python -m coverage run --rcfile=.coveragerc -m unittest test_service
+        python -m coverage run --rcfile=.coveragerc -m unittest test_service test_face_utils test_regeneration_utilities
         python -m coverage report --rcfile=.coveragerc
         python -m coverage xml --rcfile=.coveragerc -o coverage.xml
         python ../.github/scripts/normalize_coverage_xml.py coverage.xml facial-recognition

@@ -89,3 +89,15 @@ models/**/*.gguf
 .ruff_cache/
 
 backend/*.sql
+# Archived facial-recognition research scripts:
+# Retrieve from https://github.com/krisshhjain/dailoqa-facial-recognition-research-archive
+facial-recognition/check_duplicate_indices.py
+facial-recognition/diagnose.py
+facial-recognition/findimage.py
+facial-recognition/evaluate_recognition.py
+facial-recognition/margin_analysis.py
+facial-recognition/threshold_sweep.py
+facial-recognition/vggface2_benchmark.py
+facial-recognition/vggface2_benchmark_fixed.py
+facial-recognition/vggface2_enrollment_experiment.py
+facial-recognition/vggface2_open_set.py

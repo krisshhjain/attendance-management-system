@@ -77,6 +77,13 @@ class FRServiceTests(unittest.TestCase):
         self.assertEqual(valid_token.status_code, 400)
         self.assertEqual(health.status_code, 200)
 
+    def test_wrong_bearer_token_is_rejected(self):
+        response = self.app.post(
+            "/extract", json={"image": "unused"},
+            headers={"Authorization": "Bearer incorrect-token"},
+        )
+        self.assertEqual(response.status_code, 401)
+
     def test_server_defaults_to_loopback_and_guards_non_loopback_bind(self):
         from app import _configured_bind_host
 
@@ -92,6 +99,32 @@ class FRServiceTests(unittest.TestCase):
         response = self.app.post('/recognize', json={"image": "dummy"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("error", response.json)
+
+    def test_malformed_image_is_a_client_error(self):
+        response = self.app.post("/extract", json={"image": "not-base64-image"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Failed to decode image", response.json["error"])
+
+    @patch('app.extract_primary_face_embedding', return_value=np.array([1.0, 0.0]))
+    def test_enrollment_returns_normalized_mean_of_exactly_three_images(self, extract):
+        embeddings = [
+            np.array([1.0, 0.0]),
+            np.array([0.0, 1.0]),
+            np.array([1.0, 1.0]),
+        ]
+        extract.side_effect = embeddings
+        payload = {"images": [self._create_detailed_image()] * 3}
+        response = self.app.post("/enroll", json=payload)
+        self.assertEqual(response.status_code, 200)
+        expected = np.mean(embeddings, axis=0)
+        expected /= np.linalg.norm(expected)
+        np.testing.assert_allclose(response.json["template"], expected)
+        self.assertEqual(extract.call_count, 3)
+
+    def test_enrollment_rejects_wrong_image_count(self):
+        response = self.app.post("/enroll", json={"images": [self._create_detailed_image()]})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("exactly 3", response.json["error"])
 
     def test_recognize_no_face(self):
         # Using a dummy white image, no faces will be detected
@@ -357,6 +390,25 @@ class FRServiceTests(unittest.TestCase):
         load_runtime.return_value = (_FakeDetector(faces), _FakeClassifier([3.0, 1.0]), 'input')
         with self.assertRaisesRegex(LivenessInputError, 'multi-face'):
             assess_liveness(np.zeros((100, 100, 3), dtype=np.uint8))
+
+    def test_liveness_rejects_empty_and_non_rgb_frames_before_model_load(self):
+        with patch('liveness._load_runtime') as load_runtime:
+            with self.assertRaisesRegex(ValueError, 'Empty image'):
+                assess_liveness(np.empty((0, 0, 3), dtype=np.uint8))
+            with self.assertRaisesRegex(ValueError, 'RGB image'):
+                assess_liveness(np.zeros((40, 40), dtype=np.uint8))
+            with self.assertRaisesRegex(ValueError, 'RGB image'):
+                assess_liveness(np.zeros((40, 40, 1), dtype=np.uint8))
+            load_runtime.assert_not_called()
+
+    @patch('liveness._load_runtime')
+    def test_liveness_rejects_invalid_model_scores(self, load_runtime):
+        detector = _FakeDetector(np.array([self._fake_face()]))
+        classifier = _FakeClassifier([3.0, 1.0])
+        classifier.run = lambda outputs, feed: [np.asarray([[np.nan, 0.0]], dtype=np.float32)]
+        load_runtime.return_value = (detector, classifier, 'input')
+        with self.assertRaisesRegex(RuntimeError, 'invalid scores'):
+            assess_liveness(np.full((100, 100, 3), 120, dtype=np.uint8))
 
 if __name__ == '__main__':
     unittest.main()
