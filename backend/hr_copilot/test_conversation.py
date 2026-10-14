@@ -128,7 +128,9 @@ def test_context_reset_removes_follow_up_facts(monkeypatch):
 def test_context_matches_employee_name_without_overriding_an_explicit_email():
     context = {"current_employee_id": 17, "current_employee_name": "Asha Rao"}
     matched = conversation.apply_context(
-        "Show Asha's attendance", {"entities": {"employee_name": "Asha"}}, context
+        "Show Asha's attendance",
+        {"entities": {"employee_name": "Asha"}},
+        context,
     )
     assert matched["entities"] == {"employee_id": 17}
 
@@ -155,9 +157,14 @@ def test_follow_up_context_carries_request_and_scoped_filters():
     )
     assert result["entities"]["employee_id"] == 17
     assert result["entities"]["date_range"] == {
-        "start": "2026-10-01", "end": "2026-10-07"
+        "start": "2026-10-01",
+        "end": "2026-10-07",
     }
-    relative = conversation.apply_context("What about yesterday?", {"entities": {}}, {"last_intent": "attendance_lookup"})
+    relative = conversation.apply_context(
+        "What about yesterday?",
+        {"entities": {}},
+        {"last_intent": "attendance_lookup"},
+    )
     assert relative["entities"]["temporal_expression"] == "yesterday"
 
     narrowed = conversation.apply_context(

@@ -2,19 +2,23 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from accounts.models import ManagerScope
+from attendance.models import (
+    Attendance,
+    AttendanceEvent,
+    RegularizationRequest,
+    Shift,
+)
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-
-from accounts.models import ManagerScope
-from attendance.models import (Attendance, AttendanceEvent,
-                               RegularizationRequest, Shift,
-                               get_effective_attendance_events)
 from employees.models import Employee
 from hr_copilot.services.pipeline import CopilotError
 from hr_copilot.services.write_actions import write_action_planner
-from hr_copilot.services.write_executor import (pending_action_manager,
-                                                write_action_executor)
+from hr_copilot.services.write_executor import (
+    pending_action_manager,
+    write_action_executor,
+)
 from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
 
 
@@ -71,9 +75,11 @@ class Phase6WriteTests(TestCase):
     def intent(self, name, entities):
         return {
             "intent": name,
-            "source": "attendance"
-            if "regularization" in name or "attendance" in name
-            else "employee",
+            "source": (
+                "attendance"
+                if "regularization" in name or "attendance" in name
+                else "employee"
+            ),
             "entities": entities,
             "action_type": "write",
             "requires_approval": True,
@@ -142,7 +148,10 @@ class Phase6WriteTests(TestCase):
             "attendance_update",
             {
                 "employee_id": self.employee.id,
-                "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+                "date_range": {
+                    "start": target.isoformat(),
+                    "end": target.isoformat(),
+                },
                 "target_status": "PRESENT",
                 "check_in_time": "09:00",
                 "check_out_time": "18:00",
@@ -160,7 +169,9 @@ class Phase6WriteTests(TestCase):
         self.assertEqual(result["operation"], "created")
         self.assertEqual(result["status"], "PRESENT")
         self.assertTrue(
-            Attendance.objects.filter(employee=self.employee, date=target).exists()
+            Attendance.objects.filter(
+                employee=self.employee, date=target
+            ).exists()
         )
         events = AttendanceEvent.objects.filter(
             employee=self.employee, timestamp__date=target
@@ -177,48 +188,79 @@ class Phase6WriteTests(TestCase):
             "attendance_create",
             {
                 "employee_id": self.employee.id,
-                "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+                "date_range": {
+                    "start": target.isoformat(),
+                    "end": target.isoformat(),
+                },
                 "target_status": "PRESENT",
                 "check_in_time": "09:00",
                 "check_out_time": "18:00",
             },
         )
         session = f"hr-copilot-user-{self.admin.id}-attendance-create"
-        pending = write_action_planner.plan_write_action(intent, self.admin, session)
+        pending = write_action_planner.plan_write_action(
+            intent, self.admin, session
+        )
 
         self.assertEqual(pending["action_type"], "attendance_create")
         self.assertTrue(pending["requires_confirmation"])
         self.assertFalse(pending["current_state"]["exists"])
-        action_id = pending_action_manager.store_pending_action(session, pending)
-        approved = pending_action_manager.approve_action(session, action_id, self.admin.id)
-        result = write_action_executor.execute_approved_action(approved, self.admin)
-        pending_action_manager.mark_executed(action_id, self.admin.id, session, result)
+        action_id = pending_action_manager.store_pending_action(
+            session, pending
+        )
+        approved = pending_action_manager.approve_action(
+            session, action_id, self.admin.id
+        )
+        result = write_action_executor.execute_approved_action(
+            approved, self.admin
+        )
+        pending_action_manager.mark_executed(
+            action_id, self.admin.id, session, result
+        )
 
         self.assertTrue(result["success"])
         self.assertEqual(result["operation"], "created")
         self.assertEqual(result["status"], "PRESENT")
         self.assertEqual(
-            set(AttendanceEvent.objects.filter(
-                employee=self.employee, timestamp__date=target
-            ).values_list("event_type", flat=True)),
+            set(
+                AttendanceEvent.objects.filter(
+                    employee=self.employee, timestamp__date=target
+                ).values_list("event_type", flat=True)
+            ),
             {"CHECK_IN", "CHECK_OUT"},
         )
-        self.assertTrue(AttendanceEvent.objects.filter(
-            employee=self.employee, timestamp__date=target,
-            correction__isnull=False,
-        ).exists())
+        self.assertTrue(
+            AttendanceEvent.objects.filter(
+                employee=self.employee,
+                timestamp__date=target,
+                correction__isnull=False,
+            ).exists()
+        )
 
-    def test_attendance_create_rejects_duplicate_and_out_of_scope_employee(self):
+    def test_attendance_create_rejects_duplicate_and_out_of_scope_employee(
+        self,
+    ):
         target = timezone.localdate()
-        Attendance.objects.create(employee=self.employee, date=target, status="ABSENT")
+        Attendance.objects.create(
+            employee=self.employee, date=target, status="ABSENT"
+        )
         duplicate = self.intent(
             "attendance_create",
-            {"employee_id": self.employee.id,
-             "date_range": {"start": target.isoformat(), "end": target.isoformat()},
-             "target_status": "PRESENT", "check_in_time": "09:00", "check_out_time": "18:00"},
+            {
+                "employee_id": self.employee.id,
+                "date_range": {
+                    "start": target.isoformat(),
+                    "end": target.isoformat(),
+                },
+                "target_status": "PRESENT",
+                "check_in_time": "09:00",
+                "check_out_time": "18:00",
+            },
         )
         with self.assertRaises(CopilotError) as error:
-            write_action_planner.plan_write_action(duplicate, self.admin, "duplicate-create")
+            write_action_planner.plan_write_action(
+                duplicate, self.admin, "duplicate-create"
+            )
         self.assertEqual(error.exception.code, "attendance_exists")
 
         outside_user = get_user_model().objects.create_user(
@@ -234,12 +276,19 @@ class Phase6WriteTests(TestCase):
         )
         unauthorized = self.intent(
             "attendance_create",
-            {"employee_id": outside.id,
-             "date_range": {"start": target.isoformat(), "end": target.isoformat()},
-             "target_status": "ABSENT"},
+            {
+                "employee_id": outside.id,
+                "date_range": {
+                    "start": target.isoformat(),
+                    "end": target.isoformat(),
+                },
+                "target_status": "ABSENT",
+            },
         )
         with self.assertRaises(CopilotError) as error:
-            write_action_planner.plan_write_action(unauthorized, self.admin, "outside-create")
+            write_action_planner.plan_write_action(
+                unauthorized, self.admin, "outside-create"
+            )
         self.assertEqual(error.exception.code, "scope_denied")
         self.assertEqual(error.exception.status, 403)
 
@@ -249,18 +298,27 @@ class Phase6WriteTests(TestCase):
         pending = write_action_planner.plan_write_action(
             self.intent(
                 "attendance_create",
-                {"employee_id": self.employee.id,
-                 "date_range": {"start": target.isoformat(), "end": target.isoformat()},
-                 "target_status": "ABSENT"},
+                {
+                    "employee_id": self.employee.id,
+                    "date_range": {
+                        "start": target.isoformat(),
+                        "end": target.isoformat(),
+                    },
+                    "target_status": "ABSENT",
+                },
             ),
             self.admin,
             session,
         )
-        action_id = pending_action_manager.store_pending_action(session, pending)
+        action_id = pending_action_manager.store_pending_action(
+            session, pending
+        )
         approved = pending_action_manager.approve_action(
             session, action_id, self.admin.id
         )
-        Attendance.objects.create(employee=self.employee, date=target, status="PRESENT")
+        Attendance.objects.create(
+            employee=self.employee, date=target, status="PRESENT"
+        )
 
         with self.assertRaises(CopilotError) as error:
             write_action_executor.execute_approved_action(approved, self.admin)
@@ -552,7 +610,9 @@ class Phase6WriteTests(TestCase):
                 "phase6-idempotent", action_id, self.admin.id
             )
 
-    def test_attendance_planner_rejects_invalid_status_and_inverted_times(self):
+    def test_attendance_planner_rejects_invalid_status_and_inverted_times(
+        self,
+    ):
         target = timezone.localdate()
         base = {
             "employee_id": self.employee.id,
@@ -729,7 +789,10 @@ class Phase6WriteTests(TestCase):
             "regularization_create",
             {
                 "employee_id": self.employee.id,
-                "date_range": {"start": target.isoformat(), "end": target.isoformat()},
+                "date_range": {
+                    "start": target.isoformat(),
+                    "end": target.isoformat(),
+                },
                 "request_type": "INCORRECT_ATTENDANCE",
                 "reason": "Forgot to record both events",
                 "check_in_time": "09:05",
@@ -746,7 +809,8 @@ class Phase6WriteTests(TestCase):
             timezone.localtime(request.requested_check_in).time(), time(9, 5)
         )
         self.assertEqual(
-            timezone.localtime(request.requested_check_out).time(), time(18, 10)
+            timezone.localtime(request.requested_check_out).time(),
+            time(18, 10),
         )
 
     def test_shift_planning_rejects_incompatible_employment_type(self):
@@ -805,7 +869,9 @@ class Phase6WriteTests(TestCase):
 
         self.assertEqual(unsupported_error.exception.code, "unsupported_write")
 
-    def test_attendance_planner_requires_date_and_status_before_confirmation(self):
+    def test_attendance_planner_requires_date_and_status_before_confirmation(
+        self,
+    ):
         base = {
             "employee_id": self.employee.id,
             "date_range": {
@@ -830,7 +896,9 @@ class Phase6WriteTests(TestCase):
                     )
                 self.assertEqual(error.exception.code, expected_code)
 
-    def test_attendance_status_inference_requests_times_before_confirmation(self):
+    def test_attendance_status_inference_requests_times_before_confirmation(
+        self,
+    ):
         today = timezone.localdate().isoformat()
         intent = self.intent(
             "attendance_update",
@@ -871,7 +939,9 @@ class Phase6WriteTests(TestCase):
                 intent["original_query"] = phrase
 
                 pending = write_action_planner.plan_write_action(
-                    intent, self.admin, f"phase6-status-fallback-{expected_status}"
+                    intent,
+                    self.admin,
+                    f"phase6-status-fallback-{expected_status}",
                 )
 
                 self.assertEqual(
@@ -912,13 +982,17 @@ class Phase6WriteTests(TestCase):
             side_effect=RuntimeError("private service error"),
         ):
             with self.assertRaises(CopilotError) as error:
-                write_action_executor.execute_approved_action(pending, self.admin)
+                write_action_executor.execute_approved_action(
+                    pending, self.admin
+                )
 
         request.refresh_from_db()
         self.assertEqual(error.exception.code, "leave_review_failed")
         self.assertEqual(request.status, "PENDING")
         self.assertFalse(
-            Attendance.objects.filter(employee=self.employee, date=target).exists()
+            Attendance.objects.filter(
+                employee=self.employee, date=target
+            ).exists()
         )
 
     @patch("holidays.services.attendance_required", return_value=False)

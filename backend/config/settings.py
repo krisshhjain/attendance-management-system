@@ -14,9 +14,8 @@ import os
 from pathlib import Path
 
 from celery.schedules import crontab
-from dotenv import load_dotenv
-
 from config.security import required_secret, validate_production_configuration
+from dotenv import load_dotenv
 
 load_dotenv()
 

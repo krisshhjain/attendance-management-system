@@ -5,23 +5,31 @@ import json
 import os
 import sys
 import traceback
-from datetime import datetime
 
 # Add the backend directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-from django.contrib.auth import get_user_model
-
-from hr_copilot.services.conversation import apply_context, load_context
-from hr_copilot.services.pipeline import analyze_question, derive_scope
-from hr_copilot.services.write_actions import write_action_planner
-from hr_copilot.services.write_executor import pending_action_manager
+from django.contrib.auth import get_user_model  # noqa: E402
+from hr_copilot.services.conversation import (  # noqa: E402
+    apply_context,
+    load_context,
+)
+from hr_copilot.services.pipeline import (  # noqa: E402
+    analyze_question,
+    derive_scope,
+)
+from hr_copilot.services.write_actions import (  # noqa: E402
+    write_action_planner,
+)
+from hr_copilot.services.write_executor import (  # noqa: E402
+    pending_action_manager,
+)
 
 User = get_user_model()
 

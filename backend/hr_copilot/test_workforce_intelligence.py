@@ -1,12 +1,11 @@
 from datetime import time, timedelta
 from unittest.mock import patch
 
+from accounts.models import ManagerScope
+from attendance.models import OfficeLocation, Shift
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-
-from accounts.models import ManagerScope
-from attendance.models import OfficeLocation, Shift
 from employees.models import Employee, FaceProfile
 from hr_copilot.services.conversation import load_context, save_context
 from hr_copilot.services.intent_normalizer import IntentNormalizer

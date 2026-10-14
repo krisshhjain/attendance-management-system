@@ -1,7 +1,10 @@
 from django.urls import path
 
-from .views import (ActiveHolidayListView, HolidayAdminDetailView,
-                    HolidayAdminListCreateView)
+from .views import (
+    ActiveHolidayListView,
+    HolidayAdminDetailView,
+    HolidayAdminListCreateView,
+)
 
 urlpatterns = [
     path("", ActiveHolidayListView.as_view(), name="active-holidays"),

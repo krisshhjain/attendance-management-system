@@ -6,7 +6,10 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("hr_copilot", "0004_alter_copilotconversationcontext_options_and_more"),
+        (
+            "hr_copilot",
+            "0004_alter_copilotconversationcontext_options_and_more",
+        ),
     ]
 
     operations = [

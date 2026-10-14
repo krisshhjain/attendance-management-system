@@ -11,14 +11,13 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-from django.contrib.auth import get_user_model
-from django.test import RequestFactory
-
-from hr_copilot.views import HRCopilotQueryView
+from django.contrib.auth import get_user_model  # noqa: E402
+from django.test import RequestFactory  # noqa: E402
+from hr_copilot.views import HRCopilotQueryView  # noqa: E402
 
 User = get_user_model()
 

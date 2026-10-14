@@ -30,11 +30,15 @@ def action_response(
     pending_action=None,
 ):
     payload = {
-        "response_type": "action_success"
-        if status == "executed"
-        else "action_preview"
-        if status in {"pending_approval", "awaiting_information"}
-        else "action_failure",
+        "response_type": (
+            "action_success"
+            if status == "executed"
+            else (
+                "action_preview"
+                if status in {"pending_approval", "awaiting_information"}
+                else "action_failure"
+            )
+        ),
         "answer": answer,
         "intent": intent,
         "query_status": status,

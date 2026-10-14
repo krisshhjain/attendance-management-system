@@ -2,7 +2,6 @@ import logging
 
 from celery import shared_task
 from django.core.mail import send_mail
-
 from system_logs.services import record_event
 
 logger = logging.getLogger(__name__)

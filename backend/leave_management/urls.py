@@ -1,15 +1,24 @@
 from django.urls import path
 
-from .views import (AdminApproveLeaveView, AdminCancelApprovedLeaveView,
-                    AdminDenyLeaveView, AdminEmployeeLeaveBalancesView,
-                    AdminLeaveRequestDetailView, AdminLeaveRequestsView,
-                    EmployeeCancelLeaveRequestView, EmployeeLeaveBalancesView,
-                    EmployeeLeaveRequestDetailView, EmployeeLeaveRequestsView,
-                    EmployeeLeaveTypesView, EstimateLeaveDurationView,
-                    FileUploadView, SuperAdminLeavePoliciesListCreateView,
-                    SuperAdminLeavePolicyDetailView,
-                    SuperAdminLeaveTypeDetailView,
-                    SuperAdminLeaveTypesListCreateView)
+from .views import (
+    AdminApproveLeaveView,
+    AdminCancelApprovedLeaveView,
+    AdminDenyLeaveView,
+    AdminEmployeeLeaveBalancesView,
+    AdminLeaveRequestDetailView,
+    AdminLeaveRequestsView,
+    EmployeeCancelLeaveRequestView,
+    EmployeeLeaveBalancesView,
+    EmployeeLeaveRequestDetailView,
+    EmployeeLeaveRequestsView,
+    EmployeeLeaveTypesView,
+    EstimateLeaveDurationView,
+    FileUploadView,
+    SuperAdminLeavePoliciesListCreateView,
+    SuperAdminLeavePolicyDetailView,
+    SuperAdminLeaveTypeDetailView,
+    SuperAdminLeaveTypesListCreateView,
+)
 
 urlpatterns = [
     # Employee endpoints

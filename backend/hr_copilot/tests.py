@@ -8,12 +8,18 @@ from unittest.mock import MagicMock
 import pytest
 from django.utils import timezone
 
-from accounts.models import ManagerScope
-
 from .services.intent_normalizer import IntentNormalizer
-from .services.pipeline import (CopilotError, analyze_question, build_sql,
-                                derive_scope, execute_query, generate_answer,
-                                plan_query, serialize_result, validate_sql)
+from .services.pipeline import (
+    CopilotError,
+    analyze_question,
+    build_sql,
+    derive_scope,
+    execute_query,
+    generate_answer,
+    plan_query,
+    serialize_result,
+    validate_sql,
+)
 
 
 @pytest.mark.parametrize(
@@ -263,7 +269,7 @@ def test_today_and_yesterday_are_local_dates():
     }
 
 
-def test_attendance_write_extracts_employee_date_and_status_when_llm_omits_them():
+def test_attendance_write_extracts_missing_employee_date_and_status():
     query = "Mark Akshat Awasthi attendance for 2026-09-28 as Present."
 
     intent = IntentNormalizer().normalize_intent(
@@ -526,7 +532,7 @@ def test_comparison_query_groups_both_authorized_subsections():
     assert params.count("C2") == 2
 
 
-def test_absence_lookup_excludes_attendance_and_approved_leave_and_honors_scope():
+def test_absence_lookup_excludes_attendance_and_approved_leave_with_scope():
     intent = analyze_question("Who was absent yesterday in C1?")
     scope = {
         "sections": ["C"],

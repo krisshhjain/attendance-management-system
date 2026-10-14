@@ -3,11 +3,8 @@
 from datetime import date, timedelta
 from unittest.mock import Mock, patch
 
-import pytest
 from django.test import TestCase
 from django.utils import timezone
-
-from hr_copilot.services.llm import get_structured_intent
 from hr_copilot.services.pipeline import CopilotError
 from hr_copilot.services.semantic_interpreter import SemanticInterpreter
 
@@ -20,7 +17,8 @@ class TestSemanticGeneralization(TestCase):
 
         # Mock LLM responses for consistent testing
         self.mock_llm_responses = {
-            # Absence queries - all variations should map to same semantic intent
+            # Absence queries - all variations should map to same semantic
+            # intent
             "absence_today": {
                 "intent": "absence_lookup",
                 "source": "employee",
@@ -239,7 +237,8 @@ class TestSemanticGeneralization(TestCase):
     def test_department_fuzzy_matching(self, mock_employee):
         """Test fuzzy department name resolution."""
         # Mock available departments
-        mock_employee.objects.values_list.return_value.distinct.return_value = [
+        distinct_employees = mock_employee.objects.values_list.return_value
+        distinct_employees.distinct.return_value = [
             "Human Resources",
             "Information Technology",
             "Finance Department",
@@ -266,9 +265,7 @@ class TestSemanticGeneralization(TestCase):
         # Initial query about Rahul
         mock_llm.return_value = self.mock_llm_responses["attendance_rahul"]
 
-        initial_result = self.interpreter.interpret_query(
-            "Show Rahul's attendance"
-        )
+        self.interpreter.interpret_query("Show Rahul's attendance")
 
         # Create context from initial query
         context = {"current_employee_id": 123, "current_section": "C"}
@@ -280,7 +277,8 @@ class TestSemanticGeneralization(TestCase):
             "Show his leave requests",
         ]
 
-        # Mock follow-up responses that should include employee_id when pronouns detected
+        # Mock follow-up responses that should include employee_id when
+        # pronouns detected
         def mock_response_with_context(query, **kwargs):
             base_response = {
                 "intent": "attendance_lookup",
@@ -301,7 +299,8 @@ class TestSemanticGeneralization(TestCase):
             with self.subTest(query=query):
                 result = self.interpreter.interpret_query(query, context)
 
-                # Should inherit employee ID from context when pronouns are used
+                # Should inherit employee ID from context when pronouns are
+                # used
                 if any(
                     word in query.lower() for word in ["his", "her", "their"]
                 ):
@@ -481,7 +480,6 @@ class TestGeneralizationEvaluation(TestCase):
         """Test robustness of entity extraction across different phrasings."""
         # This would be expanded with more comprehensive tests
         # Testing the framework rather than individual cases
-        pass
 
 
 class TestRealWorldScenarios(TestCase):

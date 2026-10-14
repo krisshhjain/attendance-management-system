@@ -1,12 +1,9 @@
 from datetime import time as datetime_time
-from datetime import timedelta
-
-from django.utils import timezone
-from rest_framework.test import APITestCase
 
 from accounts.models import ManagerScope, User
 from attendance.models import Shift
 from employees.models import Employee
+from rest_framework.test import APITestCase
 
 
 class ShiftScopeTests(APITestCase):

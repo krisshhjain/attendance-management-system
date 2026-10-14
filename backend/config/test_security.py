@@ -1,7 +1,6 @@
+from config.security import required_secret, validate_production_configuration
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
-
-from config.security import required_secret, validate_production_configuration
 
 
 class RequiredSecretTests(SimpleTestCase):

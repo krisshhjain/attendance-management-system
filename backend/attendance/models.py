@@ -251,11 +251,12 @@ class Attendance(models.Model):
         from django.db import transaction
 
         with transaction.atomic():
-            attendance, created = (
-                cls.objects.select_for_update().get_or_create(
-                    employee=employee,
-                    date=date,
-                )
+            (
+                attendance,
+                created,
+            ) = cls.objects.select_for_update().get_or_create(
+                employee=employee,
+                date=date,
             )
             return attendance, created
 

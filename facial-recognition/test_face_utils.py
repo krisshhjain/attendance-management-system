@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
-
 from face_utils import (
     FaceExtractionError,
     extract_primary_face_embedding,
@@ -13,8 +12,12 @@ from face_utils import (
 
 class FaceUtilityTests(unittest.TestCase):
     @patch("face_utils.DeepFace.represent")
-    def test_single_embedding_is_l2_normalized_and_detection_is_enforced(self, represent):
-        represent.return_value = [{"embedding": [3.0, 4.0], "face_confidence": 0.99}]
+    def test_single_embedding_is_l2_normalized_and_detection_is_enforced(
+        self, represent
+    ):
+        represent.return_value = [
+            {"embedding": [3.0, 4.0], "face_confidence": 0.99}
+        ]
 
         result = extract_primary_face_embedding("portrait.jpg")
 
@@ -39,7 +42,9 @@ class FaceUtilityTests(unittest.TestCase):
             {"embedding": [1.0], "facial_area": {"w": 40, "h": 40}},
             {"embedding": [0.0], "facial_area": {"w": 35, "h": 40}},
         ]
-        with self.assertRaisesRegex(FaceExtractionError, "Ambiguous multi-face"):
+        with self.assertRaisesRegex(
+            FaceExtractionError, "Ambiguous multi-face"
+        ):
             extract_primary_face_embedding("group.jpg")
 
         represent.return_value = [{"embedding": [1.0], "face_confidence": 0.2}]
@@ -47,13 +52,17 @@ class FaceUtilityTests(unittest.TestCase):
             extract_primary_face_embedding("blurry.jpg")
 
     @patch("face_utils.DeepFace.represent")
-    def test_zero_embedding_is_rejected_when_normalization_is_requested(self, represent):
+    def test_zero_embedding_is_rejected_when_normalization_is_requested(
+        self, represent
+    ):
         represent.return_value = [{"embedding": [0.0, 0.0]}]
         with self.assertRaisesRegex(FaceExtractionError, "Zero-norm"):
             extract_primary_face_embedding("empty-face.jpg")
 
     @patch("face_utils.DeepFace.represent")
-    def test_detection_failures_and_empty_results_are_reported(self, represent):
+    def test_detection_failures_and_empty_results_are_reported(
+        self, represent
+    ):
         represent.side_effect = RuntimeError("malformed image")
         with self.assertRaisesRegex(FaceExtractionError, "RuntimeError"):
             extract_primary_face_embedding("broken.jpg")
@@ -68,12 +77,17 @@ class FaceUtilityTests(unittest.TestCase):
             {"facial_area": {"w": 12, "h": 8}, "face_confidence": 0.98}
         ]
         self.assertEqual(get_face_count("portrait.jpg"), 1)
-        self.assertEqual(get_face_details("portrait.jpg"), [{
-            "face_index": 0,
-            "facial_area": {"w": 12, "h": 8},
-            "area": 96,
-            "confidence": 0.98,
-        }])
+        self.assertEqual(
+            get_face_details("portrait.jpg"),
+            [
+                {
+                    "face_index": 0,
+                    "facial_area": {"w": 12, "h": 8},
+                    "area": 96,
+                    "confidence": 0.98,
+                }
+            ],
+        )
         represent.side_effect = ValueError("bad image")
         self.assertEqual(get_face_count("broken.jpg"), 0)
         self.assertEqual(get_face_details("broken.jpg"), [])

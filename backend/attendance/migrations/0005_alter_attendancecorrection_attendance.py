@@ -7,13 +7,18 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('attendance', '0004_alter_attendanceauditlog_options_and_more'),
+        ("attendance", "0004_alter_attendanceauditlog_options_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='attendancecorrection',
-            name='attendance',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='corrections', to='attendance.attendance'),
+            model_name="attendancecorrection",
+            name="attendance",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="corrections",
+                to="attendance.attendance",
+            ),
         ),
     ]

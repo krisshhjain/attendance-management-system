@@ -1,9 +1,10 @@
 # Generated migration for HR Copilot pending actions
 
-from django.db import migrations, models
+import uuid
+
 import django.db.models.deletion
 import django.utils.timezone
-import uuid
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -24,10 +25,8 @@ class Migration(migrations.Migration):
             ),
             preserve_default=False,
         ),
-
         # updated_at is intentionally NOT added here.
         # It already exists in the database from migration 0002.
-
         migrations.CreateModel(
             name="CopilotPendingAction",
             fields=[
@@ -220,8 +219,7 @@ class Migration(migrations.Migration):
                     "expires_at",
                     models.DateTimeField(
                         help_text=(
-                            "Action expires if not approved "
-                            "by this time"
+                            "Action expires if not approved " "by this time"
                         ),
                     ),
                 ),
@@ -243,8 +241,7 @@ class Migration(migrations.Migration):
                     "description",
                     models.TextField(
                         help_text=(
-                            "Human-readable description "
-                            "of the action"
+                            "Human-readable description " "of the action"
                         ),
                     ),
                 ),
@@ -270,7 +267,6 @@ class Migration(migrations.Migration):
                 "ordering": ["-created_at"],
             },
         ),
-
         migrations.CreateModel(
             name="CopilotActionAudit",
             fields=[
@@ -383,7 +379,6 @@ class Migration(migrations.Migration):
                 "ordering": ["-timestamp"],
             },
         ),
-
         migrations.AddIndex(
             model_name="copilotpendingaction",
             index=models.Index(
@@ -395,7 +390,6 @@ class Migration(migrations.Migration):
                 name="hr_copilot_pending_action_user_id_c24b4e_idx",
             ),
         ),
-
         migrations.AddIndex(
             model_name="copilotpendingaction",
             index=models.Index(
@@ -406,7 +400,6 @@ class Migration(migrations.Migration):
                 name="hr_copilot_pending_action_status_67a1f8_idx",
             ),
         ),
-
         migrations.AddIndex(
             model_name="copilotpendingaction",
             index=models.Index(
@@ -414,7 +407,6 @@ class Migration(migrations.Migration):
                 name="hr_copilot_pending_action_convers_930db0_idx",
             ),
         ),
-
         migrations.AddIndex(
             model_name="copilotactionaudit",
             index=models.Index(
@@ -425,7 +417,6 @@ class Migration(migrations.Migration):
                 name="hr_copilot_action_audit_user_id_c36a99_idx",
             ),
         ),
-
         migrations.AddIndex(
             model_name="copilotactionaudit",
             index=models.Index(
@@ -436,7 +427,6 @@ class Migration(migrations.Migration):
                 name="hr_copilot_action_audit_action__6c00c4_idx",
             ),
         ),
-
         migrations.AddIndex(
             model_name="copilotactionaudit",
             index=models.Index(

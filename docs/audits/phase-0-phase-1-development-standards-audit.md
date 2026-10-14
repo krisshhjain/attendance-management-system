@@ -1,52 +1,86 @@
 # Combined Phase 0 + Phase 1 Development Standards Audit
 
 **Audit date:** 2026-10-15\
-**Base:** `develop` at `72fd3e7c6fcb1d98dc119c13b900bc46eeac3dec`\
-**Branch:** `feature/final-standards-security-audit`\
-**Scope:** supplied Development Standards & Guidelines, Version 1.0 (09 Oct 2026)
+**Verified base:** `origin/develop` at `088a7bbdebe52a7ecf8c6a3aa17428ecd932c5fc`\
+**Feature branch:** `feature/final-standards-security-audit`\
+**PR:** [#19](https://github.com/krisshhjain/attendance-management-system/pull/19), targeting `develop`\
+**Standards:** Development Standards & Guidelines, Version 1.0 (09 Oct 2026)
 
-## Executive summary
+## Status
 
-The restored `develop` branch was fetched and verified at the requested commit. The audit run found passing frontend tests/build/lint, passing backend test suites, and no high-severity Bandit findings or Trivy vulnerability/secret findings. The standards are not fully satisfied: Flake8 reports a large PEP 8 backlog, Gitleaks reports test-fixture password matches that need allowlisting/triage, Trivy reports missing health checks, and repository SBOM generation/review is not yet established as a repeatable CI artifact. No claim of full remediation is made.
+**Phase 0/1 remediation remains incomplete.** The feature branch was updated by merging the verified `develop` commit, preserving history. Flake8’s non-E501 findings were resolved. The remaining 936 findings are all long lines inside string literals (770 single-quoted and 166 multiline); literal content includes prompts, API messages, SQL, and test text. Automated literal rewriting was blocked by the workspace safety reviewer after the earlier attempted bulk rewrite was judged unsafe. No runtime string content was changed to clear E501. Backend image scanning also still reports unresolved HIGH/CRITICAL vulnerabilities. These blockers are recorded rather than suppressed or marked passed.
 
-## Checks and evidence
+## Flake8 findings
 
-| Area | Result | Evidence / notes |
-|---|---|---|
-| Branch provenance | PASS | `origin/develop` resolved to the requested SHA; isolated worktree created from that commit. |
-| Django backend tests | PASS | 509 tests; 1 skipped; PostgreSQL was a disposable local test container. |
-| HR Copilot pytest suite | PASS | 241 passed. |
-| Frontend tests | PASS | 230 tests; line coverage 83.73%, statements 82.29%, functions 78.14%, branches 75.94%. |
-| Frontend lint | PASS WITH WARNINGS | 0 errors; 6 existing `react-refresh/only-export-components` warnings. |
-| Frontend formatting | PASS | `prettier --check .`. |
-| Frontend build | PASS WITH WARNING | Build succeeds; main bundle exceeds Vite's 500 kB advisory threshold. |
-| Backend dependency consistency | PASS | `pip check`; lockfile/package manifest consistency checked. |
-| Docker Compose syntax | PASS | `docker compose --profile full config --quiet` with required temporary environment values. |
-| GitHub Actions at base | PASS | Existing CI run `38635452302`; backend, frontend, facial-recognition, and SonarQube jobs succeeded. |
-| Bandit | REVIEW | 0 high, 5 medium, 562 low findings. Medium findings were reviewed as test-only host binding or false positives from wrapped request kwargs and validated fixed SQL construction. No confirmed live credential finding. |
-| Gitleaks | REVIEW | 12 generic-api-key matches in test fixtures/password tests; scan was redacted. Treat as non-live fixture values; recommend narrowly scoped allowlisting. |
-| Trivy filesystem scan | REVIEW | No vulnerability or secret findings; 2 LOW Dockerfile findings for missing `HEALTHCHECK` instructions. |
-| SBOM | NOT VERIFIED | No CycloneDX/SPDX artifact was generated and reviewed for this audit. |
-| SonarQube | BASELINE ONLY | The base-commit workflow's SonarQube job passed. No local Sonar scan or post-change analysis was performed. |
+| Rule | Base count | Current count | Disposition |
+|---|---:|---:|---|
+| E501 | 1,268 | 936 | 936 literal lines remain; no blanket ignore or string rewriting was applied. |
+| W293 | 171 | 0 | Whitespace-only fixes. |
+| F401 | 68 | 0 | Removed unused imports; explicitly declared `celery_app` export in `config.__init__`. |
+| E402 | 27 | 0 | Kept Django bootstrap ordering; added narrowly scoped inline annotations and explanation. |
+| F841 | 14 | 0 | Removed dead assignments after checking side effects and test intent. |
+| W291/W292/W391 | 19 | 0 | Whitespace fixes; one diagram module retains documented alignment spaces. |
+| E302/E303/E305 | 15 | 0 | Blank-line formatting fixes. |
+| F541 | 4 | 0 | Removed unused f-string prefixes. |
+| E203 | 0 | 0 | Black-compatible formatting initially reintroduced four slice-spacing findings; corrected for Flake8. |
 
-## Actionable findings
+**Final command:** `python -m flake8 backend facial-recognition` (run with Python UTF-8 mode on Windows). It reports only 936 E501s. `isort --check-only --profile black backend facial-recognition` passes. `compileall` passes.
 
-1. **PEP 8 / Flake8:** Flake8 7.4.1 found 1,586 baseline findings, predominantly E501 line-length violations, plus unused imports/assignments and whitespace issues. The literal-heavy prompt builder in `backend/hr_copilot/services/llm.py` makes automated wrapping unsafe without focused edits and regression coverage. This remains open; no weakened lint configuration was introduced.
-2. **Gitleaks fixture matches:** 12 findings are confined to test fixture values. Add documented, path- and rule-scoped allowlist entries only after confirming each matched value is synthetic; keep scanning enabled for all other files.
-3. **Container health checks:** Trivy reports missing health checks on backend and frontend Dockerfiles. Add checks that reflect actual service readiness and verify Compose startup behavior.
-4. **SBOM:** Generate and review CycloneDX or SPDX SBOMs for Python and npm dependencies, then publish them as CI artifacts. Poetry is not applicable: the project uses pip requirement locks and npm lockfiles.
-5. **Coverage policy:** Frontend line coverage is 83.73%, but function (78.14%) and branch (75.94%) coverage are lower. The guideline's “above 80%” target should be defined as line coverage or enforced across all metrics; current coverage does not exceed 80% in every category.
+Black and isort formatting plus safe import/whitespace fixes affected backend and facial-recognition Python files. Long code lines and comments were wrapped or shortened without changing executable string values. A stale middleware test mock was corrected to assert the existing no-security-event behavior.
 
-## Repository-specific deviations
+## Security and supply-chain results
 
-- The codebase uses Django migrations; the supplied Alembic guideline does not apply without changing the framework's migration system.
-- CI uses GitHub Actions, while the supplied document names GitLab CI/CD. The current pipeline is active and passed on the audited base commit; migration is outside this audit.
-- Deployment uses Docker Compose. No AWS deployment workflow was verified in this repository.
+| Check | Result |
+|---|---|
+| Bandit 1.9.4 | 0 HIGH, 5 MEDIUM, 562 LOW. The two B113 findings use a shared request-kwargs helper containing explicit timeouts; B608 is the fixed-column SQL builder validated by exact plan matching; B104 is test-only `0.0.0.0` binding. LOW findings were reviewed as test assertions/fixtures or deliberate exception handling; no confirmed production credential was found. |
+| Gitleaks 8.30.1 | 12 original generic-api-key matches were individually verified as synthetic test fixtures in three test files. Added 12 exact historical fingerprints to `.gitleaksignore`; no path-wide or rule-wide exclusion. Final full-history scan: zero findings. |
+| Trivy 0.76.0 filesystem | 0 package vulnerabilities and 0 secrets. |
+| Trivy configuration | 0 misconfigurations after adding Dockerfile health checks. |
+| Backend image SBOM scan | 76 vulnerability records remain: 2 CRITICAL, 19 HIGH, 47 MEDIUM, 8 LOW. Includes base Debian packages and duplicate system Python package metadata; the current image uses Python 3.10.11 and locked Python dependencies. `apt-get upgrade` removed some findings but did not resolve these. Further vendor/CVE triage and remediation are required. |
+| Frontend image SBOM scan | 0 vulnerabilities after updating the pinned Nginx digest and applying `apk upgrade --no-cache`. |
+| npm production audit | 0 vulnerabilities (`npm audit --omit=dev --audit-level=low`). |
 
-## Tools observed
+Bandit and Trivy findings are reported separately from scanner success. The unresolved backend image findings prevent a security-ready disposition.
 
-Python 3.10.11, pytest 9.0.3, Flake8 7.4.1, isort 9.0.2, Bandit 1.9.4, Node 24.12.0, npm 11.6.2, Docker 28.3.2, Docker Compose 2.38.2, Gitleaks 8.30.1, Trivy 0.76.0.
+## SBOMs
 
-## Disposition
+Reproducible CycloneDX JSON generated from the project locks/manifests:
 
-The audit is **not fully remediated**. The branch is intentionally left at the restored `develop` commit pending focused fixes for the open findings above. No feature changes were committed, pushed, or proposed as a completed remediation. The existing user-owned Compose services were not stopped or modified.
+- [Backend Python dependencies](sboms/backend.cdx.json) — 34 components, generated with `python -m cyclonedx_py requirements backend/requirements.lock --output-reproducible --of JSON`.
+- [Facial-recognition Python dependencies](sboms/facial-recognition.cdx.json) — 71 components, same command with its requirements lock.
+- [Frontend npm dependencies](sboms/frontend.cdx.json) — 531 components, generated with `npm sbom --sbom-format cyclonedx --package-lock-only` from a temporary lockfile copy. The temporary copy adds only an audit root version because npm rejects the repository manifest’s missing version; tracked manifests were not changed.
+- [Backend container image](sboms/backend-image.cdx.json) — 154 components, generated by Trivy 0.76.0 from the rebuilt image; vulnerability details are included.
+- [Frontend container image](sboms/frontend-image.cdx.json) — 73 components, generated by Trivy 0.76.0 after the package update; no vulnerabilities reported.
+
+Python command tooling: CycloneDX BOM 7.5.0 installed in a temporary directory only. SBOMs are committed review artifacts; CI artifact upload is not configured yet.
+
+## Container readiness
+
+- Added `/healthz/`, which returns ready only after a database connection succeeds; it reveals no connection details.
+- Added backend and frontend Docker `HEALTHCHECK` instructions. Updated the frontend base to pinned Nginx digest `sha256:0e5caf3555a79db2f1624c61fb1e585c4298a26384fea83f3e5108e451c1eb2c` and applied Alpine security package updates. Backend image build applies Debian security package updates on top of the pinned Python 3.10 image.
+- Backend and frontend images built successfully. An isolated `audit-pr19` Compose project using its own disposable PostgreSQL reached healthy status; `/healthz/` and frontend HTTP returned 200. Only that audit project was removed afterward; user-owned containers were not stopped or modified.
+- Risk: package-manager upgrades during image builds make OS package versions depend on the repository state at build time. The checked-in SBOMs record the versions observed during this audit.
+
+## Tests and build evidence
+
+- Django backend: **511 tests passed, 1 skipped**; system checks clean.
+- HR Copilot pytest suite: **241 passed**.
+- Facial-recognition unittest suite: **66 passed**.
+- Frontend Vitest: **230 passed**; line coverage 83.73%, statements 82.29%, functions 78.14%, branches 75.94% (from the prior full frontend validation; frontend source and lockfile were unchanged in this remediation).
+- ESLint: passed with 6 existing `react-refresh/only-export-components` warnings. Prettier check passed. Vite production build passed with the existing large-chunk advisory.
+- `pip check`, lockfile/package-manifest consistency, Docker Compose validation, and Python compile validation passed.
+- Isolated Compose image build and readiness checks passed as described above.
+
+Tool versions: Python 3.10.11, pytest 9.0.3, Flake8 7.4.1, isort 9.0.2, Bandit 1.9.4, Node 24.12.0, npm 11.6.2, Docker 28.3.2, Docker Compose 2.38.2, Gitleaks 8.30.1, Trivy 0.76.0.
+
+## SonarQube and hosted CI
+
+The restored base `088a7bbdebe52a7ecf8c6a3aa17428ecd932c5fc` has a successful GitHub Actions run: [38636547705](https://github.com/krisshhjain/attendance-management-system/actions/runs/38636547705), including the SonarQube Cloud analysis step. The workflow’s scanner-job success alone does not prove a Quality Gate result; the gate for the updated PR head is **not yet verified**.
+
+## Remaining blockers
+
+1. Resolve the 936 E501 string-literal lines safely while preserving exact runtime values, especially HR Copilot prompts and SQL. No automatic rewrite or broad E501 suppression is acceptable. The safety reviewer rejected the attempted bulk rewrite; its rejection reason was that the rewrite could alter prompts/behavior and had previously caused syntax errors.
+2. Triage and resolve or explicitly accept the 2 CRITICAL and 19 HIGH backend image findings. Some appear tied to Debian base packages without a fix in the tested image; no unsupported suppressions were added.
+3. Rerun full security scans after backend image fixes, then wait for PR #19 CI and confirm the actual Sonar Quality Gate on the updated head.
+
+The branch contains actual lint, test, security triage, health-check, image, and SBOM changes. It is **not ready to merge** until the blockers above are reviewed and resolved or explicitly accepted.

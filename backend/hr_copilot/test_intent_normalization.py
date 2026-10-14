@@ -11,15 +11,16 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-import pytest
-
-from hr_copilot.services.intent_normalizer import (IntentNormalizer,
-                                                   intent_normalizer)
-from hr_copilot.services.pipeline import CopilotError
+import pytest  # noqa: E402
+from hr_copilot.services.intent_normalizer import (  # noqa: E402
+    IntentNormalizer,
+    intent_normalizer,
+)
+from hr_copilot.services.pipeline import CopilotError  # noqa: E402
 
 
 def test_intent_normalization():
@@ -198,7 +199,8 @@ def test_attendance_date_extraction_handles_supported_calendar_phrasing(
     monkeypatch, phrase, expected
 ):
     monkeypatch.setattr(
-        "django.utils.timezone.localdate", lambda: datetime(2026, 10, 14).date()
+        "django.utils.timezone.localdate",
+        lambda: datetime(2026, 10, 14).date(),
     )
 
     assert IntentNormalizer._extract_attendance_date(phrase) == expected
@@ -217,7 +219,8 @@ def test_attendance_write_inference_preserves_status_identity_and_date(
     monkeypatch, query, expected_status
 ):
     monkeypatch.setattr(
-        "django.utils.timezone.localdate", lambda: datetime(2026, 10, 14).date()
+        "django.utils.timezone.localdate",
+        lambda: datetime(2026, 10, 14).date(),
     )
 
     entities = IntentNormalizer()._infer_attendance_write(query)
@@ -230,11 +233,19 @@ def test_attendance_write_inference_preserves_status_identity_and_date(
 def test_attendance_write_inference_ignores_reads_and_unrecognized_statuses():
     normalizer = IntentNormalizer()
 
-    assert normalizer._infer_attendance_write("Who was absent yesterday?") is None
-    assert normalizer._infer_attendance_write("Mark Asha Rao on vacation today") is None
-    assert normalizer._infer_attendance_write("Mark Asha Rao present today")[
-        "target_status"
-    ] == "PRESENT"
+    assert (
+        normalizer._infer_attendance_write("Who was absent yesterday?") is None
+    )
+    assert (
+        normalizer._infer_attendance_write("Mark Asha Rao on vacation today")
+        is None
+    )
+    assert (
+        normalizer._infer_attendance_write("Mark Asha Rao present today")[
+            "target_status"
+        ]
+        == "PRESENT"
+    )
 
 
 @pytest.mark.parametrize(

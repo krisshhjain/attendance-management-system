@@ -3,7 +3,7 @@
 from collections import Counter
 
 from attendance.models import OfficeLocation, Shift
-from employees.models import Employee, FaceProfile
+from employees.models import Employee
 
 from .pipeline import CopilotError
 
@@ -42,8 +42,9 @@ class WorkforceIntelligence:
             "face_profile"
         )
         if user:
-            from accounts.scope_service import \
-                filter_employees_by_manager_scope
+            from accounts.scope_service import (
+                filter_employees_by_manager_scope,
+            )
 
             qs = filter_employees_by_manager_scope(user, qs)
         if employee_id:

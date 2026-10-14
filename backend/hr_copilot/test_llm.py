@@ -3,7 +3,6 @@ import json
 from urllib.error import URLError
 
 import pytest
-
 from hr_copilot.services import llm, providers
 from hr_copilot.services.pipeline import CopilotError
 
@@ -50,12 +49,15 @@ def test_ollama_provider_sends_json_intent_request(monkeypatch):
     assert body["model"] == "qwen3-8b-q4km-local"
     assert body["format"]["required"] == ["intent", "entities"]
     assert timeout == 20
-    assert "Return ONLY the required JSON object" in body["messages"][0][
-        "content"
-    ]
+    assert (
+        "Return ONLY the required JSON object"
+        in body["messages"][0]["content"]
+    )
 
 
-def test_intent_provider_receives_compact_session_and_explicit_context(monkeypatch):
+def test_intent_provider_receives_compact_session_and_explicit_context(
+    monkeypatch,
+):
     monkeypatch.setenv("HR_COPILOT_LLM_URL", "http://localhost:11434")
     monkeypatch.setattr(
         llm.session_memory,
@@ -334,12 +336,18 @@ def test_grounded_answers_use_only_the_typed_result(intent, data, expected):
     ("intent", "data", "expected"),
     [
         (
-            {"intent": "attendance_intelligence", "entities": {"attendance_metric": "absence_streaks"}},
+            {
+                "intent": "attendance_intelligence",
+                "entities": {"attendance_metric": "absence_streaks"},
+            },
             [{}, {}],
             "Found 2 absence streaks of at least two working days.",
         ),
         (
-            {"intent": "attendance_intelligence", "entities": {"attendance_metric": "summary"}},
+            {
+                "intent": "attendance_intelligence",
+                "entities": {"attendance_metric": "summary"},
+            },
             [{}],
             "Attendance summary returned 1 working-day row.",
         ),
@@ -350,7 +358,13 @@ def test_grounded_answers_use_only_the_typed_result(intent, data, expected):
         ),
         (
             {"intent": "employee_lookup", "source": "employee"},
-            [{"first_name": "Asha", "last_name": "Rao", "department": "Engineering"}],
+            [
+                {
+                    "first_name": "Asha",
+                    "last_name": "Rao",
+                    "department": "Engineering",
+                }
+            ],
             "Asha Rao is an active employee in Engineering, Section , Subsection .",
         ),
     ],
@@ -363,9 +377,9 @@ def test_answer_fallback_labels_each_supported_result_source():
     assert llm._generate_fallback_answer({"source": "employee"}, [{}]) == (
         "Found 1 employee."
     )
-    assert llm._generate_fallback_answer({"source": "attendance"}, [{}, {}]) == (
-        "Found 2 attendance records."
-    )
+    assert llm._generate_fallback_answer(
+        {"source": "attendance"}, [{}, {}]
+    ) == ("Found 2 attendance records.")
     assert llm._generate_fallback_answer({"source": "leave"}, []) == (
         "No matching HR records found."
     )
@@ -383,9 +397,7 @@ def test_compact_result_data_keeps_typed_fields_and_applies_row_limits():
         for index in range(12)
     ]
 
-    compacted = llm._compact_result_data(
-        attendance, {"source": "attendance"}
-    )
+    compacted = llm._compact_result_data(attendance, {"source": "attendance"})
 
     assert len(compacted) == 10
     assert compacted[0] == {
@@ -419,19 +431,61 @@ def test_grounding_validator_rejects_unverified_facts():
 @pytest.mark.parametrize(
     ("intent", "data", "expected"),
     [
-        ({"intent": "absence_count"}, [], "No absent employees found for the specified criteria."),
-        ({"entities": {"is_active": False}}, [], "No inactive employees found."),
-        ({"intent": "attendance_intelligence", "entities": {"attendance_metric": "period_comparison"}}, [], "Here is the attendance comparison for the current and previous week."),
-        ({"source": "employee"}, [{"first_name": "Asha", "last_name": "Rao", "department": "People", "is_active": False, "employment_type": "CONTRACT"}], "Asha Rao is an inactive contract in People, Section , Subsection ."),
-        ({"source": "attendance"}, [{"first_name": "Asha", "last_name": "Rao", "date": "2026-10-13", "status": "INCOMPLETE_REVIEW"}], "Asha Rao was incomplete review on 2026-10-13."),
+        (
+            {"intent": "absence_count"},
+            [],
+            "No absent employees found for the specified criteria.",
+        ),
+        (
+            {"entities": {"is_active": False}},
+            [],
+            "No inactive employees found.",
+        ),
+        (
+            {
+                "intent": "attendance_intelligence",
+                "entities": {"attendance_metric": "period_comparison"},
+            },
+            [],
+            "Here is the attendance comparison for the current and previous week.",
+        ),
+        (
+            {"source": "employee"},
+            [
+                {
+                    "first_name": "Asha",
+                    "last_name": "Rao",
+                    "department": "People",
+                    "is_active": False,
+                    "employment_type": "CONTRACT",
+                }
+            ],
+            "Asha Rao is an inactive contract in People, Section , Subsection .",
+        ),
+        (
+            {"source": "attendance"},
+            [
+                {
+                    "first_name": "Asha",
+                    "last_name": "Rao",
+                    "date": "2026-10-13",
+                    "status": "INCOMPLETE_REVIEW",
+                }
+            ],
+            "Asha Rao was incomplete review on 2026-10-13.",
+        ),
     ],
 )
-def test_deterministic_responses_cover_empty_comparison_and_profiles(intent, data, expected):
+def test_deterministic_responses_cover_empty_comparison_and_profiles(
+    intent, data, expected
+):
     assert llm._generate_deterministic_answer(intent, data) == expected
 
 
 def test_compaction_limits_generic_and_summary_data_without_private_fields():
-    generic = [{"email": f"{i}@example.test", "private": "secret"} for i in range(8)]
+    generic = [
+        {"email": f"{i}@example.test", "private": "secret"} for i in range(8)
+    ]
     assert llm._compact_result_data(generic, {}) == [
         {"email": f"{i}@example.test"} for i in range(5)
     ]
@@ -457,12 +511,28 @@ def test_grounding_validator_rejects_claims_for_empty_results(answer):
     [
         ("top", {"missing_information": 7}, "normalization_failed"),
         ("top", {"confidence": "certain"}, "invalid_intent"),
-        ("entity", {"date_range": {"start": "2026-10-14", "end": "2026-10-13"}}, "invalid_intent"),
-        ("entity", {"date_range": {"start": "2026-02-30", "end": "2026-03-01"}}, "invalid_intent"),
-        ("entity", {"comparison_subsections": ["C1", "bad-section"]}, "invalid_intent"),
+        (
+            "entity",
+            {"date_range": {"start": "2026-10-14", "end": "2026-10-13"}},
+            "invalid_intent",
+        ),
+        (
+            "entity",
+            {"date_range": {"start": "2026-02-30", "end": "2026-03-01"}},
+            "invalid_intent",
+        ),
+        (
+            "entity",
+            {"comparison_subsections": ["C1", "bad-section"]},
+            "invalid_intent",
+        ),
         ("entity", {"comparison_subsections": ["C1"] * 11}, "invalid_intent"),
         ("entity", {"attendance_metric": "payroll_export"}, "invalid_intent"),
-        ("entity", {"intelligence_metric": "salary_history"}, "invalid_intent"),
+        (
+            "entity",
+            {"intelligence_metric": "salary_history"},
+            "invalid_intent",
+        ),
         ("entity", {"workforce_metric": "credentials"}, "invalid_intent"),
     ],
 )
@@ -540,7 +610,7 @@ def test_compaction_reduces_employee_and_leave_results_to_safe_fields():
     }
 
 
-def test_deterministic_formatter_uses_comparison_data_and_falls_back_for_partial_profile():
+def test_comparison_formatter_falls_back_for_partial_profile():
     comparison = llm.generate_natural_answer(
         "Compare periods",
         {"entities": {"attendance_metric": "period_comparison"}},
@@ -551,13 +621,15 @@ def test_deterministic_formatter_uses_comparison_data_and_falls_back_for_partial
 
     assert (
         llm._generate_deterministic_answer(
-            {"source": "employee"}, [{"first_name": "Asha", "last_name": "Rao"}]
+            {"source": "employee"},
+            [{"first_name": "Asha", "last_name": "Rao"}],
         )
         is None
     )
     assert (
         llm._generate_deterministic_answer(
-            {"source": "attendance"}, [{"first_name": "Asha", "last_name": "Rao"}]
+            {"source": "attendance"},
+            [{"first_name": "Asha", "last_name": "Rao"}],
         )
         is None
     )
@@ -566,5 +638,12 @@ def test_deterministic_formatter_uses_comparison_data_and_falls_back_for_partial
 def test_grounding_validator_allows_facts_present_in_result_rows():
     llm._validate_grounded_answer(
         "Asha Rao has 3 approved leave days.",
-        [{"first_name": "Asha", "last_name": "Rao", "value": 3, "status": "approved"}],
+        [
+            {
+                "first_name": "Asha",
+                "last_name": "Rao",
+                "value": 3,
+                "status": "approved",
+            }
+        ],
     )

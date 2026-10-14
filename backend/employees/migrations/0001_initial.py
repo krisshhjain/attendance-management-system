@@ -15,14 +15,39 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Employee',
+            name="Employee",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('department', models.CharField(max_length=100)),
-                ('employment_type', models.CharField(choices=[('PERMANENT', 'Permanent'), ('CONTRACT', 'Contract'), ('INTERN', 'Intern')], max_length=20)),
-                ('date_joined', models.DateField()),
-                ('is_active', models.BooleanField(default=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='employee', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("department", models.CharField(max_length=100)),
+                (
+                    "employment_type",
+                    models.CharField(
+                        choices=[
+                            ("PERMANENT", "Permanent"),
+                            ("CONTRACT", "Contract"),
+                            ("INTERN", "Intern"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                ("date_joined", models.DateField()),
+                ("is_active", models.BooleanField(default=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="employee",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
     ]

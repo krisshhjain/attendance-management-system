@@ -1,11 +1,10 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
+from attendance.models import Attendance
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
-
-from attendance.models import Attendance
 from holidays.services import is_working_day
 
 from .models import LeavePolicy, LeaveRequest, LeaveType
@@ -132,18 +131,20 @@ def calculate_employee_leave_balances(employee, year=None):
                 "used": float(used),
                 "pending": float(pending),
                 "available": float(available),
-                "requires_document": policy.requires_document
-                if policy
-                else lt.requires_document,
-                "allow_half_day": policy.allow_half_day
-                if policy
-                else lt.allow_half_day,
-                "max_consecutive_days": policy.max_consecutive_days
-                if policy
-                else 10,
-                "min_notice_days": policy.min_notice_days
-                if policy
-                else lt.min_notice_days,
+                "requires_document": (
+                    policy.requires_document
+                    if policy
+                    else lt.requires_document
+                ),
+                "allow_half_day": (
+                    policy.allow_half_day if policy else lt.allow_half_day
+                ),
+                "max_consecutive_days": (
+                    policy.max_consecutive_days if policy else 10
+                ),
+                "min_notice_days": (
+                    policy.min_notice_days if policy else lt.min_notice_days
+                ),
             }
         )
 
@@ -338,7 +339,8 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
 
     # The approved request's stored duration is a snapshot of its approval-time
     # rules. Later holiday edits do not silently rewrite historical balances.
-    # Attendance rows are only created for dates currently requiring attendance.
+    # Attendance rows are only created for dates currently requiring
+    # attendance.
     curr = req.start_date
     while curr <= req.end_date:
         if is_working_day(curr):
@@ -416,7 +418,8 @@ def cancel_leave_request(leave_request, user):
     req.save()
 
     if was_approved:
-        # Revert associated attendance records that have status='LEAVE' and no check_in
+        # Revert associated attendance records that have status='LEAVE' and no
+        # check_in
         Attendance.objects.filter(
             leave_request=req,
             check_in__isnull=True,

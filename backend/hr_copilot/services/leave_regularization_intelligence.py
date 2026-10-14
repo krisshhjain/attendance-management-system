@@ -1,18 +1,20 @@
 """Typed, read-only leave and regularization tools for HR Copilot."""
 
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
-from django.db.models import Q
+from attendance.models import (
+    AttendanceEvent,
+    RegularizationRequest,
+)
 from django.utils import timezone
-
-from attendance.models import (AttendanceCorrection, AttendanceEvent,
-                               RegularizationRequest)
 from employees.models import Employee
-from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
-from leave_management.services import (calculate_employee_leave_balances,
-                                       get_active_policy)
+from leave_management.models import LeaveRequest, LeaveType
+from leave_management.services import (
+    calculate_employee_leave_balances,
+    get_active_policy,
+)
 
 from .pipeline import CopilotError
 
@@ -66,8 +68,9 @@ class LeaveRegularizationIntelligence:
             is_active=True, user__is_active=True
         )
         if user:
-            from accounts.scope_service import \
-                filter_employees_by_manager_scope
+            from accounts.scope_service import (
+                filter_employees_by_manager_scope,
+            )
 
             qs = filter_employees_by_manager_scope(user, qs)
         if employee_id:
@@ -108,18 +111,26 @@ class LeaveRegularizationIntelligence:
             "attendance_date": req.attendance_date.isoformat(),
             "request_type": req.request_type,
             "status": req.status,
-            "requested_check_in": req.requested_check_in.isoformat()
-            if req.requested_check_in
-            else None,
-            "requested_check_out": req.requested_check_out.isoformat()
-            if req.requested_check_out
-            else None,
-            "approved_check_in": req.approved_check_in.isoformat()
-            if req.approved_check_in
-            else None,
-            "approved_check_out": req.approved_check_out.isoformat()
-            if req.approved_check_out
-            else None,
+            "requested_check_in": (
+                req.requested_check_in.isoformat()
+                if req.requested_check_in
+                else None
+            ),
+            "requested_check_out": (
+                req.requested_check_out.isoformat()
+                if req.requested_check_out
+                else None
+            ),
+            "approved_check_in": (
+                req.approved_check_in.isoformat()
+                if req.approved_check_in
+                else None
+            ),
+            "approved_check_out": (
+                req.approved_check_out.isoformat()
+                if req.approved_check_out
+                else None
+            ),
             "reason": req.reason,
             "rejection_reason": req.rejection_reason,
             "attendance_correction_id": req.attendance_correction_id,
@@ -183,23 +194,29 @@ class LeaveRegularizationIntelligence:
                             "code": leave_type.code,
                             "description": leave_type.description,
                             "is_paid": leave_type.is_paid,
-                            "allow_half_day": policy.allow_half_day
-                            if policy
-                            else leave_type.allow_half_day,
-                            "requires_document": policy.requires_document
-                            if policy
-                            else leave_type.requires_document,
-                            "min_notice_days": policy.min_notice_days
-                            if policy
-                            else leave_type.min_notice_days,
-                            "employee_type": employee.employment_type
-                            if employee
-                            else None,
-                            "annual_entitlement": float(
-                                policy.annual_entitlement
-                            )
-                            if policy
-                            else None,
+                            "allow_half_day": (
+                                policy.allow_half_day
+                                if policy
+                                else leave_type.allow_half_day
+                            ),
+                            "requires_document": (
+                                policy.requires_document
+                                if policy
+                                else leave_type.requires_document
+                            ),
+                            "min_notice_days": (
+                                policy.min_notice_days
+                                if policy
+                                else leave_type.min_notice_days
+                            ),
+                            "employee_type": (
+                                employee.employment_type if employee else None
+                            ),
+                            "annual_entitlement": (
+                                float(policy.annual_entitlement)
+                                if policy
+                                else None
+                            ),
                         }
                     )
             return self._result(

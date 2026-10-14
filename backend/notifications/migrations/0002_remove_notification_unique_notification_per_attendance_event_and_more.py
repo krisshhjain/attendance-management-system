@@ -7,18 +7,22 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('attendance', '0010_merge_20260928_1858'),
-        ('notifications', '0001_initial'),
+        ("attendance", "0010_merge_20260928_1858"),
+        ("notifications", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='notification',
-            name='unique_notification_per_attendance_event',
+            model_name="notification",
+            name="unique_notification_per_attendance_event",
         ),
         migrations.AddConstraint(
-            model_name='notification',
-            constraint=models.UniqueConstraint(condition=models.Q(('attendance_event__isnull', False)), fields=('user', 'attendance_event'), name='unique_notification_per_user_attendance_event'),
+            model_name="notification",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("attendance_event__isnull", False)),
+                fields=("user", "attendance_event"),
+                name="unique_notification_per_user_attendance_event",
+            ),
         ),
     ]

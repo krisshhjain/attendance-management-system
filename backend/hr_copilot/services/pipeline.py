@@ -2,11 +2,9 @@ import re
 from datetime import date, timedelta
 
 import sqlparse
+from accounts.scope_service import get_manager_scope
 from django.db import connection
 from django.utils import timezone
-
-from accounts.models import ManagerScope
-from accounts.scope_service import get_manager_scope
 from employees.models import Employee
 
 from .employee_resolver import employee_resolver
@@ -40,7 +38,8 @@ def analyze_question(question, context=None, session_id=None):
     from .semantic_interpreter import semantic_interpreter
     from .write_actions import write_action_planner
 
-    # Use semantic interpreter for all queries including absence and write actions
+    # Use semantic interpreter for all queries including absence and write
+    # actions
     intent = semantic_interpreter.interpret_query(
         question, context or {}, session_id=session_id
     )
@@ -104,7 +103,6 @@ def analyze_question(question, context=None, session_id=None):
 
 
 def _apply_temporal_scope(question, source, intent_name, entities, today):
-    lower = question.casefold()
     if (
         source == "attendance"
         and not entities.get("date_range")
@@ -310,7 +308,8 @@ def _apply_deterministic_entities(question, source, entities):
                 )
                 if name_match:
                     candidate = name_match.group(1).strip()
-                    # Strip leading sentence-starting words that are not part of a name
+                    # Strip leading sentence-starting words that are not part
+                    # of a name
                     _non_name_starters = {
                         "was",
                         "is",
@@ -566,10 +565,15 @@ def plan_query(intent, scope, user):
     if section and not scope["unrestricted"]:
         if section not in scope["sections"]:
             # If they ask for a specific section, it must be in their scope
-            pass  # Actually we just rely on filter_employees_by_manager_scope later, but if they explicitly asked for an out-of-scope section we could deny.
-            # But wait, employee_in_manager_scope and filter_employees_by_manager_scope will handle everything!
-            # So we don't need these manual checks at all, except maybe to avoid returning empty results vs permission denied.
-            # Let's keep it simple: filter_employees_by_manager_scope handles it.
+            # Scope filtering below handles this; an explicit request could
+            # also be rejected here if product behavior changes.
+            pass
+            # But wait, employee_in_manager_scope and
+            # filter_employees_by_manager_scope will handle everything!
+            # So we don't need these manual checks at all, except maybe to
+            # avoid returning empty results vs permission denied.
+            # Let's keep it simple: filter_employees_by_manager_scope handles
+            # it.
             if not any(s == section for s in scope.get("sections", [])):
                 raise CopilotError(
                     "scope_denied",
@@ -730,9 +734,7 @@ def build_sql(plan):
         category = (
             "a.status"
             if source == "attendance"
-            else "lr.status"
-            if source == "leave"
-            else "e.employment_type"
+            else "lr.status" if source == "leave" else "e.employment_type"
         )
         if intent == "comparison" and filters.get("comparison_subsections"):
             select_sql = (
@@ -754,16 +756,12 @@ def build_sql(plan):
         date_col = (
             "a.date"
             if source == "attendance"
-            else "lr.start_date"
-            if source == "leave"
-            else "e.date_joined"
+            else "lr.start_date" if source == "leave" else "e.date_joined"
         )
         category = (
             "a.status"
             if source == "attendance"
-            else "lr.status"
-            if source == "leave"
-            else None
+            else "lr.status" if source == "leave" else None
         )
         select_sql = (
             date_col
@@ -800,7 +798,8 @@ def build_sql(plan):
 
 
 def validate_sql(sql, plan=None):
-    # In the request path, require the exact query text generated for the validated
+    # In the request path, require the exact query text generated for the
+    # validated
     # plan. This also bounds columns and joins to the fixed templates above.
     if plan is not None and sql != build_sql(plan)[0]:
         raise CopilotError(

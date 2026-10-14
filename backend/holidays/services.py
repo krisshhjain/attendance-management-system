@@ -31,11 +31,11 @@ def get_day_classifications(target_dates) -> dict:
         holiday = holidays_by_date.get(target_date)
         weekend = is_weekend(target_date)
         classifications[target_date] = {
-            "day_type": "WEEKEND"
-            if weekend
-            else "HOLIDAY"
-            if holiday
-            else "WORKING_DAY",
+            "day_type": (
+                "WEEKEND"
+                if weekend
+                else "HOLIDAY" if holiday else "WORKING_DAY"
+            ),
             "is_weekend": weekend,
             "is_company_holiday": holiday is not None,
             "is_working_day": not weekend and holiday is None,

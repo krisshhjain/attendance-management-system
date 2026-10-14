@@ -1,14 +1,18 @@
 """Write action executor with human-in-the-loop approval for HR Copilot."""
 
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 from typing import Any, Dict
 
+from attendance.models import (
+    Attendance,
+    AttendanceCorrection,
+    AttendanceEvent,
+    RegularizationRequest,
+    Shift,
+)
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
-
-from attendance.models import (Attendance, AttendanceCorrection,
-                               AttendanceEvent, RegularizationRequest, Shift)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 from system_logs.services import record_event
@@ -160,7 +164,8 @@ class WriteActionExecutor:
                     "The approved action cannot mark an employee absent on a non-working date.",
                 )
 
-        # Snapshot summary and source events before applying the explicit correction.
+        # Snapshot summary and source events before applying the explicit
+        # correction.
         events = list(
             AttendanceEvent.objects.filter(
                 employee_id=employee_id, timestamp__date=target_date
@@ -196,15 +201,21 @@ class WriteActionExecutor:
         if existing:
             previous_state.update(
                 {
-                    "check_in": existing.check_in.isoformat()
-                    if existing.check_in
-                    else None,
-                    "check_out": existing.check_out.isoformat()
-                    if existing.check_out
-                    else None,
-                    "working_duration": str(existing.working_duration)
-                    if existing.working_duration
-                    else None,
+                    "check_in": (
+                        existing.check_in.isoformat()
+                        if existing.check_in
+                        else None
+                    ),
+                    "check_out": (
+                        existing.check_out.isoformat()
+                        if existing.check_out
+                        else None
+                    ),
+                    "working_duration": (
+                        str(existing.working_duration)
+                        if existing.working_duration
+                        else None
+                    ),
                 }
             )
 
@@ -297,12 +308,16 @@ class WriteActionExecutor:
             "old_status": previous_state.get("status"),
             "status": target_status,
             "message": f"Attendance updated successfully for {target_data['employee_name']}.",
-            "check_in": attendance.check_in.isoformat()
-            if attendance.check_in
-            else None,
-            "check_out": attendance.check_out.isoformat()
-            if attendance.check_out
-            else None,
+            "check_in": (
+                attendance.check_in.isoformat()
+                if attendance.check_in
+                else None
+            ),
+            "check_out": (
+                attendance.check_out.isoformat()
+                if attendance.check_out
+                else None
+            ),
         }
 
         return result
@@ -344,9 +359,11 @@ class WriteActionExecutor:
             reason=reason,
             status="PENDING",
         )
-        from leave_management.services import (calculate_working_days,
-                                               get_active_policy,
-                                               validate_leave_request)
+        from leave_management.services import (
+            calculate_working_days,
+            get_active_policy,
+            validate_leave_request,
+        )
 
         leave_type = LeaveType.objects.get(pk=leave_type_id)
         # Use the authoritative validator whenever a policy exists. Legacy
@@ -573,8 +590,10 @@ class WriteActionExecutor:
                 "This leave request is no longer pending review",
             )
 
-        from leave_management.services import (approve_leave_request,
-                                               deny_leave_request)
+        from leave_management.services import (
+            approve_leave_request,
+            deny_leave_request,
+        )
 
         try:
             if pending_action["action_type"] == "leave_approve":
@@ -613,7 +632,6 @@ class WriteActionExecutor:
 
         # Get fresh scope
         current_scope = derive_scope(user)
-        stored_scope = pending_action.get("authorization_scope", {})
 
         # Basic authorization checks
         if not current_scope.get("unrestricted", False):

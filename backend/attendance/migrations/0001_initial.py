@@ -9,26 +9,59 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('employees', '0001_initial'),
+        ("employees", "0001_initial"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Attendance',
+            name="Attendance",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('date', models.DateField()),
-                ('check_in', models.DateTimeField(blank=True, null=True)),
-                ('check_out', models.DateTimeField(blank=True, null=True)),
-                ('status', models.CharField(choices=[('PRESENT', 'Present'), ('INCOMPLETE', 'Incomplete')], default='INCOMPLETE', max_length=20)),
-                ('working_duration', models.DurationField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('employee', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='attendance_records', to='employees.employee')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("date", models.DateField()),
+                ("check_in", models.DateTimeField(blank=True, null=True)),
+                ("check_out", models.DateTimeField(blank=True, null=True)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PRESENT", "Present"),
+                            ("INCOMPLETE", "Incomplete"),
+                        ],
+                        default="INCOMPLETE",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "working_duration",
+                    models.DurationField(blank=True, null=True),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "employee",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="attendance_records",
+                        to="employees.employee",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-date', '-check_in'],
-                'constraints': [models.UniqueConstraint(fields=('employee', 'date'), name='unique_employee_attendance_per_day')],
+                "ordering": ["-date", "-check_in"],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("employee", "date"),
+                        name="unique_employee_attendance_per_day",
+                    )
+                ],
             },
         ),
     ]

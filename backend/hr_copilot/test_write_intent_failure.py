@@ -11,11 +11,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-from hr_copilot.services.llm import get_structured_intent
+from hr_copilot.services.llm import get_structured_intent  # noqa: E402
 
 
 def test_write_intent_with_tracing():
