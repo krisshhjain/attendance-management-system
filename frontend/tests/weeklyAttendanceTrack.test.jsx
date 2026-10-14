@@ -90,6 +90,7 @@ test("formats duration variants across an overnight shift and labels holiday and
     { date: key(1), status: "LEAVE", working_duration: "1 days, 01:30:00" },
     { date: key(2), status: "COMPLETED", working_duration: "90" },
     { date: key(3), status: "UNRECOGNIZED", working_duration: "not-a-duration" },
+    { date: key(5), status: "PRESENT", working_duration: "3:45" },
     {
       date: key(4),
       status: "HOLIDAY",
@@ -110,4 +111,5 @@ test("formats duration variants across an overnight shift and labels holiday and
   expect(screen.getAllByText("Weekend").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Present").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Not recorded").length).toBeGreaterThan(0);
+  expect(screen.getByText("3h 45m")).toBeInTheDocument();
 }, 15_000);

@@ -119,3 +119,17 @@ test("reports zero absences on nonworking days", async () => {
   await userEvent.setup().click(screen.getByText("Absent Today"));
   expect(screen.getByText("No employees found in this category.")).toBeInTheDocument();
 });
+
+test("keeps the dashboard usable when attendance data is unavailable", async () => {
+  server.use(
+    http.get(`${API_BASE_URL}/admin/dashboard/`, () =>
+      HttpResponse.json({ detail: "Dashboard service unavailable." }, { status: 503 }),
+    ),
+    http.get(`${API_BASE_URL}/admin/employees/list/`, () => HttpResponse.json(employees)),
+  );
+  renderDashboard();
+  expect(await screen.findByText("Overview")).toBeInTheDocument();
+  expect(screen.getByText("Chart reports 0 present")).toBeInTheDocument();
+  const presentCard = screen.getByText("Present Today").closest(".MuiPaper-root");
+  await waitFor(() => expect(presentCard).toHaveTextContent("0"));
+}, 15_000);

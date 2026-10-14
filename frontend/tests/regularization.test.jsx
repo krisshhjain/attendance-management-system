@@ -416,3 +416,47 @@ test("keeps a correction editable and shows the server reason after submission f
   expect(screen.getByRole("button", { name: "Submit request" })).toBeEnabled();
   expect(screen.getByLabelText("Corrected check-out")).toHaveValue("17:30");
 }, 15_000);
+
+test("normalizes midnight and noon corrections to distinct 24-hour API times", async () => {
+  const RealDate = Date;
+  const fixedTimestamp = new RealDate(2026, 9, 14, 12).getTime();
+  class FixedDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [fixedTimestamp]));
+    }
+    static now() {
+      return fixedTimestamp;
+    }
+  }
+  vi.stubGlobal("Date", FixedDate);
+  let payload;
+  server.use(
+    http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/regularization/quota/`, () =>
+      HttpResponse.json(requestQuota),
+    ),
+    http.get(`${API_BASE_URL}/holidays/`, () => HttpResponse.json([])),
+    http.post(`${API_BASE_URL}/attendance/regularization/`, async ({ request }) => {
+      payload = await request.json();
+      return HttpResponse.json({ id: 53 }, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("You have not submitted any regularization requests.");
+  await user.click(screen.getByRole("button", { name: "Request correction" }));
+  await user.type(screen.getByLabelText("Corrected check-in"), "12:05 AM");
+  await user.type(screen.getByLabelText("Corrected check-out"), "12:05 PM");
+  await user.type(screen.getByLabelText("Reason"), "Verified overnight shift boundary");
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+  await waitFor(() =>
+    expect(payload?.days[0]).toEqual(
+      expect.objectContaining({
+        requested_check_in: "2026-10-14T00:05:00",
+        requested_check_out: "2026-10-14T12:05:00",
+      }),
+    ),
+  );
+  expect(await screen.findByText("Regularization request submitted.")).toBeInTheDocument();
+}, 15_000);
