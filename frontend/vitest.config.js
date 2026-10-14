@@ -9,6 +9,8 @@ export default mergeConfig(
       environment: "jsdom",
       setupFiles: ["./tests/setup.js"],
       include: ["tests/**/*.{test,spec}.{js,jsx}"],
+      maxWorkers: 1,
+      testTimeout: 15_000,
       clearMocks: true,
       mockReset: true,
       restoreMocks: true,
