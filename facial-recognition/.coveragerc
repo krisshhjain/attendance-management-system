@@ -1,6 +1,6 @@
 [run]
 branch = True
-source = app,face_utils,liveness
+source = app,face_utils,liveness,audit_dataset,regenerate_embeddings,regenerate_scoped
 relative_files = True
 omit =
     test_*.py
