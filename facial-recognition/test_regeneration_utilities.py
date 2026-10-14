@@ -62,7 +62,10 @@ class RegenerationUtilityTests(unittest.TestCase):
             ):
                 self.assertTrue(regenerate_embeddings.regenerate_identity_embeddings(identity, output, stats))
             self.assertEqual(len(list((output / "person").glob("*.npy"))), 6)
-            self.assertEqual(list((identity).iterdir()), sorted(identity.iterdir()))
+            self.assertEqual(
+                {path.name for path in identity.iterdir()},
+                {f"{index}.jpg" for index in range(6)},
+            )
             np.testing.assert_array_equal(np.load(output / "person" / "0.npy"), [1.0, 0.0])
 
     def test_insufficient_successes_remove_partial_identity_cache(self):
