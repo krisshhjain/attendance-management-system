@@ -123,6 +123,25 @@ test("approves a pending leave request and refreshes the review queue", async ()
   expect(state.api.fetchAdminLeaveRequests).toHaveBeenCalledTimes(2);
 }, 15_000);
 
+test("opens and closes an attached document from an admin leave review row", async () => {
+  const [request] = await state.api.fetchAdminLeaveRequests();
+  state.api.fetchAdminLeaveRequests.mockResolvedValue([
+    { ...request, attachment: "https://files.example.test/medical-note.png" },
+  ]);
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("Avery Lee");
+  await user.click(screen.getByRole("button", { name: "View Document" }));
+
+  expect(screen.getByText("Document for Avery Lee - Annual Leave Leave")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Document preview" })).toHaveAttribute(
+    "src",
+    "https://files.example.test/medical-note.png",
+  );
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("img", { name: "Document preview" })).not.toBeInTheDocument();
+});
+
 test("validates office coordinates before creating a location and refreshes the list", async () => {
   const user = userEvent.setup();
   renderPage();
