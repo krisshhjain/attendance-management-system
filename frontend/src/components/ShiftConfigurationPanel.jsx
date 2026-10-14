@@ -297,6 +297,7 @@ export function ShiftConfigurationPanel() {
                     <IconButton
                       size="small"
                       color="error"
+                      aria-label={`Remove shift ${index + 1}`}
                       onClick={() => removeShift(index)}
                       sx={{ mt: 0.5 }}
                     >
