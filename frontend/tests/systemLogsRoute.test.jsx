@@ -122,6 +122,34 @@ test("protects the audit log page from non-superusers", () => {
   expect(screen.getByText("You do not have access to System Logs.")).toBeInTheDocument();
 });
 
+test("renders success, warning, and unknown audit statuses and tolerates missing timestamps", async () => {
+  const variants = [
+    { ...record, id: 42, event_type: "LOGIN_SUCCEEDED", severity: "SUCCESS", status: "SUCCESS" },
+    { ...record, id: 43, event_type: "POLICY_PENDING", severity: "WARNING", status: "PENDING" },
+    {
+      ...record,
+      id: 44,
+      event_type: "LEGACY_EVENT",
+      severity: "TRACE",
+      status: "CUSTOM",
+      timestamp: null,
+      message: "Legacy event without a timestamp",
+    },
+  ];
+  server.use(
+    http.get(`${API_BASE_URL}/system-logs/`, () =>
+      HttpResponse.json({ count: variants.length, results: variants }),
+    ),
+  );
+  renderPage();
+
+  expect(await screen.findByRole("row", { name: /LOGIN_SUCCEEDED/ })).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: /POLICY_PENDING/ })).toBeInTheDocument();
+  const legacyRow = screen.getByRole("row", { name: /LEGACY_EVENT/ });
+  expect(within(legacyRow).getByText("CUSTOM")).toBeInTheDocument();
+  expect(within(legacyRow).getByText("-")).toBeInTheDocument();
+});
+
 test("filters audit events and opens full security details", async () => {
   const user = userEvent.setup();
   let requestedUrl;

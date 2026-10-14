@@ -84,7 +84,12 @@ export function ForcePasswordChangeModal({ open }) {
           <LockResetIcon />
         </Box>
         <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: "-0.5px" }}>
+          <Typography
+            component="span"
+            variant="h6"
+            fontWeight={700}
+            sx={{ letterSpacing: "-0.5px" }}
+          >
             First-Time Password Setup
           </Typography>
           <Typography variant="caption" color="text.secondary">

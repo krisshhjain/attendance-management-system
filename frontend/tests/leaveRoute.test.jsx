@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { Route } from "../src/routes/leave.jsx";
 import { FeedbackProvider } from "../src/feedback/FeedbackProvider.jsx";
 import { OrganizationScopeProvider } from "../src/lib/organizationScope.jsx";
@@ -9,12 +9,13 @@ import { API_BASE_URL } from "../src/lib/api.js";
 import { server } from "./mocks/server.js";
 
 const uploadState = vi.hoisted(() => ({ upload: vi.fn() }));
+const authState = vi.hoisted(() => ({ loginType: "employee" }));
 
 vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => (options) => options }));
 vi.mock("../src/components/RequireAuth.jsx", () => ({
   RequireAuth: ({ children }) => children,
 }));
-vi.mock("../src/lib/auth.jsx", () => ({ useAuth: () => ({ loginType: "employee" }) }));
+vi.mock("../src/lib/auth.jsx", () => ({ useAuth: () => authState }));
 vi.mock("../src/lib/api.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, uploadFile: (...args) => uploadState.upload(...args) };
@@ -55,6 +56,42 @@ function leaveApi({ onSubmit = vi.fn(), onUpload = vi.fn(), attachment = "" } = 
       reason: "Travel",
       status: "APPROVED",
       submitted_at: "2026-10-13T00:00:00Z",
+      attachment: "",
+    },
+    {
+      id: 36,
+      leave_type_name: "Annual",
+      start_date: "2026-11-04",
+      end_date: "2026-11-04",
+      duration_days: 1,
+      day_type: "FULL_DAY",
+      reason: "Request denied",
+      status: "DENIED",
+      submitted_at: "2026-10-12T00:00:00Z",
+      attachment: "",
+    },
+    {
+      id: 37,
+      leave_type_name: "Annual",
+      start_date: "2026-11-05",
+      end_date: "2026-11-05",
+      duration_days: 1,
+      day_type: "FULL_DAY",
+      reason: "Request withdrawn",
+      status: "CANCELLED",
+      submitted_at: "2026-10-11T00:00:00Z",
+      attachment: "",
+    },
+    {
+      id: 38,
+      leave_type_name: "Annual",
+      start_date: "2026-11-06",
+      end_date: "2026-11-06",
+      duration_days: 1,
+      day_type: "FULL_DAY",
+      reason: "Legacy status",
+      status: "OTHER",
+      submitted_at: "2026-10-10T00:00:00Z",
       attachment: "",
     },
   ];
@@ -116,6 +153,10 @@ function leaveApi({ onSubmit = vi.fn(), onUpload = vi.fn(), attachment = "" } = 
   );
   return { onSubmit, onUpload };
 }
+
+beforeEach(() => {
+  authState.loginType = "employee";
+});
 
 test("filters employee requests and confirms cancellation before changing server state", async () => {
   leaveApi();
@@ -265,3 +306,51 @@ test("shows the server policy message when a leave request is rejected", async (
   expect(await screen.findByText("The notice period is too short.")).toBeInTheDocument();
   expect(screen.getByRole("dialog")).toBeInTheDocument();
 }, 30_000);
+
+test("clamps leave dates to today and submits an allowed half-day request", async () => {
+  const calls = leaveApi();
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("4 Left");
+  await user.click(screen.getByRole("button", { name: "Apply for Leave" }));
+
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const [start, end] = document.querySelectorAll('input[type="date"]');
+  fireEvent.change(start, { target: { value: "2020-01-01" } });
+  expect(start).toHaveValue(todayKey);
+  fireEvent.change(end, { target: { value: "2020-01-01" } });
+  expect(end).toHaveValue(todayKey);
+
+  await user.click(screen.getByRole("combobox", { name: "Leave Type" }));
+  await user.click(screen.getByRole("option", { name: /Annual \(ANL\)/ }));
+  await user.click(screen.getByLabelText("First Half (0.5)"));
+  await user.type(
+    screen.getByRole("textbox", { name: "Reason for Leave" }),
+    "Personal appointment",
+  );
+  await user.click(screen.getByRole("button", { name: "Submit Request" }));
+
+  await waitFor(() =>
+    expect(calls.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ start_date: todayKey, end_date: todayKey, day_type: "FIRST_HALF" }),
+    ),
+  );
+});
+
+test("shows terminal request statuses and reports an unavailable admin employee list", async () => {
+  leaveApi();
+  authState.loginType = "systemadmin";
+  server.use(
+    http.get(`${API_BASE_URL}/admin/employees/list/`, () =>
+      HttpResponse.json({ detail: "Employee directory unavailable." }, { status: 503 }),
+    ),
+  );
+  renderPage();
+
+  expect(await screen.findByText("Request denied")).toBeInTheDocument();
+  expect(screen.getAllByText("DENIED").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("CANCELLED").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("OTHER").length).toBeGreaterThan(0);
+  expect(await screen.findByText("Employee list unavailable")).toBeInTheDocument();
+});

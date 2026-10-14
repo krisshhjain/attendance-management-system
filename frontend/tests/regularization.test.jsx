@@ -275,3 +275,117 @@ test("reports an unavailable regularization request list instead of showing a fa
   ).not.toBeInTheDocument();
   expect(attempts).toBe(1);
 });
+
+test("submits a month-scoped correction for an eligible workday", async () => {
+  const RealDate = Date;
+  const fixedTimestamp = new RealDate(2026, 9, 14, 12).getTime();
+  class FixedDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [fixedTimestamp]));
+    }
+
+    static now() {
+      return fixedTimestamp;
+    }
+  }
+  vi.stubGlobal("Date", FixedDate);
+  let payload;
+  server.use(
+    http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/regularization/quota/`, () =>
+      HttpResponse.json(requestQuota),
+    ),
+    http.get(`${API_BASE_URL}/holidays/`, () => HttpResponse.json([])),
+    http.post(`${API_BASE_URL}/attendance/regularization/`, async ({ request }) => {
+      payload = await request.json();
+      return HttpResponse.json({ id: 52 }, { status: 201 });
+    }),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("You have not submitted any regularization requests.");
+  await user.click(screen.getByRole("button", { name: "Request correction" }));
+  await user.click(screen.getByRole("combobox", { name: "Period" }));
+  await user.click(screen.getByRole("option", { name: "Month" }));
+  expect(screen.getByRole("combobox", { name: "Month" })).toHaveTextContent("October 2026");
+
+  const targetDay = document.querySelector('[data-attendance-date="2026-10-12"]');
+  expect(targetDay).not.toBeNull();
+  await user.type(within(targetDay).getByLabelText("Corrected check-in"), "9:15 PM");
+  await user.type(within(targetDay).getByLabelText("Reason"), "Month period correction");
+  await user.click(screen.getByRole("button", { name: "Submit request" }));
+
+  await waitFor(() => expect(payload?.period_type).toBe("MONTH"));
+  expect(payload.days).toEqual([
+    expect.objectContaining({
+      attendance_date: "2026-10-12",
+      requested_check_in: "2026-10-12T21:15:00",
+      reason: "Month period correction",
+    }),
+  ]);
+}, 30_000);
+
+test("blocks submission if holiday eligibility could not be verified", async () => {
+  const RealDate = Date;
+  const fixedTimestamp = new RealDate(2026, 9, 14, 12).getTime();
+  class FixedDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [fixedTimestamp]));
+    }
+
+    static now() {
+      return fixedTimestamp;
+    }
+  }
+  vi.stubGlobal("Date", FixedDate);
+  server.use(
+    http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/regularization/quota/`, () =>
+      HttpResponse.json(requestQuota),
+    ),
+    http.get(`${API_BASE_URL}/holidays/`, () =>
+      HttpResponse.json({ detail: "Holiday service unavailable." }, { status: 503 }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("You have not submitted any regularization requests.");
+  await user.click(screen.getByRole("button", { name: "Request correction" }));
+  expect(await screen.findByText(/Company holiday dates could not be loaded/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Submit request" })).toBeDisabled();
+});
+
+test("rejects an oversized supporting file before submitting a correction", async () => {
+  const RealDate = Date;
+  const fixedTimestamp = new RealDate(2026, 9, 14, 12).getTime();
+  class FixedDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [fixedTimestamp]));
+    }
+
+    static now() {
+      return fixedTimestamp;
+    }
+  }
+  vi.stubGlobal("Date", FixedDate);
+  server.use(
+    http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
+    http.get(`${API_BASE_URL}/attendance/regularization/quota/`, () =>
+      HttpResponse.json(requestQuota),
+    ),
+    http.get(`${API_BASE_URL}/holidays/`, () => HttpResponse.json([])),
+  );
+  const user = userEvent.setup({ applyAccept: false });
+  renderPage();
+  await screen.findByText("You have not submitted any regularization requests.");
+  await user.click(screen.getByRole("button", { name: "Request correction" }));
+  const oversizedDocument = new File([new Uint8Array(5 * 1024 * 1024 + 1)], "evidence.pdf", {
+    type: "application/pdf",
+  });
+  await user.upload(screen.getByLabelText("Attach supporting document"), oversizedDocument);
+  expect(await screen.findByText("Attachment must be 5 MB or smaller.")).toBeInTheDocument();
+  expect(screen.queryByText("Selected: evidence.pdf")).not.toBeInTheDocument();
+});

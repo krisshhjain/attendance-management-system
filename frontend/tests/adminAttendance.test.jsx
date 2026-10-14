@@ -269,3 +269,28 @@ test("requires a reset reason before clearing today's attendance", async () => {
   );
   expect(await screen.findByText("Attendance reset successfully.")).toBeInTheDocument();
 }, 15_000);
+
+test("reports checkout failures without removing attendance records", async () => {
+  server.use(
+    http.get(`${API_BASE_URL}/admin/attendance/`, ({ request }) =>
+      HttpResponse.json(attendanceFor(request)),
+    ),
+    http.post(`${API_BASE_URL}/admin/force-checkout/`, () =>
+      HttpResponse.json(
+        { detail: "Checkout is blocked by the attendance policy." },
+        { status: 409 },
+      ),
+    ),
+  );
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText("Alice Employee");
+  const aliceRow = screen.getByText("Alice Employee").closest("tr");
+  await user.click(within(aliceRow).getByRole("button", { name: "Checkout" }));
+
+  expect(
+    await screen.findByText("Checkout is blocked by the attendance policy."),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Alice Employee")).toBeInTheDocument();
+  expect(screen.queryByText("Checked out successfully.")).not.toBeInTheDocument();
+});

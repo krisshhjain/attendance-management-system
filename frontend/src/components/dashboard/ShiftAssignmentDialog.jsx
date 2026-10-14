@@ -83,7 +83,7 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
       PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
     >
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" fontWeight={600}>
+        <Typography component="span" variant="h6" fontWeight={600}>
           Assign Shift to {displayName}
         </Typography>
       </DialogTitle>
@@ -115,9 +115,13 @@ export function ShiftAssignmentDialog({ open, employee, onClose, onSuccess }) {
         )}
 
         <FormControl fullWidth disabled={isAssigning || shiftsLoading}>
-          <InputLabel>New Shift</InputLabel>
+          <InputLabel id="new-shift-label">New Shift</InputLabel>
           <Select
-            value={selectedShiftId}
+            id="new-shift-select"
+            labelId="new-shift-label"
+            value={
+              shifts.some((shift) => String(shift.id) === selectedShiftId) ? selectedShiftId : ""
+            }
             onChange={(e) => setSelectedShiftId(e.target.value)}
             label="New Shift"
           >

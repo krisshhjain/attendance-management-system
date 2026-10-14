@@ -112,7 +112,7 @@ test("searches employees by name or email and applies employment/status filters"
   const selects = screen.getAllByRole("combobox");
   await user.click(selects[0]);
   await user.click(screen.getByRole("option", { name: "Permanent" }));
-  expect(screen.getByText("Avery Lee")).toBeInTheDocument();
+  expect(screen.getAllByText("Avery Lee").length).toBeGreaterThan(0);
   expect(screen.queryByText("Jordan Park")).not.toBeInTheDocument();
   expect(screen.getByText("DAY")).toBeInTheDocument();
 });
@@ -131,7 +131,7 @@ test("filters inactive and active employees independently and supports fallback 
 
   await user.click(screen.getAllByRole("combobox")[1]);
   await user.click(screen.getByRole("option", { name: "Active" }));
-  expect(screen.getByText("Avery Lee")).toBeInTheDocument();
+  expect(screen.getAllByText("Avery Lee").length).toBeGreaterThan(0);
   expect(screen.getByText("taylor")).toBeInTheDocument();
   expect(screen.queryByText("Jordan Park")).not.toBeInTheDocument();
 });
@@ -198,6 +198,24 @@ test("confirms employee deletion, reports success, and refreshes the list", asyn
 
   await waitFor(() => expect(screen.queryByText("Avery Lee")).not.toBeInTheDocument());
   expect(await screen.findByText("Employee deleted successfully.")).toBeInTheDocument();
+});
+
+test("keeps the selected employee when deletion is rejected", async () => {
+  server.use(
+    http.get(`${API_BASE_URL}/admin/employees/list/`, () => HttpResponse.json(employees)),
+    http.delete(`${API_BASE_URL}/admin/employees/4/`, () =>
+      HttpResponse.json({ detail: "Employee has active payroll records." }, { status: 409 }),
+    ),
+  );
+  const user = userEvent.setup();
+  renderTable();
+  const row = (await screen.findByText("Avery Lee")).closest("tr");
+  await user.click(within(row).getAllByRole("button").at(-1));
+  await user.click(screen.getByRole("button", { name: "Delete", exact: true }));
+
+  expect(await screen.findByText("Employee has active payroll records.")).toBeInTheDocument();
+  expect(screen.getByText("Delete Employee?")).toBeInTheDocument();
+  expect(screen.getAllByText("Avery Lee").length).toBeGreaterThan(0);
 });
 test("shows a retry action when the employee endpoint is unavailable", async () => {
   let attempts = 0;

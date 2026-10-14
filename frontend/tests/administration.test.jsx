@@ -568,3 +568,37 @@ test("confirms before deactivating a leave policy", async () => {
   await waitFor(() => expect(state.api.deleteLeavePolicy).toHaveBeenCalledWith(12));
   expect(state.success).toHaveBeenCalledWith("Leave policy deactivated successfully.");
 });
+
+test("surfaces API failures in office, leave, policy, and balance administration tabs", async () => {
+  const user = userEvent.setup();
+  const scenarios = [
+    {
+      method: "fetchAdminLeaveRequests",
+      tab: null,
+      message: "Leave queue is unavailable.",
+    },
+    {
+      method: "fetchOfficeLocations",
+      tab: "Office Locations",
+      message: "Location directory is unavailable.",
+    },
+    {
+      method: "fetchLeavePoliciesAll",
+      tab: "Leave Policies",
+      message: "Policy registry is unavailable.",
+    },
+    {
+      method: "fetchAdminLeaveBalances",
+      tab: "Employee Balances",
+      message: "Balance service is unavailable.",
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    state.api[scenario.method].mockRejectedValueOnce(new Error(scenario.message));
+    const view = renderPage();
+    if (scenario.tab) await user.click(screen.getByRole("tab", { name: scenario.tab }));
+    expect(await screen.findByText(scenario.message)).toBeInTheDocument();
+    view.unmount();
+  }
+});

@@ -62,7 +62,7 @@ export function ChangePasswordDialog({ open, employee, onClose, onSuccess }) {
       PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
     >
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" fontWeight={600}>
+        <Typography component="span" variant="h6" fontWeight={600}>
           Reset Password
         </Typography>
       </DialogTitle>
