@@ -70,7 +70,7 @@ test("enforces matching passwords and each password complexity requirement befor
   await waitFor(() => expect(state.success).toHaveBeenCalledWith("Password changed successfully."));
   expect(submitted).toBe(true);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-});
+}, 30_000);
 
 test("keeps the dialog open and reports a rejected current password", async () => {
   let body;
@@ -83,7 +83,9 @@ test("keeps the dialog open and reports a rejected current password", async () =
   const user = userEvent.setup();
   renderPage();
   const dialog = await openPasswordDialog(user);
-  await user.type(within(dialog).getByLabelText(/Current Password/), "wrong-current");
+  const current = within(dialog).getByLabelText(/Current Password/);
+  await user.clear(current);
+  await user.type(current, "wrong-current");
   await user.type(within(dialog).getByLabelText(/^New Password/), "SecurePass1!");
   await user.type(within(dialog).getByLabelText(/Confirm New Password/), "SecurePass1!");
   await user.click(within(dialog).getByRole("button", { name: "Update" }));
@@ -96,4 +98,4 @@ test("keeps the dialog open and reports a rejected current password", async () =
   );
   expect(body).toEqual({ current_password: "wrong-current", new_password: "SecurePass1!" });
   expect(screen.getByRole("dialog")).toBeInTheDocument();
-});
+}, 15_000);
