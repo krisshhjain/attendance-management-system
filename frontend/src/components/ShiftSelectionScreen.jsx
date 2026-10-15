@@ -16,7 +16,7 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import { fetchActiveShifts, selfAssignShift } from "../lib/api.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 
 /**
  * Full-page gate shown to employees who have no shift assigned.

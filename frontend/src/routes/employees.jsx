@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import { Box, Typography } from "@mui/material";
 import { EmployeeTable } from "../components/dashboard/EmployeeTable.jsx";
 

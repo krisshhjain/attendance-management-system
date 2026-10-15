@@ -7,7 +7,7 @@ import { ShiftConfigurationPanel } from "../src/components/ShiftConfigurationPan
 import { server } from "./mocks/server.js";
 
 const feedback = vi.hoisted(() => ({ success: vi.fn(), notifyError: vi.fn() }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({ useFeedback: () => feedback }));
+vi.mock("../src/feedback/useFeedback.js", () => ({ useFeedback: () => feedback }));
 
 const configuration = {
   PERMANENT: [{ id: 1, name: "Day Shift", code: "DAY", start_time: "09:00", end_time: "17:00" }],

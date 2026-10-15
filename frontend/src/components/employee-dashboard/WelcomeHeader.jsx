@@ -1,5 +1,5 @@
 import { Box, Typography, Avatar } from "@mui/material";
-import { useAuth } from "../../lib/auth.jsx";
+import { useAuth } from "../../lib/useAuth.js";
 
 export function WelcomeHeader() {
   const { user } = useAuth();

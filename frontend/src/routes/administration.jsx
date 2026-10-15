@@ -5,7 +5,7 @@ import { ShiftConfigurationPanel } from "../components/ShiftConfigurationPanel.j
 import { LeaveDocumentPreviewDialog } from "../components/LeaveDocumentPreviewDialog.jsx";
 import { ManagerManagement } from "../components/ManagerManagement.jsx";
 import { HolidayManagementPanel } from "../components/HolidayManagementPanel.jsx";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import {
   Box,
   Typography,
@@ -43,7 +43,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AttachmentIcon from "@mui/icons-material/Attachment";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 import { getErrorMessage } from "../feedback/errorMessage.js";
 import {
   fetchAdminLeaveRequests,

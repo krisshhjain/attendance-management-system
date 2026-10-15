@@ -29,7 +29,7 @@ import {
   uploadFile,
 } from "../lib/api.js";
 import { getHistory } from "../lib/attendance.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 import { getErrorMessage } from "../feedback/errorMessage.js";
 import { useActiveHolidays } from "../data/holidayCalendar.js";
 

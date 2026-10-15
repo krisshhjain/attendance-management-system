@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api.js";
-import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../../feedback/useFeedback.js";
 import { getErrorMessage } from "../../feedback/errorMessage.js";
 import {
   Dialog,

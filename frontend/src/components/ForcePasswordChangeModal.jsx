@@ -14,8 +14,8 @@ import {
 import LockResetIcon from "@mui/icons-material/LockReset";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { apiRequest } from "../lib/api.js";
-import { useAuth } from "../lib/auth.jsx";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useAuth } from "../lib/useAuth.js";
+import { useFeedback } from "../feedback/useFeedback.js";
 
 export function ForcePasswordChangeModal({ open }) {
   const { logout, refreshUser } = useAuth();

@@ -8,7 +8,7 @@ import { NotificationBell } from "../src/components/notifications/NotificationBe
 import { server } from "./mocks/server.js";
 
 const notifyError = vi.hoisted(() => vi.fn());
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({
+vi.mock("../src/feedback/useFeedback.js", () => ({
   useFeedback: () => ({ notifyError }),
 }));
 

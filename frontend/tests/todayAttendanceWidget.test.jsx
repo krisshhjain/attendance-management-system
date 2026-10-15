@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => state.navigate }));
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: state.shift }) }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({ useFeedback: () => state.feedback }));
+vi.mock("../src/feedback/useFeedback.js", () => ({ useFeedback: () => state.feedback }));
 vi.mock("../src/lib/attendance.js", () => ({ checkIn: state.checkIn, checkOut: state.checkOut }));
 vi.mock("../src/lib/location.js", () => ({ getCurrentCoordinates: state.coordinates }));
 vi.mock("../src/lib/api.js", () => ({

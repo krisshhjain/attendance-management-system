@@ -17,7 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options) => options,
   useNavigate: () => state.navigate,
 }));
-vi.mock("../src/lib/auth.jsx", () => ({
+vi.mock("../src/lib/useAuth.js", () => ({
   useAuth: () => ({
     login: state.login,
     isAuthenticated: state.isAuthenticated,

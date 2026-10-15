@@ -27,7 +27,7 @@ vi.mock("@tanstack/react-router", () => ({
   useLocation: () => ({ pathname: state.pathname }),
   useNavigate: () => state.navigate,
 }));
-vi.mock("../src/lib/auth.jsx", () => ({
+vi.mock("../src/lib/useAuth.js", () => ({
   useAuth: () => ({
     user: state.user,
     loginType: state.loginType,

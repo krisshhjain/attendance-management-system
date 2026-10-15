@@ -18,7 +18,7 @@ import {
   Divider,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api.js";
-import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../../feedback/useFeedback.js";
 import { getErrorMessage } from "../../feedback/errorMessage.js";
 
 const EMPLOYMENT_TYPES = ["PERMANENT", "CONTRACT", "INTERN"];
