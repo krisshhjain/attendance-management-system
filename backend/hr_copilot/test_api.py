@@ -1,20 +1,22 @@
-from datetime import date, timedelta
 from contextlib import nullcontext
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from django.utils import timezone
-from rest_framework.test import APIRequestFactory, force_authenticate
-
 from accounts.models import ManagerScope
+from django.utils import timezone
 from hr_copilot import views
-from hr_copilot.services import (conversation, pipeline,
-                                 write_actions as write_action_module,
-                                 write_executor as write_executor_module)
+from hr_copilot.services import (
+    conversation,
+    pipeline,
+)
+from hr_copilot.services import write_actions as write_action_module
+from hr_copilot.services import write_executor as write_executor_module
 from hr_copilot.services.pipeline import CopilotError
 from hr_copilot.services.write_actions import write_action_planner
 from hr_copilot.services.write_executor import write_action_executor
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 
 class FakeAudit:
@@ -53,7 +55,8 @@ def api(monkeypatch):
         "CopilotQueryAudit",
         SimpleNamespace(objects=SimpleNamespace(create=create_audit)),
     )
-    # These API tests use a lightweight user double rather than a database-backed
+    # These API tests use a lightweight user double rather than a
+    # database-backed
     # User instance. Conversation persistence is covered by the database tests.
     monkeypatch.setattr(views, "append_message", lambda *args, **kwargs: None)
     monkeypatch.setattr(views, "load_context", lambda *args, **kwargs: {})
@@ -108,9 +111,7 @@ def api(monkeypatch):
             for section in manager.hr_copilot_sections
         ]
 
-    monkeypatch.setattr(
-        ManagerScope.objects, "filter", manager_scope_records
-    )
+    monkeypatch.setattr(ManagerScope.objects, "filter", manager_scope_records)
     return factory, audit_records
 
 
@@ -165,7 +166,9 @@ def test_query_requires_system_admin(api):
 
 
 @pytest.mark.parametrize("message", [None, "", "   ", "x" * 2001, []])
-def test_query_rejects_invalid_or_oversized_message_before_auditing(api, message):
+def test_query_rejects_invalid_or_oversized_message_before_auditing(
+    api, message
+):
     factory, audit_records = api
 
     response = call_endpoint(
@@ -175,12 +178,17 @@ def test_query_rejects_invalid_or_oversized_message_before_auditing(api, message
     )
 
     assert response.status_code == 400
-    assert response.data["detail"] == "Enter a question of up to 2,000 characters."
+    assert (
+        response.data["detail"]
+        == "Enter a question of up to 2,000 characters."
+    )
     assert audit_records == []
 
 
 @pytest.mark.parametrize("conversation_id", [" ", "x" * 129, ["conversation"]])
-def test_query_rejects_invalid_conversation_id_before_auditing(api, conversation_id):
+def test_query_rejects_invalid_conversation_id_before_auditing(
+    api, conversation_id
+):
     factory, audit_records = api
 
     response = call_endpoint(
@@ -194,10 +202,14 @@ def test_query_rejects_invalid_conversation_id_before_auditing(api, conversation
     assert audit_records == []
 
 
-def test_health_endpoint_blocks_non_admins_before_provider_access(api, monkeypatch):
+def test_health_endpoint_blocks_non_admins_before_provider_access(
+    api, monkeypatch
+):
     factory, _ = api
     monkeypatch.setattr(
-        views, "provider_health", lambda: pytest.fail("Unauthorized health request reached provider"),
+        views,
+        "provider_health",
+        lambda: pytest.fail("Unauthorized health request reached provider"),
     )
     request = factory.get("/api/hr-copilot/health/")
     force_authenticate(request, user=system_admin(is_system_admin=False))
@@ -208,15 +220,21 @@ def test_health_endpoint_blocks_non_admins_before_provider_access(api, monkeypat
     assert response.data["detail"] == "System Admin access is required."
 
 
-def test_conversation_endpoint_blocks_non_admins_before_loading_history(api, monkeypatch):
+def test_conversation_endpoint_blocks_non_admins_before_loading_history(
+    api, monkeypatch
+):
     factory, _ = api
     monkeypatch.setattr(
-        views, "load_messages", lambda *_: pytest.fail("Unauthorized conversation read")
+        views,
+        "load_messages",
+        lambda *_: pytest.fail("Unauthorized conversation read"),
     )
     request = factory.get("/api/hr-copilot/conversations/conversation-123/")
     force_authenticate(request, user=system_admin(is_system_admin=False))
 
-    response = views.HRCopilotConversationView.as_view()(request, "conversation-123")
+    response = views.HRCopilotConversationView.as_view()(
+        request, "conversation-123"
+    )
 
     assert response.status_code == 403
     assert response.data["detail"] == "System Admin access is required."
@@ -229,7 +247,8 @@ def test_admin_can_read_only_the_requested_conversation(api, monkeypatch):
     monkeypatch.setattr(
         views,
         "load_messages",
-        lambda user, conversation: loaded.append((user.id, conversation)) or history,
+        lambda user, conversation: loaded.append((user.id, conversation))
+        or history,
     )
     request = factory.get("/api/hr-copilot/conversations/chat-c-17/")
     force_authenticate(request, user=system_admin())
@@ -237,7 +256,10 @@ def test_admin_can_read_only_the_requested_conversation(api, monkeypatch):
     response = views.HRCopilotConversationView.as_view()(request, "chat-c-17")
 
     assert response.status_code == 200
-    assert response.data == {"conversation_id": "chat-c-17", "messages": history}
+    assert response.data == {
+        "conversation_id": "chat-c-17",
+        "messages": history,
+    }
     assert loaded == [(1, "chat-c-17")]
 
 
@@ -270,7 +292,9 @@ def test_cancel_awaiting_action_returns_its_action_id(api, monkeypatch):
     assert response.data["action_id"] == action["action_id"]
 
 
-def test_query_confirmation_executes_action_for_matching_conversation(api, monkeypatch):
+def test_query_confirmation_executes_action_for_matching_conversation(
+    api, monkeypatch
+):
     factory, _ = api
     conversation_id = "confirm-this-conversation"
     pending = {
@@ -306,7 +330,9 @@ def test_query_confirmation_executes_action_for_matching_conversation(api, monke
         lambda *args: executed.append(args),
     )
     monkeypatch.setattr(
-        views, "_record_copilot_action_event", lambda **kwargs: events.append(kwargs)
+        views,
+        "_record_copilot_action_event",
+        lambda **kwargs: events.append(kwargs),
     )
     monkeypatch.setattr(views, "update_action_message", lambda *args: None)
 
@@ -368,7 +394,9 @@ def test_action_approval_requires_system_admin(api):
     assert response.data["detail"] == "System Admin access is required."
 
 
-def test_action_approval_executes_and_returns_confirmed_result(api, monkeypatch):
+def test_action_approval_executes_and_returns_confirmed_result(
+    api, monkeypatch
+):
     factory, _ = api
     action = {
         "action_id": "action-123",
@@ -424,13 +452,17 @@ def test_action_approval_executes_and_returns_confirmed_result(api, monkeypatch)
     )
 
 
-def test_action_approval_reports_copilot_error_without_success(api, monkeypatch):
+def test_action_approval_reports_copilot_error_without_success(
+    api, monkeypatch
+):
     factory, _ = api
     monkeypatch.setattr(
         views.pending_action_manager,
         "approve_action",
         lambda *args: (_ for _ in ()).throw(
-            CopilotError("scope_denied", "Authorization scope has changed", 403)
+            CopilotError(
+                "scope_denied", "Authorization scope has changed", 403
+            )
         ),
     )
     failed = []
@@ -461,7 +493,9 @@ def test_action_approval_reports_copilot_error_without_success(api, monkeypatch)
     assert len(failed) == 1
 
 
-def test_action_cancellation_does_not_execute_product_changes(api, monkeypatch):
+def test_action_cancellation_does_not_execute_product_changes(
+    api, monkeypatch
+):
     factory, _ = api
     action = {
         "action_id": "action-cancel-123",
@@ -480,7 +514,9 @@ def test_action_cancellation_does_not_execute_product_changes(api, monkeypatch):
         lambda *_: pytest.fail("Cancelled action must not execute"),
     )
     monkeypatch.setattr(
-        views, "_record_copilot_action_event", lambda **kwargs: events.append(kwargs)
+        views,
+        "_record_copilot_action_event",
+        lambda **kwargs: events.append(kwargs),
     )
     monkeypatch.setattr(views, "update_action_message", lambda *args: None)
     monkeypatch.setattr(views, "append_message", lambda *args: None)
@@ -587,7 +623,9 @@ def test_pending_actions_view_filters_non_pending_actions(api, monkeypatch):
     )
 
 
-def test_pending_actions_without_conversation_lists_user_actions(api, monkeypatch):
+def test_pending_actions_without_conversation_lists_user_actions(
+    api, monkeypatch
+):
     factory, _ = api
     actions = {
         "pending": {
@@ -615,7 +653,10 @@ def test_pending_actions_without_conversation_lists_user_actions(api, monkeypatc
 
     assert response.status_code == 200
     assert response.data["count"] == 1
-    assert response.data["pending_actions"][0]["warning_message"] == "This cannot be undone."
+    assert (
+        response.data["pending_actions"][0]["warning_message"]
+        == "This cannot be undone."
+    )
     assert captured == [(1,)]
 
 
@@ -696,13 +737,16 @@ def test_action_failure_audit_storage_error_is_best_effort(monkeypatch):
     )
 
 
-def test_write_planner_builds_missing_employee_follow_up_for_present_attendance():
+def test_write_planner_requests_missing_present_attendance_details():
     today = timezone.localdate()
     intent = {
         "intent": "attendance_update",
         "source": "attendance",
         "entities": {
-            "date_range": {"start": today.isoformat(), "end": today.isoformat()},
+            "date_range": {
+                "start": today.isoformat(),
+                "end": today.isoformat(),
+            },
             "target_status": "PRESENT",
         },
     }
@@ -731,7 +775,10 @@ def test_write_planner_missing_employee_leave_follow_up_requests_reason():
         "intent": "leave_create",
         "source": "leave",
         "entities": {
-            "date_range": {"start": today.isoformat(), "end": today.isoformat()},
+            "date_range": {
+                "start": today.isoformat(),
+                "end": today.isoformat(),
+            },
         },
     }
 
@@ -778,7 +825,9 @@ def test_ambiguous_employee_follow_up_keeps_action_pending_and_requests_email(
         write_action_planner,
         "_resolve_target_employee",
         lambda *args: (_ for _ in ()).throw(
-            CopilotError("employee_ambiguous", "More than one employee matched")
+            CopilotError(
+                "employee_ambiguous", "More than one employee matched"
+            )
         ),
     )
     monkeypatch.setattr(
@@ -795,7 +844,9 @@ def test_ambiguous_employee_follow_up_keeps_action_pending_and_requests_email(
 
     assert response.status_code == 200
     assert response.data["query_status"] == "awaiting_information"
-    assert response.data["pending_action"]["validation_errors"] == ["employee_email"]
+    assert response.data["pending_action"]["validation_errors"] == [
+        "employee_email"
+    ]
 
 
 @pytest.mark.parametrize("leave_type_configured", [True, False])
@@ -880,8 +931,14 @@ def test_leave_follow_up_handles_configured_leave_type(
     if leave_type_configured:
         assert response.status_code == 200
         assert response.data["query_status"] == "pending_approval"
-        assert response.data["pending_action"]["target_data"]["leave_type_id"] == 17
-        assert response.data["pending_action"]["proposed_changes"]["leave_type"] == "Annual leave"
+        assert (
+            response.data["pending_action"]["target_data"]["leave_type_id"]
+            == 17
+        )
+        assert (
+            response.data["pending_action"]["proposed_changes"]["leave_type"]
+            == "Annual leave"
+        )
         assert "Confirm Asha Rao's leave" in response.data["answer"]
         assert len(updated_actions) == 1
         assert updated_actions[0][3]["validated"] is True
@@ -894,7 +951,9 @@ def test_leave_follow_up_handles_configured_leave_type(
         assert audit_records[0].execution_result == "rejected"
 
 
-def test_employee_scope_denial_does_not_update_pending_action(api, monkeypatch):
+def test_employee_scope_denial_does_not_update_pending_action(
+    api, monkeypatch
+):
     factory, _ = api
     monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
     draft = {
@@ -921,7 +980,9 @@ def test_employee_scope_denial_does_not_update_pending_action(api, monkeypatch):
         write_action_planner,
         "_resolve_target_employee",
         lambda *args: (_ for _ in ()).throw(
-            CopilotError("scope_denied", "Employee is outside manager scope", 403)
+            CopilotError(
+                "scope_denied", "Employee is outside manager scope", 403
+            )
         ),
     )
     monkeypatch.setattr(
@@ -957,12 +1018,16 @@ def test_ambiguous_write_intent_creates_email_clarification(api, monkeypatch):
     }
     stored = []
     monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
-    monkeypatch.setattr(views, "analyze_question", lambda *args, **kwargs: intent)
+    monkeypatch.setattr(
+        views, "analyze_question", lambda *args, **kwargs: intent
+    )
     monkeypatch.setattr(
         write_action_planner,
         "plan_write_action",
         lambda *args: (_ for _ in ()).throw(
-            CopilotError("employee_ambiguous", "More than one employee matched")
+            CopilotError(
+                "employee_ambiguous", "More than one employee matched"
+            )
         ),
     )
     monkeypatch.setattr(
@@ -977,13 +1042,18 @@ def test_ambiguous_write_intent_creates_email_clarification(api, monkeypatch):
     response = call_endpoint(
         factory,
         system_admin(),
-        {"message": "Mark Asha Rao absent today", "conversation_id": "ambiguous-write"},
+        {
+            "message": "Mark Asha Rao absent today",
+            "conversation_id": "ambiguous-write",
+        },
     )
 
     assert response.status_code == 200
     assert response.data["response_type"] == "clarification"
     assert response.data["query_status"] == "awaiting_information"
-    assert response.data["pending_action"]["validation_errors"] == ["employee_email"]
+    assert response.data["pending_action"]["validation_errors"] == [
+        "employee_email"
+    ]
     assert len(stored) == 1
     assert audit_records[0].execution_result == "awaiting_information"
 
@@ -1005,7 +1075,7 @@ def test_write_planner_normalizes_times_and_rejects_invalid_values(
     assert write_action_planner._normalize_time(value, checkout) == expected
 
 
-def test_regularization_planner_creates_reviewable_request_with_normalized_times(
+def test_regularization_planner_normalizes_times_for_reviewable_request(
     monkeypatch,
 ):
     today = timezone.localdate()
@@ -1143,7 +1213,9 @@ def test_regularization_review_planner_blocks_grouped_requests(monkeypatch):
         status="PENDING",
         days=SimpleNamespace(exists=lambda: True),
         employee=SimpleNamespace(
-            user=SimpleNamespace(get_full_name=lambda: "Asha Rao", email="asha@example.test")
+            user=SimpleNamespace(
+                get_full_name=lambda: "Asha Rao", email="asha@example.test"
+            )
         ),
     )
     query = MagicMock()
@@ -1153,7 +1225,9 @@ def test_regularization_review_planner_blocks_grouped_requests(monkeypatch):
     monkeypatch.setattr(
         write_action_module,
         "RegularizationRequest",
-        SimpleNamespace(objects=SimpleNamespace(select_related=lambda *_: query)),
+        SimpleNamespace(
+            objects=SimpleNamespace(select_related=lambda *_: query)
+        ),
     )
     monkeypatch.setattr(
         write_action_planner,
@@ -1214,8 +1288,14 @@ def test_pipeline_calendar_month_ranges_handle_year_boundary():
     pipeline._apply_explicit_date_range("this month", this_month, today)
     pipeline._apply_explicit_date_range("last month", last_month, today)
 
-    assert this_month["date_range"] == {"start": "2026-01-01", "end": "2026-01-03"}
-    assert last_month["date_range"] == {"start": "2025-12-01", "end": "2025-12-31"}
+    assert this_month["date_range"] == {
+        "start": "2026-01-01",
+        "end": "2026-01-03",
+    }
+    assert last_month["date_range"] == {
+        "start": "2025-12-01",
+        "end": "2025-12-31",
+    }
 
 
 def test_pipeline_this_week_starts_on_monday():
@@ -1224,14 +1304,23 @@ def test_pipeline_this_week_starts_on_monday():
 
     pipeline._apply_explicit_date_range("this week", entities, today)
 
-    assert entities["date_range"] == {"start": "2026-10-12", "end": "2026-10-14"}
+    assert entities["date_range"] == {
+        "start": "2026-10-12",
+        "end": "2026-10-14",
+    }
 
 
 @pytest.mark.parametrize(
     ("question", "expected"),
     [
-        ("attendance on 14 October 2026", {"start": "2026-10-14", "end": "2026-10-14"}),
-        ("attendance from 2026-10-12 to 2026-10-14", {"start": "2026-10-12", "end": "2026-10-14"}),
+        (
+            "attendance on 14 October 2026",
+            {"start": "2026-10-14", "end": "2026-10-14"},
+        ),
+        (
+            "attendance from 2026-10-12 to 2026-10-14",
+            {"start": "2026-10-12", "end": "2026-10-14"},
+        ),
     ],
 )
 def test_pipeline_applies_natural_and_iso_date_ranges(question, expected):
@@ -1281,7 +1370,9 @@ def test_specialized_intelligence_uses_scoped_typed_tool(
     result = {
         "metric": metric,
         "date_range": {"start": "2026-10-01", "end": "2026-10-14"},
-        "assumptions": ["Only active employees in the manager scope are included."],
+        "assumptions": [
+            "Only active employees in the manager scope are included."
+        ],
         "rows": [{"employee_id": 7, "employee_name": "Asha Rao"}],
     }
     intent = {
@@ -1298,23 +1389,33 @@ def test_specialized_intelligence_uses_scoped_typed_tool(
         "employee": {"employee_id": None},
     }
     monkeypatch.setattr(views, "record_event", lambda **kwargs: None)
-    monkeypatch.setattr(views, "analyze_question", lambda *args, **kwargs: intent)
-    monkeypatch.setattr(views, "plan_query", lambda *args: plan)
     monkeypatch.setattr(
-        views.hr_tools, tool_name, lambda **kwargs: result
+        views, "analyze_question", lambda *args, **kwargs: intent
     )
-    monkeypatch.setattr(views, "generate_natural_answer", lambda *args, **kwargs: "Report ready.")
+    monkeypatch.setattr(views, "plan_query", lambda *args: plan)
+    monkeypatch.setattr(views.hr_tools, tool_name, lambda **kwargs: result)
+    monkeypatch.setattr(
+        views,
+        "generate_natural_answer",
+        lambda *args, **kwargs: "Report ready.",
+    )
 
     response = call_endpoint(
         factory,
         system_admin(),
-        {"message": f"Show {metric}", "conversation_id": f"{intent_name}-tool"},
+        {
+            "message": f"Show {metric}",
+            "conversation_id": f"{intent_name}-tool",
+        },
     )
 
     assert response.status_code == 200
     assert response.data["data"]["rows"] == result["rows"]
     assert response.data["data"]["metadata"]["metric"] == metric
-    assert response.data["data"]["metadata"]["assumptions"] == result["assumptions"]
+    assert (
+        response.data["data"]["metadata"]["assumptions"]
+        == result["assumptions"]
+    )
     assert audit_records[0].execution_result == "success"
 
 
@@ -1327,13 +1428,15 @@ def test_specialized_intelligence_uses_scoped_typed_tool(
         ("some other date", None),
     ],
 )
-def test_pipeline_parses_natural_dates_and_rejects_impossible_dates(text, expected):
-    assert pipeline._parse_natural_date_string(
-        text, date(2026, 9, 1)
-    ) == expected
+def test_pipeline_parses_natural_dates_and_rejects_impossible_dates(
+    text, expected
+):
+    assert (
+        pipeline._parse_natural_date_string(text, date(2026, 9, 1)) == expected
+    )
 
 
-def test_pipeline_extracts_email_scope_and_attendance_status_deterministically():
+def test_pipeline_extracts_email_scope_and_status_deterministically():
     entities = {}
 
     pipeline._apply_deterministic_entities(
@@ -1395,16 +1498,25 @@ def test_pipeline_marks_write_intents_as_approval_required(monkeypatch):
     ("intent_name", "expected_phrase"),
     [
         ("attendance_intelligence", "attendance metric"),
-        ("leave_regularization_intelligence", "leave or regularization information"),
+        (
+            "leave_regularization_intelligence",
+            "leave or regularization information",
+        ),
         ("workforce_intelligence", "workforce information"),
     ],
 )
-def test_pipeline_requires_a_metric_for_specialized_queries(intent_name, expected_phrase):
+def test_pipeline_requires_a_metric_for_specialized_queries(
+    intent_name, expected_phrase
+):
     with pytest.raises(CopilotError) as raised:
         pipeline.plan_query(
             {
                 "intent": intent_name,
-                "source": "attendance" if intent_name == "attendance_intelligence" else "employee",
+                "source": (
+                    "attendance"
+                    if intent_name == "attendance_intelligence"
+                    else "employee"
+                ),
                 "entities": {},
             },
             {"sections": ["C"], "subsections": [], "unrestricted": False},
@@ -1477,21 +1589,28 @@ def test_pipeline_rejects_unresolved_employee_name(
     assert raised.value.code == expected_code
 
 
-def test_write_planner_rejects_unsupported_regularization_type_before_lookup(monkeypatch):
+def test_write_planner_rejects_unsupported_regularization_type_before_lookup(
+    monkeypatch,
+):
     monkeypatch.setattr(
         write_action_planner,
         "_resolve_target_employee",
         lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
     )
     monkeypatch.setattr(
-        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 12)
+        write_action_planner,
+        "_resolve_target_date",
+        lambda _: date(2026, 10, 12),
     )
 
     with pytest.raises(CopilotError) as raised:
         write_action_planner._plan_regularization_create(
             {
                 "intent": "regularization_create",
-                "entities": {"request_type": "UNSUPPORTED", "reason": "Fix record"},
+                "entities": {
+                    "request_type": "UNSUPPORTED",
+                    "reason": "Fix record",
+                },
             },
             system_admin(),
             {"unrestricted": True},
@@ -1501,7 +1620,9 @@ def test_write_planner_rejects_unsupported_regularization_type_before_lookup(mon
     assert raised.value.code == "invalid_request_type"
 
 
-def test_write_planner_requires_valid_shift_and_explicit_employee_status(monkeypatch):
+def test_write_planner_requires_valid_shift_and_explicit_employee_status(
+    monkeypatch,
+):
     monkeypatch.setattr(
         write_action_planner,
         "_resolve_target_employee",
@@ -1510,12 +1631,19 @@ def test_write_planner_requires_valid_shift_and_explicit_employee_status(monkeyp
     monkeypatch.setattr(
         write_action_module,
         "Shift",
-        SimpleNamespace(objects=SimpleNamespace(filter=lambda **_: SimpleNamespace(first=lambda: None))),
+        SimpleNamespace(
+            objects=SimpleNamespace(
+                filter=lambda **_: SimpleNamespace(first=lambda: None)
+            )
+        ),
     )
 
     with pytest.raises(CopilotError) as shift_error:
         write_action_planner._plan_shift_assignment(
-            {"intent": "employee_shift_assign", "entities": {"shift_name": "Night"}},
+            {
+                "intent": "employee_shift_assign",
+                "entities": {"shift_name": "Night"},
+            },
             system_admin(),
             {"unrestricted": True},
             "missing-shift",
@@ -1524,7 +1652,10 @@ def test_write_planner_requires_valid_shift_and_explicit_employee_status(monkeyp
 
     with pytest.raises(CopilotError) as status_error:
         write_action_planner._plan_employee_status(
-            {"intent": "employee_status_update", "entities": {"employee_id": 42}},
+            {
+                "intent": "employee_status_update",
+                "entities": {"employee_id": 42},
+            },
             system_admin(),
             {"unrestricted": True},
             "missing-status",
@@ -1539,14 +1670,19 @@ def test_leave_planner_reports_missing_and_ambiguous_leave_types(monkeypatch):
         lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
     )
     monkeypatch.setattr(
-        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 12)
+        write_action_planner,
+        "_resolve_target_date",
+        lambda _: date(2026, 10, 12),
     )
 
     for leave_types, expected_code in (
         (FakeLeaveTypes(), "no_leave_types"),
         (
             FakeLeaveTypes(
-                [SimpleNamespace(id=1, name="Annual"), SimpleNamespace(id=2, name="Medical")]
+                [
+                    SimpleNamespace(id=1, name="Annual"),
+                    SimpleNamespace(id=2, name="Medical"),
+                ]
             ),
             "leave_type_ambiguous",
         ),
@@ -1580,13 +1716,17 @@ def test_leave_planner_requests_a_reason_before_confirmation(monkeypatch):
         lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
     )
     monkeypatch.setattr(
-        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 12)
+        write_action_planner,
+        "_resolve_target_date",
+        lambda _: date(2026, 10, 12),
     )
     monkeypatch.setattr(
         write_action_module,
         "LeaveType",
         SimpleNamespace(
-            objects=SimpleNamespace(filter=lambda **_: FakeLeaveTypes([leave_type]))
+            objects=SimpleNamespace(
+                filter=lambda **_: FakeLeaveTypes([leave_type])
+            )
         ),
     )
 
@@ -1603,7 +1743,9 @@ def test_leave_planner_requests_a_reason_before_confirmation(monkeypatch):
     assert pending["target_data"]["leave_type_id"] == leave_type.id
 
 
-def test_leave_cancel_planner_requires_explicit_request_when_ambiguous(monkeypatch):
+def test_leave_cancel_planner_requires_explicit_request_when_ambiguous(
+    monkeypatch,
+):
     query = MagicMock()
     query.order_by.return_value = query
     query.__getitem__.return_value = query
@@ -1644,17 +1786,26 @@ def test_executor_revalidates_current_employee_scope(monkeypatch):
     monkeypatch.setattr(
         pipeline,
         "derive_scope",
-        lambda _user: {"unrestricted": False, "sections": ["C"], "subsections": ["C1"]},
+        lambda _user: {
+            "unrestricted": False,
+            "sections": ["C"],
+            "subsections": ["C1"],
+        },
     )
     monkeypatch.setattr(
         write_executor_module.Employee,
         "objects",
-        SimpleNamespace(get=lambda **_: SimpleNamespace(section="D", subsection="D1")),
+        SimpleNamespace(
+            get=lambda **_: SimpleNamespace(section="D", subsection="D1")
+        ),
     )
 
     with pytest.raises(CopilotError) as raised:
         write_action_executor._revalidate_authorization(
-            {"target_data": {"employee_id": 42}, "authorization_scope": {"sections": ["C"]}},
+            {
+                "target_data": {"employee_id": 42},
+                "authorization_scope": {"sections": ["C"]},
+            },
             system_admin(),
         )
 
@@ -1666,7 +1817,11 @@ def test_executor_rejects_action_when_target_employee_was_deleted(monkeypatch):
     monkeypatch.setattr(
         pipeline,
         "derive_scope",
-        lambda _user: {"unrestricted": False, "sections": ["C"], "subsections": []},
+        lambda _user: {
+            "unrestricted": False,
+            "sections": ["C"],
+            "subsections": [],
+        },
     )
 
     def missing_employee(**_):
@@ -1686,15 +1841,23 @@ def test_executor_rejects_action_when_target_employee_was_deleted(monkeypatch):
     assert raised.value.code == "employee_not_found"
 
 
-def test_executor_rejects_unsupported_action_type_before_audit_write(monkeypatch):
+def test_executor_rejects_unsupported_action_type_before_audit_write(
+    monkeypatch,
+):
     monkeypatch.setattr(
         write_executor_module.transaction, "atomic", lambda: nullcontext()
     )
-    monkeypatch.setattr(write_action_executor, "_revalidate_authorization", lambda *_: None)
+    monkeypatch.setattr(
+        write_action_executor, "_revalidate_authorization", lambda *_: None
+    )
 
     with pytest.raises(CopilotError) as raised:
         write_action_executor.execute_approved_action(
-            {"validated": True, "action_type": "unknown_write", "action_id": "a"},
+            {
+                "validated": True,
+                "action_type": "unknown_write",
+                "action_id": "a",
+            },
             system_admin(),
         )
 
@@ -1704,25 +1867,71 @@ def test_executor_rejects_unsupported_action_type_before_audit_write(monkeypatch
 @pytest.mark.parametrize(
     ("intent", "data", "expected"),
     [
-        ({"intent": "absence_count"}, [], "No absent employees were found for that date and authorized scope."),
-        ({"intent": "employee_lookup", "entities": {"is_active": False}}, [], "No inactive employees were found in your authorized scope."),
-        ({"intent": "absence_count"}, [{"value": 1}], "1 employee was absent on that date."),
-        ({"intent": "absence_count"}, [{"value": 3}], "3 employees were absent on that date."),
-        ({"intent": "employee_lookup", "source": "employee"}, [{"value": 2}], "2 employees matched your question."),
+        (
+            {"intent": "absence_count"},
+            [],
+            "No absent employees were found for that date and authorized scope.",
+        ),
+        (
+            {"intent": "employee_lookup", "entities": {"is_active": False}},
+            [],
+            "No inactive employees were found in your authorized scope.",
+        ),
+        (
+            {"intent": "absence_count"},
+            [{"value": 1}],
+            "1 employee was absent on that date.",
+        ),
+        (
+            {"intent": "absence_count"},
+            [{"value": 3}],
+            "3 employees were absent on that date.",
+        ),
         (
             {"intent": "employee_lookup", "source": "employee"},
-            [{"name": "Asha Rao", "is_active": False, "employment_type": "FULL_TIME", "department": "HR", "section": "C", "subsection": "C1"}],
+            [{"value": 2}],
+            "2 employees matched your question.",
+        ),
+        (
+            {"intent": "employee_lookup", "source": "employee"},
+            [
+                {
+                    "name": "Asha Rao",
+                    "is_active": False,
+                    "employment_type": "FULL_TIME",
+                    "department": "HR",
+                    "section": "C",
+                    "subsection": "C1",
+                }
+            ],
             "Asha Rao is an inactive full_time employee in HR, Section C, Subsection C1.",
         ),
         (
-            {"intent": "attendance_lookup", "source": "attendance", "entities": {"employee_id": 7}},
-            [{"first_name": "Asha", "last_name": "Rao", "date": "2026-10-12", "status": "HALF_DAY"}],
+            {
+                "intent": "attendance_lookup",
+                "source": "attendance",
+                "entities": {"employee_id": 7},
+            },
+            [
+                {
+                    "first_name": "Asha",
+                    "last_name": "Rao",
+                    "date": "2026-10-12",
+                    "status": "HALF_DAY",
+                }
+            ],
             "Asha Rao was Half day on 2026-10-12.",
         ),
-        ({"intent": "employee_lookup", "source": "employee"}, [{"category": "section", "value": "C"}], "I found 1 result group(s). See the data below for details."),
+        (
+            {"intent": "employee_lookup", "source": "employee"},
+            [{"category": "section", "value": "C"}],
+            "I found 1 result group(s). See the data below for details.",
+        ),
     ],
 )
-def test_pipeline_generates_answers_for_common_result_shapes(intent, data, expected):
+def test_pipeline_generates_answers_for_common_result_shapes(
+    intent, data, expected
+):
     assert pipeline.generate_answer(intent, data) == expected
 
 
@@ -1738,27 +1947,42 @@ def test_pipeline_generates_answers_for_common_result_shapes(intent, data, expec
 def test_write_planner_resolves_supported_and_unknown_relative_dates(
     monkeypatch, expression, expected
 ):
-    monkeypatch.setattr(write_action_module.timezone, "localdate", lambda: date(2026, 10, 14))
-    assert write_action_planner._resolve_target_date({"temporal_expression": expression}) == expected
+    monkeypatch.setattr(
+        write_action_module.timezone, "localdate", lambda: date(2026, 10, 14)
+    )
+    assert (
+        write_action_planner._resolve_target_date(
+            {"temporal_expression": expression}
+        )
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
     ("status", "reason", "expected_detail"),
     [
         ("PRESENT", "", "; check-in 09:00; check-out 17:00"),
-        ("LEAVE", "Family care", "; check-in cleared; check-out cleared; reason: Family care"),
+        (
+            "LEAVE",
+            "Family care",
+            "; check-in cleared; check-out cleared; reason: Family care",
+        ),
         ("ABSENT", "ignored", "; check-in cleared; check-out cleared"),
         ("REMOTE", "", "Status: REMOTE"),
     ],
 )
-def test_attendance_description_matches_status_semantics(status, reason, expected_detail):
+def test_attendance_description_matches_status_semantics(
+    status, reason, expected_detail
+):
     result = write_action_planner._attendance_description(
         "Asha Rao", date(2026, 10, 14), status, "09:00", "17:00", reason
     )
     assert expected_detail in result
 
 
-def test_pipeline_validates_departments_and_resolves_student_category(monkeypatch):
+def test_pipeline_validates_departments_and_resolves_student_category(
+    monkeypatch,
+):
     monkeypatch.setattr(
         pipeline.Employee,
         "objects",
@@ -1897,7 +2121,11 @@ def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
     monkeypatch.setattr(
         write_executor_module,
         "AttendanceEvent",
-        SimpleNamespace(objects=SimpleNamespace(filter=lambda **_: events_query, create=event_create)),
+        SimpleNamespace(
+            objects=SimpleNamespace(
+                filter=lambda **_: events_query, create=event_create
+            )
+        ),
     )
 
     with pytest.raises(CopilotError) as raised:
@@ -2013,7 +2241,7 @@ def test_leave_cancel_requires_a_linked_employee_profile():
     assert raised.value.code == "no_employee_profile"
 
 
-def test_regularization_review_requires_a_request_id_when_matches_are_ambiguous(
+def test_regularization_review_requires_id_for_ambiguous_matches(
     monkeypatch,
 ):
     query = MagicMock()
@@ -2022,7 +2250,9 @@ def test_regularization_review_requires_a_request_id_when_matches_are_ambiguous(
     monkeypatch.setattr(
         write_action_module,
         "RegularizationRequest",
-        SimpleNamespace(objects=SimpleNamespace(select_related=lambda *_: query)),
+        SimpleNamespace(
+            objects=SimpleNamespace(select_related=lambda *_: query)
+        ),
     )
 
     with pytest.raises(CopilotError) as raised:
@@ -2060,7 +2290,9 @@ def test_regularization_rejection_plan_waits_for_reason_and_keeps_confirmation(
     monkeypatch.setattr(
         write_action_module,
         "RegularizationRequest",
-        SimpleNamespace(objects=SimpleNamespace(select_related=lambda *_: query)),
+        SimpleNamespace(
+            objects=SimpleNamespace(select_related=lambda *_: query)
+        ),
     )
     monkeypatch.setattr(
         write_action_planner,
@@ -2115,12 +2347,17 @@ def test_employee_profile_query_returns_tool_data(api, monkeypatch):
         "get_employee_profile",
         lambda **kwargs: employee_data,
     )
-    monkeypatch.setattr(views, "generate_natural_answer", lambda *_a, **_k: "Profile found.")
+    monkeypatch.setattr(
+        views, "generate_natural_answer", lambda *_a, **_k: "Profile found."
+    )
 
     response = call_endpoint(
         factory,
         system_admin(),
-        {"message": "Show Asha Rao's profile", "conversation_id": "employee-profile"},
+        {
+            "message": "Show Asha Rao's profile",
+            "conversation_id": "employee-profile",
+        },
     )
 
     assert response.status_code == 200
@@ -2128,7 +2365,9 @@ def test_employee_profile_query_returns_tool_data(api, monkeypatch):
     assert response.data["data"]["columns"] == ["name", "department"]
 
 
-def test_pending_actions_view_returns_safe_error_when_store_fails(api, monkeypatch):
+def test_pending_actions_view_returns_safe_error_when_store_fails(
+    api, monkeypatch
+):
     factory, _ = api
     monkeypatch.setattr(
         views.pending_action_manager,
@@ -2146,7 +2385,9 @@ def test_pending_actions_view_returns_safe_error_when_store_fails(api, monkeypat
     assert "store unavailable" in response.data["detail"]
 
 
-def test_pipeline_rejects_department_ambiguity_before_query_planning(monkeypatch):
+def test_pipeline_rejects_department_ambiguity_before_query_planning(
+    monkeypatch,
+):
     monkeypatch.setattr(
         "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
         lambda *_args, **_kwargs: {
@@ -2230,7 +2471,9 @@ def test_pipeline_rechecks_resolved_employee_against_current_manager_scope(
     monkeypatch.setattr(
         pipeline.Employee,
         "objects",
-        SimpleNamespace(filter=lambda **_: SimpleNamespace(first=lambda: employee)),
+        SimpleNamespace(
+            filter=lambda **_: SimpleNamespace(first=lambda: employee)
+        ),
     )
     monkeypatch.setattr(
         "accounts.scope_service.employee_in_manager_scope",
@@ -2253,7 +2496,10 @@ def test_pipeline_rechecks_resolved_employee_against_current_manager_scope(
 
 
 def test_executor_rejects_cancelling_an_already_executed_action(monkeypatch):
-    action = SimpleNamespace(status="EXECUTED", cancel=lambda: pytest.fail("executed action was cancelled"))
+    action = SimpleNamespace(
+        status="EXECUTED",
+        cancel=lambda: pytest.fail("executed action was cancelled"),
+    )
     query = SimpleNamespace(first=lambda: action)
     monkeypatch.setattr(
         write_executor_module.CopilotPendingAction,
@@ -2262,7 +2508,9 @@ def test_executor_rejects_cancelling_an_already_executed_action(monkeypatch):
     )
 
     with pytest.raises(CopilotError) as raised:
-        write_executor_module.pending_action_manager.cancel_action("session", "action", 1)
+        write_executor_module.pending_action_manager.cancel_action(
+            "session", "action", 1
+        )
 
     assert raised.value.code == "action_not_cancellable"
 
@@ -2282,7 +2530,9 @@ def test_executor_marks_expired_pending_action_and_records_event(monkeypatch):
     )
     events = []
     monkeypatch.setattr(
-        write_executor_module, "record_event", lambda **kwargs: events.append(kwargs)
+        write_executor_module,
+        "record_event",
+        lambda **kwargs: events.append(kwargs),
     )
 
     with pytest.raises(CopilotError) as raised:
@@ -2351,7 +2601,10 @@ def test_pipeline_rejects_ambiguous_or_unresolved_required_entities(
             "unsupported_absence_range",
         ),
         (
-            {"start": timezone.localdate().isoformat(), "end": timezone.localdate().isoformat()},
+            {
+                "start": timezone.localdate().isoformat(),
+                "end": timezone.localdate().isoformat(),
+            },
             "incomplete_absence_period",
         ),
     ],
@@ -2572,7 +2825,9 @@ def test_regularization_planner_rejects_invalid_times_before_creating_action(
         lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
     )
     monkeypatch.setattr(
-        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 14)
+        write_action_planner,
+        "_resolve_target_date",
+        lambda _: date(2026, 10, 14),
     )
     attendance_query = MagicMock()
     attendance_query.filter.return_value.first.return_value = None
@@ -2600,6 +2855,7 @@ def test_regularization_planner_rejects_invalid_times_before_creating_action(
     assert raised.value.code == "invalid_regularization_time"
     attendance_query.filter.return_value.first.assert_called_once()
 
+
 @pytest.mark.parametrize(
     "sql",
     [
@@ -2615,12 +2871,16 @@ def test_pipeline_rejects_unsafe_sql_shapes(sql):
     assert raised.value.code == "sql_rejected"
 
 
-def test_pipeline_builds_comparison_and_trend_templates_with_scoped_parameters():
+def test_pipeline_builds_scoped_comparison_and_trend_templates():
     comparison = {
         "source": "attendance",
         "intent": "comparison",
         "filters": {"comparison_subsections": ["C1", "C2"]},
-        "scope": {"sections": ["C"], "subsections": ["C1"], "unrestricted": False},
+        "scope": {
+            "sections": ["C"],
+            "subsections": ["C1"],
+            "unrestricted": False,
+        },
         "limit": 100,
     }
     sql, params = pipeline.build_sql(comparison)
@@ -2632,7 +2892,11 @@ def test_pipeline_builds_comparison_and_trend_templates_with_scoped_parameters()
         "source": "attendance",
         "intent": "attendance_trend",
         "filters": {},
-        "scope": {"sections": ["C"], "subsections": ["C1"], "unrestricted": False},
+        "scope": {
+            "sections": ["C"],
+            "subsections": ["C1"],
+            "unrestricted": False,
+        },
         "limit": 50,
     }
     sql, params = pipeline.build_sql(trend)
@@ -2651,7 +2915,9 @@ def test_pipeline_builds_comparison_and_trend_templates_with_scoped_parameters()
         ("Show employees in department?", "which department"),
     ],
 )
-def test_pipeline_requests_missing_identity_and_scope_filters(question, expected_message):
+def test_pipeline_requests_missing_identity_and_scope_filters(
+    question, expected_message
+):
     with pytest.raises(CopilotError) as raised:
         pipeline._apply_deterministic_entities(question, "attendance", {})
     assert raised.value.code == "clarification_required"
@@ -2660,15 +2926,20 @@ def test_pipeline_requests_missing_identity_and_scope_filters(question, expected
 
 def test_regularization_planner_rejects_checkout_before_checkin(monkeypatch):
     monkeypatch.setattr(
-        write_action_planner, "_resolve_target_employee",
+        write_action_planner,
+        "_resolve_target_employee",
         lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
     )
     monkeypatch.setattr(
-        write_action_planner, "_resolve_target_date", lambda _: date(2026, 10, 14)
+        write_action_planner,
+        "_resolve_target_date",
+        lambda _: date(2026, 10, 14),
     )
     query = MagicMock()
     query.filter.return_value.first.return_value = None
-    monkeypatch.setattr(write_action_module, "Attendance", SimpleNamespace(objects=query))
+    monkeypatch.setattr(
+        write_action_module, "Attendance", SimpleNamespace(objects=query)
+    )
 
     with pytest.raises(CopilotError) as raised:
         write_action_planner._plan_regularization_create(
@@ -2681,26 +2952,39 @@ def test_regularization_planner_rejects_checkout_before_checkin(monkeypatch):
                     "check_out_time": "09:00",
                 },
             },
-            system_admin(), {"unrestricted": True}, "reversed-times",
+            system_admin(),
+            {"unrestricted": True},
+            "reversed-times",
         )
     assert raised.value.code == "invalid_regularization_time"
 
 
 def test_regularization_review_filters_by_attendance_date_range(monkeypatch):
     request = SimpleNamespace(
-        id=81, employee_id=42, attendance_date=date(2026, 10, 13), status="PENDING",
+        id=81,
+        employee_id=42,
+        attendance_date=date(2026, 10, 13),
+        status="PENDING",
         days=SimpleNamespace(exists=lambda: False),
-        employee=SimpleNamespace(user=SimpleNamespace(get_full_name=lambda: "Asha Rao", email="asha@example.test")),
+        employee=SimpleNamespace(
+            user=SimpleNamespace(
+                get_full_name=lambda: "Asha Rao", email="asha@example.test"
+            )
+        ),
     )
     query = MagicMock()
     query.filter.return_value = query
     query.order_by.return_value = [request]
     monkeypatch.setattr(
-        write_action_module, "RegularizationRequest",
-        SimpleNamespace(objects=SimpleNamespace(select_related=lambda *_: query)),
+        write_action_module,
+        "RegularizationRequest",
+        SimpleNamespace(
+            objects=SimpleNamespace(select_related=lambda *_: query)
+        ),
     )
     monkeypatch.setattr(
-        write_action_planner, "_resolve_target_employee",
+        write_action_planner,
+        "_resolve_target_employee",
         lambda *_: {"employee_id": 42, "employee_name": "Asha Rao"},
     )
     pending = write_action_planner._plan_regularization_review(
@@ -2710,20 +2994,28 @@ def test_regularization_review_filters_by_attendance_date_range(monkeypatch):
                 "employee_id": 42,
                 "date_range": {"start": "2026-10-13", "end": "2026-10-13"},
             },
-        }, system_admin(), {"unrestricted": True}, "review-date-range",
+        },
+        system_admin(),
+        {"unrestricted": True},
+        "review-date-range",
     )
     assert pending["target_data"]["request_id"] == 81
-    query.filter.assert_any_call(attendance_date__range=("2026-10-13", "2026-10-13"))
+    query.filter.assert_any_call(
+        attendance_date__range=("2026-10-13", "2026-10-13")
+    )
 
 
 def test_write_target_resolution_rejects_ambiguous_employee(monkeypatch):
     monkeypatch.setattr(
-        write_action_module.employee_resolver, "resolve_employee",
+        write_action_module.employee_resolver,
+        "resolve_employee",
         lambda **_: SimpleNamespace(status="ambiguous", employee_id=None),
     )
     with pytest.raises(CopilotError) as raised:
         write_action_planner._resolve_target_employee(
-            {"employee_name": "Asha Rao"}, system_admin(), {"unrestricted": True}
+            {"employee_name": "Asha Rao"},
+            system_admin(),
+            {"unrestricted": True},
         )
     assert raised.value.code == "employee_ambiguous"
 
@@ -2731,12 +3023,19 @@ def test_write_target_resolution_rejects_ambiguous_employee(monkeypatch):
 def test_write_target_resolution_rejects_missing_self_profile(monkeypatch):
     def missing(**_):
         raise write_action_module.Employee.DoesNotExist
+
     manager = SimpleNamespace(
         select_related=lambda *_: SimpleNamespace(get=missing)
     )
-    monkeypatch.setattr(write_action_module, "Employee", type(
-        "EmployeeWithoutProfile", (), {"objects": manager, "DoesNotExist": Exception}
-    ))
+    monkeypatch.setattr(
+        write_action_module,
+        "Employee",
+        type(
+            "EmployeeWithoutProfile",
+            (),
+            {"objects": manager, "DoesNotExist": Exception},
+        ),
+    )
     with pytest.raises(CopilotError) as raised:
         write_action_planner._resolve_target_employee(
             {}, system_admin(is_system_admin=False), {"unrestricted": True}
@@ -2748,45 +3047,61 @@ def test_missing_employee_attendance_plan_requires_an_explicit_date():
     with pytest.raises(CopilotError) as raised:
         write_action_planner._plan_missing_employee(
             {"intent": "attendance_update", "entities": {}},
-            system_admin(), {"unrestricted": True}, "missing-date",
+            system_admin(),
+            {"unrestricted": True},
+            "missing-date",
         )
     assert raised.value.code == "attendance_date_required"
 
 
 def test_pipeline_rejects_query_that_differs_from_approved_plan():
     plan = {
-        "source": "employee", "intent": "employee_count", "filters": {},
+        "source": "employee",
+        "intent": "employee_count",
+        "filters": {},
         "scope": {"sections": [], "subsections": [], "unrestricted": True},
         "limit": 10,
     }
     with pytest.raises(CopilotError) as raised:
-        pipeline.validate_sql("SELECT id FROM employees_employee LIMIT 10", plan)
+        pipeline.validate_sql(
+            "SELECT id FROM employees_employee LIMIT 10", plan
+        )
     assert raised.value.code == "sql_rejected"
 
 
-def test_conversation_context_preserves_explicit_identity_and_scoped_follow_up():
+def test_context_preserves_identity_and_scoped_follow_up():
     context = {"current_employee_id": 17, "current_employee_name": "Asha Rao"}
     matched = conversation.apply_context(
-        "Show Asha's attendance", {"entities": {"employee_name": "Asha"}}, context
+        "Show Asha's attendance",
+        {"entities": {"employee_name": "Asha"}},
+        context,
     )
     assert matched["entities"] == {"employee_id": 17}
     explicit = conversation.apply_context(
         "Show attendance for asha@example.test",
-        {"entities": {"employee_name": "Asha"}}, context,
+        {"entities": {"employee_name": "Asha"}},
+        context,
     )
     assert explicit["entities"] == {"employee_name": "Asha"}
 
     follow_up = conversation.apply_context(
-        "What about that request for her?", {"entities": {}},
-        {"current_employee_id": 17, "current_request_id": 81,
-         "current_date": "2026-10-01", "current_date_end": "2026-10-07",
-         "last_intent": "leave_lookup"},
+        "What about that request for her?",
+        {"entities": {}},
+        {
+            "current_employee_id": 17,
+            "current_request_id": 81,
+            "current_date": "2026-10-01",
+            "current_date_end": "2026-10-07",
+            "last_intent": "leave_lookup",
+        },
     )
     assert follow_up["entities"]["employee_id"] == 17
     assert follow_up["entities"]["request_id"] == 81
     assert follow_up["entities"]["date_range"] == {
-        "start": "2026-10-01", "end": "2026-10-07"
+        "start": "2026-10-01",
+        "end": "2026-10-07",
     }
+
 
 def _awaiting_write_draft(action_type, target_data, missing=None):
     return {
@@ -2800,24 +3115,36 @@ def _awaiting_write_draft(action_type, target_data, missing=None):
     }
 
 
-def test_attendance_follow_up_waits_for_missing_employee_without_executing(api, monkeypatch):
+def test_attendance_follow_up_waits_for_missing_employee_without_executing(
+    api, monkeypatch
+):
     factory, _ = api
     draft = _awaiting_write_draft(
         "attendance_update",
-        {"employee_id": None, "employee_name": None, "date": "2026-10-14", "target_status": "ABSENT"},
+        {
+            "employee_id": None,
+            "employee_name": None,
+            "date": "2026-10-14",
+            "target_status": "ABSENT",
+        },
         ["employee_name"],
     )
     updated = {}
-    monkeypatch.setattr(views.pending_action_manager, "get_awaiting_action", lambda *_: draft)
+    monkeypatch.setattr(
+        views.pending_action_manager, "get_awaiting_action", lambda *_: draft
+    )
     monkeypatch.setattr(views, "extract_pending_action_fields", lambda *_: {})
     monkeypatch.setattr(views, "extract_pending_action_fields", lambda *_: {})
     monkeypatch.setattr(
         views.pending_action_manager,
         "update_awaiting_action",
-        lambda _id, _user, _session, values: updated.update(values) or {**draft, **values},
+        lambda _id, _user, _session, values: updated.update(values)
+        or {**draft, **values},
     )
     response = call_endpoint(
-        factory, system_admin(), {"message": "continue", "conversation_id": "missing-target"}
+        factory,
+        system_admin(),
+        {"message": "continue", "conversation_id": "missing-target"},
     )
     assert response.status_code == 200
     assert response.data["query_status"] == "awaiting_information"
@@ -2827,41 +3154,94 @@ def test_attendance_follow_up_waits_for_missing_employee_without_executing(api, 
 
 def test_query_cancels_session_action_without_executing_it(api, monkeypatch):
     factory, _ = api
-    action = {"action_id": "session-cancel", "intent": "attendance_update", "conversation_id": "session-cancel"}
+    action = {
+        "action_id": "session-cancel",
+        "intent": "attendance_update",
+        "conversation_id": "session-cancel",
+    }
     cancelled = []
-    monkeypatch.setattr(views.pending_action_manager, "get_session_actions", lambda *_: {"session-cancel": action})
-    monkeypatch.setattr(views.pending_action_manager, "cancel_action", lambda *args: cancelled.append(args) or action)
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "get_session_actions",
+        lambda *_: {"session-cancel": action},
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "cancel_action",
+        lambda *args: cancelled.append(args) or action,
+    )
     monkeypatch.setattr(views, "record_event", lambda **_: None)
-    monkeypatch.setattr(views, "_record_copilot_action_event", lambda **_: None)
+    monkeypatch.setattr(
+        views, "_record_copilot_action_event", lambda **_: None
+    )
     monkeypatch.setattr(views, "update_action_message", lambda *args: None)
-    monkeypatch.setattr(views.write_action_executor, "execute_approved_action", lambda *_: pytest.fail("cancel must not execute"))
+    monkeypatch.setattr(
+        views.write_action_executor,
+        "execute_approved_action",
+        lambda *_: pytest.fail("cancel must not execute"),
+    )
 
     response = call_endpoint(
-        factory, system_admin(), {"message": "cancel", "conversation_id": "session-cancel"}
+        factory,
+        system_admin(),
+        {"message": "cancel", "conversation_id": "session-cancel"},
     )
     assert response.status_code == 200
     assert response.data["query_status"] == "cancelled"
-    assert cancelled == [(views.copilot_action_session_id(1, "session-cancel"), "session-cancel", 1)]
+    assert cancelled == [
+        (
+            views.copilot_action_session_id(1, "session-cancel"),
+            "session-cancel",
+            1,
+        )
+    ]
 
 
-def test_query_marks_failed_action_when_confirmation_execution_is_denied(api, monkeypatch):
+def test_query_marks_failed_action_when_confirmation_execution_is_denied(
+    api, monkeypatch
+):
     factory, _ = api
-    action = {"action_id": "session-fail", "intent": "attendance_update", "conversation_id": "session-fail"}
+    action = {
+        "action_id": "session-fail",
+        "intent": "attendance_update",
+        "conversation_id": "session-fail",
+    }
     failures = []
-    monkeypatch.setattr(views.pending_action_manager, "get_session_actions", lambda *_: {"session-fail": action})
-    monkeypatch.setattr(views.pending_action_manager, "approve_action", lambda *_: action)
     monkeypatch.setattr(
-        views.write_action_executor, "execute_approved_action",
-        lambda *_: (_ for _ in ()).throw(CopilotError("scope_denied", "Scope changed", 403)),
+        views.pending_action_manager,
+        "get_session_actions",
+        lambda *_: {"session-fail": action},
     )
-    monkeypatch.setattr(views.pending_action_manager, "mark_failed", lambda *args: failures.append(args))
+    monkeypatch.setattr(
+        views.pending_action_manager, "approve_action", lambda *_: action
+    )
+    monkeypatch.setattr(
+        views.write_action_executor,
+        "execute_approved_action",
+        lambda *_: (_ for _ in ()).throw(
+            CopilotError("scope_denied", "Scope changed", 403)
+        ),
+    )
+    monkeypatch.setattr(
+        views.pending_action_manager,
+        "mark_failed",
+        lambda *args: failures.append(args),
+    )
     monkeypatch.setattr(views, "record_event", lambda **_: None)
-    monkeypatch.setattr(views.HRCopilotActionApprovalView, "_record_failure", staticmethod(lambda *args: None))
-    monkeypatch.setattr(views, "_record_copilot_action_event", lambda **_: None)
+    monkeypatch.setattr(
+        views.HRCopilotActionApprovalView,
+        "_record_failure",
+        staticmethod(lambda *args: None),
+    )
+    monkeypatch.setattr(
+        views, "_record_copilot_action_event", lambda **_: None
+    )
     monkeypatch.setattr(views, "update_action_message", lambda *args: None)
 
     response = call_endpoint(
-        factory, system_admin(), {"message": "confirm", "conversation_id": "session-fail"}
+        factory,
+        system_admin(),
+        {"message": "confirm", "conversation_id": "session-fail"},
     )
     assert response.status_code == 403
     assert response.data["query_status"] == "rejected"

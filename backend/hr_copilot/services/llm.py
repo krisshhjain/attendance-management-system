@@ -282,7 +282,8 @@ def get_structured_intent(question, session_id=None, context=None):
             "Failed to normalize intent from LLM output.",
             503,
         ) from error
-    # Apply legacy validation for backward compatibility (with normalized source)
+    # Apply legacy validation for backward compatibility (with normalized
+    # source)
     intent, source, entities = (
         normalized_intent.get("intent"),
         normalized_intent.get("source"),
@@ -299,7 +300,8 @@ def get_structured_intent(question, session_id=None, context=None):
             503,
         )
 
-    # Entity validation is now handled by the normalizer, but keep legacy checks
+    # Entity validation is now handled by the normalizer, but keep legacy
+    # checks
     if set(entities.keys()) - ALLOWED_ENTITIES:
         raise CopilotError(
             "invalid_intent",

@@ -10,26 +10,32 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from attendance.models import (
+    Attendance,
+    AttendanceCorrection,
+    AttendanceEvent,
+    get_effective_attendance_events,
+)
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase
 from django.utils import timezone
-from rest_framework.test import APIRequestFactory, force_authenticate
-
-from attendance.models import (Attendance, AttendanceCorrection,
-                               AttendanceEvent,
-                               get_effective_attendance_events)
 from employees.models import Employee
 from hr_copilot import views
-from hr_copilot.models import (CopilotActionAudit, CopilotConversationContext,
-                               CopilotPendingAction)
+from hr_copilot.models import (
+    CopilotActionAudit,
+    CopilotPendingAction,
+)
 from hr_copilot.services.intent_normalizer import IntentNormalizer
 from hr_copilot.services.pipeline import CopilotError
 from hr_copilot.services.semantic_interpreter import semantic_interpreter
 from hr_copilot.services.write_actions import write_action_planner
-from hr_copilot.services.write_executor import (PendingActionManager,
-                                                pending_action_manager,
-                                                write_action_executor)
+from hr_copilot.services.write_executor import (
+    PendingActionManager,
+    pending_action_manager,
+    write_action_executor,
+)
 from leave_management.models import LeaveRequest, LeaveType
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 # The regular pytest suite has no pytest-django database plugin. These tests
 # are intentionally run by Django's test runner, which provisions a test DB.
@@ -263,10 +269,14 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
     def test_reported_mark_attendance_sentence_survives_name_to_id_resolution(
         self,
     ):
-        # This test validates NLP name→ID resolution and the write pipeline mechanics.
-        # The hardcoded date 2026-09-28 is intentionally in the past (from the original
-        # reported user scenario). Past attendance editing is SuperUser-only, so we use
-        # a SuperUser actor here. This is NOT a scope test; scope is not being verified.
+        # This test validates NLP name→ID resolution and the write pipeline
+        # mechanics.
+        # The hardcoded date 2026-09-28 is intentionally in the past (from the
+        # original
+        # reported user scenario). Past attendance editing is SuperUser-only,
+        # so we use
+        # a SuperUser actor here. This is NOT a scope test; scope is not being
+        # verified.
         superuser = get_user_model().objects.create_user(
             email="superuser-name-resolution@example.test",
             is_superuser=True,
@@ -307,7 +317,8 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
             {"check_in_time": "09:00", "check_out_time": "18:00"}
         )
 
-        # Use superuser for _plan_and_approve since past-date edit is SuperUser-only.
+        # Use superuser for _plan_and_approve since past-date edit is
+        # SuperUser-only.
         session_id = f"hr-copilot-user-{superuser.id}"
         pending_action = write_action_planner.plan_write_action(
             intent, superuser, session_id
@@ -483,7 +494,9 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
             any(
                 args[0] == [self.employee_user.email]
                 and args[1] == "Leave request approved"
-                for args, _kwargs in self.email_notification_dispatch.call_args_list
+                for args, _kwargs in (
+                    self.email_notification_dispatch.call_args_list
+                )
             )
         )
 
@@ -539,7 +552,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(result["status"], "DENIED")
         self.assertEqual(action.status, "EXECUTED")
 
-    def test_present_action_waits_for_both_times_and_followup_completes_same_action(
+    def test_present_action_waits_for_times_then_completes_same_action(
         self,
     ):
         target_date = date.today()
@@ -664,20 +677,27 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         )
 
     @patch("django.utils.timezone.localdate", return_value=date(2026, 9, 30))
-    def test_exact_ashish_present_conversation_preserves_slots_until_confirmation(
+    def test_present_conversation_preserves_slots_until_confirmation(
         self, _today
     ):
-        # This test validates multi-turn slot-filling (collecting check-in/out times
-        # across conversation turns) and conversation memory persistence. It does NOT
+        # This test validates multi-turn slot-filling (collecting check-in/out
+        # times
+        # across conversation turns) and conversation memory persistence. It
+        # does NOT
         # test authorization.
         #
-        # The sentence '29th September' is part of the original real-world user scenario
-        # and must remain to test realistic NLP parsing. The resolved date 2026-09-29 is
-        # past, so past-date editing requires a SuperUser actor (Rule 1 + Rule 3).
-        # Ashish is placed in section='C' (in scope) so scope itself is not the focus.
+        # The sentence '29th September' is part of the original real-world user
+        # scenario
+        # and must remain to test realistic NLP parsing. The resolved date
+        # 2026-09-29 is
+        # past, so past-date editing requires a SuperUser actor (Rule 1 + Rule
+        # 3).
+        # Ashish is placed in section='C' (in scope) so scope itself is not the
+        # focus.
         from unittest.mock import patch
 
-        # Create a SuperUser for this test: past attendance editing is SuperUser-only.
+        # Create a SuperUser for this test: past attendance editing is
+        # SuperUser-only.
         slot_superuser = get_user_model().objects.create_user(
             email="superuser-slot-test@example.test",
             is_superuser=True,
@@ -982,9 +1002,7 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
         self.assertEqual(audit.new_state["reason"], "Medical leave")
 
     def test_leave_without_reason_waits_for_information(self):
-        leave_type = LeaveType.objects.create(
-            name="Annual Leave", code="TEST-REASON"
-        )
+        LeaveType.objects.create(name="Annual Leave", code="TEST-REASON")
         intent = {
             "intent": "leave_create",
             "source": "leave",

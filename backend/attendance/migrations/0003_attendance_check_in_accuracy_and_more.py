@@ -6,48 +6,51 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('attendance', '0002_attendance_leave_request_alter_attendance_status'),
+        (
+            "attendance",
+            "0002_attendance_leave_request_alter_attendance_status",
+        ),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='attendance',
-            name='check_in_accuracy',
+            model_name="attendance",
+            name="check_in_accuracy",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='attendance',
-            name='check_in_distance',
+            model_name="attendance",
+            name="check_in_distance",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='attendance',
-            name='check_in_latitude',
+            model_name="attendance",
+            name="check_in_latitude",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='attendance',
-            name='check_in_longitude',
+            model_name="attendance",
+            name="check_in_longitude",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='attendance',
-            name='check_out_accuracy',
+            model_name="attendance",
+            name="check_out_accuracy",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='attendance',
-            name='check_out_distance',
+            model_name="attendance",
+            name="check_out_distance",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='attendance',
-            name='check_out_latitude',
+            model_name="attendance",
+            name="check_out_latitude",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='attendance',
-            name='check_out_longitude',
+            model_name="attendance",
+            name="check_out_longitude",
             field=models.FloatField(blank=True, null=True),
         ),
     ]

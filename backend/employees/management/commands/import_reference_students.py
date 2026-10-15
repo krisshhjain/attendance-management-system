@@ -1,11 +1,10 @@
 import re
 import unicodedata
 
+from accounts.models import User
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
-
-from accounts.models import User
 from employees.models import Employee
 
 STUDENTS = [

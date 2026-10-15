@@ -4,28 +4,33 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
+from attendance.models import (
+    Attendance,
+    RegularizationQuotaPolicy,
+    Shift,
+)
+from attendance.tasks import check_consecutive_absences
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import JsonResponse
 from django.test import RequestFactory, TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
-
-from attendance.models import (Attendance, AttendanceEvent, OfficeLocation,
-                               RegularizationQuotaPolicy, Shift)
-from attendance.tasks import check_consecutive_absences
 from employees.models import Employee
 from hr_copilot.models import CopilotPendingAction
 from hr_copilot.services.pipeline import CopilotError
-from hr_copilot.services.write_executor import (pending_action_manager,
-                                                write_action_executor)
+from hr_copilot.services.write_executor import (
+    pending_action_manager,
+    write_action_executor,
+)
 from hr_copilot.views import copilot_action_session_id
-from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
-from notifications.models import Notification
-from notifications.services import (create_notification,
-                                    queue_notification_after_commit)
+from leave_management.models import LeaveRequest, LeaveType
+from notifications.services import (
+    create_notification,
+    queue_notification_after_commit,
+)
 from notifications.tasks import send_notification_email
+from rest_framework.test import APIClient
 
 from .middleware import RequestContextMiddleware
 from .models import SystemLog
@@ -207,9 +212,9 @@ class RequestContextMiddlewareTests(TestCase):
         self.assertEqual(request.request_id, request_id)
         self.assertEqual(response["X-Request-ID"], request_id)
 
-    def test_record_event_receives_request_context(self):
+    def test_middleware_does_not_log_forbidden_security_outcome(self):
         with patch(
-            "system_logs.middleware.record_event", wraps=record_event
+            "system_logs.services.record_event", wraps=record_event
         ) as mocked:
             request, response = self.call_middleware(status=403)
 
@@ -243,9 +248,9 @@ class RequestContextMiddlewareTests(TestCase):
             content_type="application/json",
         )
         request.user = AnonymousUser()
-        response = RequestContextMiddleware(
-            lambda request: JsonResponse({}, status=401)
-        )(request)
+        RequestContextMiddleware(lambda request: JsonResponse({}, status=401))(
+            request
+        )
 
         self.assertEqual(SystemLog.objects.count(), 0)
 
@@ -340,7 +345,7 @@ class EmployeeAccountEventTests(TestCase):
             log.after_state, {"must_change_password": "[REDACTED]"}
         )
 
-    def test_admin_password_reset_rejects_passwords_that_fail_django_validation(
+    def test_admin_password_reset_rejects_invalid_passwords(
         self,
     ):
         employee = self.create_employee()
@@ -534,7 +539,7 @@ class AttendanceEventLoggingTests(TestCase):
         check_out = timezone.make_aware(
             datetime.combine(attendance_date, time(17, 0))
         )
-        attendance = Attendance.objects.create(
+        Attendance.objects.create(
             employee=self.employee,
             date=attendance_date,
             check_in=check_in,
@@ -1478,7 +1483,9 @@ class SystemLogAPITests(TestCase):
             "/api/system-logs/export/?export_format=json",
         )
         self.assertEqual(invalid_export.status_code, 400)
-        self.assertEqual(invalid_export.data["detail"], "format must be csv or xlsx.")
+        self.assertEqual(
+            invalid_export.data["detail"], "format must be csv or xlsx."
+        )
         invalid_filter = self.get_as(
             self.superuser,
             "/api/system-logs/export/?export_format=csv&category=unknown",

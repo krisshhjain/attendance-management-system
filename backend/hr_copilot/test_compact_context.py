@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Test the 5 specified queries with compact context system"""
 
-import json
 import os
 import sys
 from datetime import datetime
@@ -11,15 +10,16 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-from hr_copilot.services.llm import (generate_natural_answer,
-                                     get_structured_intent)
-from hr_copilot.services.pipeline import analyze_question
-from hr_copilot.services.providers import get_llm_provider
-from hr_copilot.services.session_memory import session_memory
+from hr_copilot.services.llm import (  # noqa: E402
+    generate_natural_answer,
+    get_structured_intent,
+)
+from hr_copilot.services.providers import get_llm_provider  # noqa: E402
+from hr_copilot.services.session_memory import session_memory  # noqa: E402
 
 
 def measure_context_size(messages):

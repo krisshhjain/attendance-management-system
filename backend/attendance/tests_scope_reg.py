@@ -1,12 +1,11 @@
 from datetime import timedelta
 
-from django.test import TestCase
-from django.utils import timezone
-from rest_framework.test import APIClient
-
 from accounts.models import ManagerScope, User
 from attendance.models import RegularizationRequest
+from django.test import TestCase
+from django.utils import timezone
 from employees.models import Employee
+from rest_framework.test import APIClient
 
 
 class RegularizationScopeTests(TestCase):
@@ -147,7 +146,8 @@ class RegularizationScopeTests(TestCase):
             403,
         )
 
-        # Reject out-of-scope (Approval requires times so it's harder to test here, reject just needs reason)
+        # Reject out-of-scope (Approval requires times so it's harder to test
+        # here, reject just needs reason)
         self.assertEqual(
             self.client.post(
                 f"/api/attendance/admin/regularization/{self.req_intern_d.id}/reject/",

@@ -1,4 +1,5 @@
 """
+# flake8: noqa: W291 -- trailing spaces align the printed architecture diagram.
 HR COPILOT ARCHITECTURE DIAGRAM
 ===============================
 

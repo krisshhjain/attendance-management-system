@@ -161,10 +161,14 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             "id": obj.shift.id,
             "code": obj.shift.code,
             "name": obj.shift.name,
-            "start_time": obj.shift.start_time.strftime("%H:%M")
-            if hasattr(obj.shift.start_time, "strftime")
-            else str(obj.shift.start_time),
-            "end_time": obj.shift.end_time.strftime("%H:%M")
-            if hasattr(obj.shift.end_time, "strftime")
-            else str(obj.shift.end_time),
+            "start_time": (
+                obj.shift.start_time.strftime("%H:%M")
+                if hasattr(obj.shift.start_time, "strftime")
+                else str(obj.shift.start_time)
+            ),
+            "end_time": (
+                obj.shift.end_time.strftime("%H:%M")
+                if hasattr(obj.shift.end_time, "strftime")
+                else str(obj.shift.end_time)
+            ),
         }

@@ -50,7 +50,7 @@ class Employee(models.Model):
     def get_effective_shift(self):
         """
         Get the effective shift for this employee based on employment type configuration.
-        
+
         Returns:
             - Employee's assigned shift if they have one (Employee.shift)
             - Single configured shift if exactly one exists for their employment type

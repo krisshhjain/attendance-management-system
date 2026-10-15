@@ -24,25 +24,56 @@ def backfill_legacy_manager_sections(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0004_user_hr_copilot_scope'),
+        ("accounts", "0004_user_hr_copilot_scope"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ManagerScope',
+            name="ManagerScope",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('scope_type', models.CharField(choices=[('SECTION', 'Section'), ('DEPARTMENT', 'Department')], max_length=20)),
-                ('value', models.CharField(max_length=100)),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('manager', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='manager_scopes', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "scope_type",
+                    models.CharField(
+                        choices=[
+                            ("SECTION", "Section"),
+                            ("DEPARTMENT", "Department"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                ("value", models.CharField(max_length=100)),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "manager",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="manager_scopes",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ('scope_type', 'value', 'id'),
-                'constraints': [models.UniqueConstraint(fields=('manager', 'scope_type', 'value'), name='unique_manager_scope_value')],
+                "ordering": ("scope_type", "value", "id"),
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("manager", "scope_type", "value"),
+                        name="unique_manager_scope_value",
+                    )
+                ],
             },
         ),
-        migrations.RunPython(backfill_legacy_manager_sections, migrations.RunPython.noop),
+        migrations.RunPython(
+            backfill_legacy_manager_sections, migrations.RunPython.noop
+        ),
     ]

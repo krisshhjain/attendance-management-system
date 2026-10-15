@@ -2,13 +2,15 @@
 
 import uuid
 from datetime import datetime, time, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from django.db import transaction
+from attendance.models import (
+    Attendance,
+    AttendanceEvent,
+    RegularizationRequest,
+    Shift,
+)
 from django.utils import timezone
-
-from attendance.models import (Attendance, AttendanceEvent,
-                               RegularizationRequest, Shift)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 
@@ -191,8 +193,10 @@ class WriteActionPlanner:
             )
 
         if target_status == "ABSENT":
-            from holidays.services import (attendance_required,
-                                           get_day_classification)
+            from holidays.services import (
+                attendance_required,
+                get_day_classification,
+            )
 
             if not attendance_required(target_date):
                 day = get_day_classification(target_date)
@@ -208,20 +212,26 @@ class WriteActionPlanner:
 
         current_state = {
             "exists": current_attendance is not None,
-            "current_status": current_attendance.status
-            if current_attendance
-            else None,
+            "current_status": (
+                current_attendance.status if current_attendance else None
+            ),
             "employee_id": employee_resolution["employee_id"],
             "date": target_date.isoformat(),
-            "check_in": current_attendance.check_in.isoformat()
-            if current_attendance and current_attendance.check_in
-            else None,
-            "check_out": current_attendance.check_out.isoformat()
-            if current_attendance and current_attendance.check_out
-            else None,
-            "working_duration": str(current_attendance.working_duration)
-            if current_attendance and current_attendance.working_duration
-            else None,
+            "check_in": (
+                current_attendance.check_in.isoformat()
+                if current_attendance and current_attendance.check_in
+                else None
+            ),
+            "check_out": (
+                current_attendance.check_out.isoformat()
+                if current_attendance and current_attendance.check_out
+                else None
+            ),
+            "working_duration": (
+                str(current_attendance.working_duration)
+                if current_attendance and current_attendance.working_duration
+                else None
+            ),
             "events": [
                 {
                     "id": event.id,
@@ -263,7 +273,6 @@ class WriteActionPlanner:
                     "Check-out must be later than check-in.",
                 )
         reason = (entities.get("reason") or "").strip()
-        original = (intent.get("original_query") or "").casefold()
         if target_status == "LEAVE" and not reason:
             missing.append("reason")
         if missing and "employee_name" in entities:
@@ -302,13 +311,15 @@ class WriteActionPlanner:
             "validation_errors": missing or None,
             "authorization_scope": scope,
             "requires_confirmation": True,
-            "description": timing_question
-            if set(missing) == {"check_in_time", "check_out_time"}
-            else (
-                f"Change {employee_resolution['employee_name']}'s attendance on {target_date.strftime('%B %d, %Y')} to {target_status}"
-                if not missing
-                else self._missing_question(
-                    employee_resolution["employee_name"], missing
+            "description": (
+                timing_question
+                if set(missing) == {"check_in_time", "check_out_time"}
+                else (
+                    f"Change {employee_resolution['employee_name']}'s attendance on {target_date.strftime('%B %d, %Y')} to {target_status}"
+                    if not missing
+                    else self._missing_question(
+                        employee_resolution["employee_name"], missing
+                    )
                 )
             ),
             "expires_at": timezone.now() + timedelta(minutes=10),
@@ -402,9 +413,11 @@ class WriteActionPlanner:
             "validation_errors": missing or None,
             "authorization_scope": scope,
             "requires_confirmation": True,
-            "description": f"Please provide the reason for {employee_resolution['employee_name']}'s leave."
-            if missing
-            else f"Create {duration_days}-day leave request for {employee_resolution['employee_name']} starting {start_date.strftime('%B %d, %Y')}: {reason}",
+            "description": (
+                f"Please provide the reason for {employee_resolution['employee_name']}'s leave."
+                if missing
+                else f"Create {duration_days}-day leave request for {employee_resolution['employee_name']} starting {start_date.strftime('%B %d, %Y')}: {reason}"
+            ),
             "expires_at": timezone.now() + timedelta(minutes=10),
         }
 
@@ -416,7 +429,8 @@ class WriteActionPlanner:
         """Plan a leave cancellation action."""
         entities = intent.get("entities", {})
 
-        # If no specific employee mentioned, assume user wants to cancel their own leave
+        # If no specific employee mentioned, assume user wants to cancel their
+        # own leave
         if not any(
             entities.get(key)
             for key in ("employee_name", "employee_email", "employee_id")
@@ -580,9 +594,11 @@ class WriteActionPlanner:
             "authorization_scope": scope,
             "requires_confirmation": True,
             "description": f"{target_status.title()} {employee['employee_name']}'s {leave_request.leave_type.name} leave from {leave_request.start_date:%B %d, %Y} to {leave_request.end_date:%B %d, %Y}",
-            "warning_message": "This review also updates attendance records for the requested leave dates."
-            if target_status == "APPROVED"
-            else None,
+            "warning_message": (
+                "This review also updates attendance records for the requested leave dates."
+                if target_status == "APPROVED"
+                else None
+            ),
             "expires_at": timezone.now() + timedelta(minutes=10),
         }
 
@@ -777,9 +793,11 @@ class WriteActionPlanner:
                 or req.employee.user.email,
             },
             {
-                "status": "REJECTED"
-                if intent["intent"] == "regularization_reject"
-                else "APPROVED",
+                "status": (
+                    "REJECTED"
+                    if intent["intent"] == "regularization_reject"
+                    else "APPROVED"
+                ),
                 "reason": reason,
             },
             {
@@ -906,7 +924,8 @@ class WriteActionPlanner:
                     "employee_required", "Employee name or email is required"
                 ) from error
 
-        # Verify every resolution path, including interpreter-resolved IDs, is scoped.
+        # Verify every resolution path, including interpreter-resolved IDs, is
+        # scoped.
         if not scope["unrestricted"]:
             from accounts.scope_service import employee_in_manager_scope
 
@@ -974,9 +993,7 @@ class WriteActionPlanner:
             target_status = (
                 "ABSENT"
                 if "absent" in original
-                else "LEAVE"
-                if "leave" in original
-                else "PRESENT"
+                else "LEAVE" if "leave" in original else "PRESENT"
             )
         target_status = {
             "ABSENT": "ABSENT",
@@ -1015,9 +1032,11 @@ class WriteActionPlanner:
             "action_id": str(uuid.uuid4()),
             "session_id": session_id,
             "user_id": user.id,
-            "action_type": "leave_create"
-            if intent_name == "leave_create"
-            else "attendance_update",
+            "action_type": (
+                "leave_create"
+                if intent_name == "leave_create"
+                else "attendance_update"
+            ),
             "intent": intent_name,
             "source": intent.get("source", "attendance"),
             "target_data": target_data,

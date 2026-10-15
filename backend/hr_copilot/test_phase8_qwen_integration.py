@@ -12,11 +12,13 @@ from unittest import SkipTest, TestCase
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-
 from employees.models import Employee
 from hr_copilot.services.llm import get_structured_intent
-from hr_copilot.services.providers import (LLMProviderError, get_llm_provider,
-                                           provider_health)
+from hr_copilot.services.providers import (
+    LLMProviderError,
+    get_llm_provider,
+    provider_health,
+)
 from hr_copilot.services.semantic_interpreter import semantic_interpreter
 
 

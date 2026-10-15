@@ -1,7 +1,6 @@
+from accounts.models import User
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-
-from accounts.models import User
 from employees.models import Employee
 
 

@@ -9,8 +9,11 @@ from datetime import date, timedelta
 from typing import Any, Dict
 
 from .pipeline import CopilotError
-from .regex_safety import (find_email_address, find_ordered_capture,
-                           has_ordered_regex_matches)
+from .regex_safety import (
+    find_email_address,
+    find_ordered_capture,
+    has_ordered_regex_matches,
+)
 
 
 def _is_find_employee_query(text: str) -> bool:
@@ -173,11 +176,11 @@ class IntentNormalizer:
     ) -> Dict[str, Any]:
         """
         Normalize LLM output to backend-compatible intent format.
-        
+
         Args:
             llm_output: Raw output from LLM
             original_query: Original user query for fallback processing
-            
+
         Returns:
             Normalized intent with correct source and action_type
         """
@@ -233,7 +236,8 @@ class IntentNormalizer:
             }
 
         # Keep the LLM as the semantic analyzer, while correcting a clear
-        # imperative attendance write if the model returned an unrelated read intent.
+        # imperative attendance write if the model returned an unrelated read
+        # intent.
         inferred_write = self._infer_attendance_write(original_query)
         if inferred_write:
             intent_name = "attendance_update"
@@ -390,9 +394,11 @@ class IntentNormalizer:
             r"\bemployee\s+details?\b", text
         ) or _is_find_employee_query(text):
             return "workforce_intelligence", {
-                "workforce_metric": "employee_details"
-                if "details" in text
-                else "employee_search"
+                "workforce_metric": (
+                    "employee_details"
+                    if "details" in text
+                    else "employee_search"
+                )
             }
         if (
             has_ordered_regex_matches(text, r"\bshift\b", r"\bassigned\b")
@@ -507,8 +513,10 @@ class IntentNormalizer:
             if name:
                 normalized["employee_name"] = name
 
-        # Keep identity/date extraction deterministic for common attendance-write
-        # phrasing; the LLM sometimes returns the right intent but omits entities.
+        # Keep identity/date extraction deterministic for common
+        # attendance-write
+        # phrasing; the LLM sometimes returns the right intent but omits
+        # entities.
         if intent in {"attendance_update", "attendance_create"}:
             if not normalized.get("employee_name") and not normalized.get(
                 "employee_email"

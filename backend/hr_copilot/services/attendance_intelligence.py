@@ -1,16 +1,19 @@
 """Read-only attendance intelligence built on the attendance domain rules."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
-from django.db.models import Q
+from attendance.models import (
+    Attendance,
+    calculate_completed_working_duration,
+    get_effective_attendance_events,
+)
 from django.utils import timezone
-
-from attendance.models import (Attendance, AttendanceEvent,
-                               calculate_completed_working_duration,
-                               get_effective_attendance_events)
 from employees.models import Employee
-from holidays.services import (get_day_classification, get_day_classifications,
-                               is_working_day)
+from holidays.services import (
+    get_day_classification,
+    get_day_classifications,
+    is_working_day,
+)
 from leave_management.models import LeaveRequest
 
 from .pipeline import CopilotError
@@ -196,9 +199,9 @@ class AttendanceIntelligence:
                         "employee_name": self._employee_name(employee),
                         "email": employee.user.email,
                         "check_in": attendance.check_in.isoformat(),
-                        "shift": employee.shift.name
-                        if employee.shift
-                        else None,
+                        "shift": (
+                            employee.shift.name if employee.shift else None
+                        ),
                     }
                 )
         return self._base(
@@ -308,9 +311,11 @@ class AttendanceIntelligence:
                     "date": target_date.isoformat(),
                     "status": state["status"],
                     "explanation": explanation,
-                    "check_in": events[0].timestamp.isoformat()
-                    if events and events[0].event_type == "CHECK_IN"
-                    else None,
+                    "check_in": (
+                        events[0].timestamp.isoformat()
+                        if events and events[0].event_type == "CHECK_IN"
+                        else None
+                    ),
                     "check_out": next(
                         (
                             event.timestamp.isoformat()

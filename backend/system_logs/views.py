@@ -11,12 +11,10 @@ from django.http import HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from leave_management.permissions import IsSuperAdmin
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from leave_management.permissions import IsSuperAdmin
 
 from .models import SystemLog
 from .serializers import SystemLogSerializer

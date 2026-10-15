@@ -1,9 +1,16 @@
 from django.urls import path
 
-from .views import (AdminEmployeePasswordChangeView, EmployeeCreateView,
-                    EmployeeDetailView, EmployeeFaceEnrollmentView,
-                    EmployeeListView, ManagerCreateView, ManagerDetailView,
-                    ManagerListView, ManagerPasswordChangeView)
+from .views import (
+    AdminEmployeePasswordChangeView,
+    EmployeeCreateView,
+    EmployeeDetailView,
+    EmployeeFaceEnrollmentView,
+    EmployeeListView,
+    ManagerCreateView,
+    ManagerDetailView,
+    ManagerListView,
+    ManagerPasswordChangeView,
+)
 
 urlpatterns = [
     path("", EmployeeCreateView.as_view(), name="employee-create"),

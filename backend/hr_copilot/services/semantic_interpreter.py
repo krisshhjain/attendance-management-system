@@ -5,7 +5,6 @@ from datetime import date, timedelta
 from typing import Any, Dict, Optional
 
 from django.utils import timezone
-
 from employees.models import Employee
 
 from .llm import get_structured_intent
@@ -46,12 +45,12 @@ class SemanticInterpreter:
     ) -> Dict[str, Any]:
         """
         Main entry point for semantic interpretation.
-        
+
         Args:
             question: Natural language HR query
             context: Conversation context for follow-up handling
             session_id: Session identifier for bounded memory
-            
+
         Returns:
             Structured intent with resolved entities and missing information
         """
@@ -370,7 +369,8 @@ class SemanticInterpreter:
         source = intent.get("source")
         intent_name = intent.get("intent")
 
-        # For attendance queries without temporal context, use the most recent available data
+        # For attendance queries without temporal context, use the most recent
+        # available data
         # instead of defaulting to "today" which might not have data yet
         if (
             (source == "attendance" or intent_name == "absence_lookup")
@@ -560,7 +560,8 @@ class SemanticInterpreter:
         # Check for section/subsection ambiguity when referenced vaguely
         if not entities.get("section") and not entities.get("subsection"):
             # Look for vague section references in the original query
-            # This would be handled by the LLM marking it as missing information
+            # This would be handled by the LLM marking it as missing
+            # information
             pass
 
 

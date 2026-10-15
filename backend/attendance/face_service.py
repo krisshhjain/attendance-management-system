@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple, Union
 
 import requests
 from django.conf import settings
-
 from employees.models import Employee, FaceProfile
 
 logger = logging.getLogger(__name__)
@@ -21,8 +20,6 @@ def _face_service_request_kwargs(payload, timeout):
 
 class FaceExtractionError(Exception):
     """Raised when face extraction fails or produces ambiguous results."""
-
-    pass
 
 
 class FaceLivenessError(FaceExtractionError):

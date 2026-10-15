@@ -1,15 +1,14 @@
 from datetime import timedelta
 from unittest.mock import patch
 
+from accounts.models import ManagerScope, User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
-from rest_framework import status
-from rest_framework.test import APIClient
-
-from accounts.models import ManagerScope, User
 from employees.models import Employee
 from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
+from rest_framework import status
+from rest_framework.test import APIClient
 
 
 class LeaveScopeTests(TestCase):
@@ -218,11 +217,15 @@ class LeaveScopeTests(TestCase):
         res = self.client.get("/api/leave/admin/requests/")
         ids = [r["id"] for r in res.data]
         self.assertIn(self.req_perm_eng.id, ids)
-        # Manager C scope is DEPARTMENT Engineering. Wait, intern_c and intern_d have department Engineering!
-        # Intern uses Section scope. If an intern is in Engineering, does Manager C see them?
+        # Manager C scope is DEPARTMENT Engineering. Wait, intern_c and
+        # intern_d have department Engineering!
+        # Intern uses Section scope. If an intern is in Engineering, does
+        # Manager C see them?
         # Let's check employee_in_manager_scope.
-        # "PERMANENT -> DEPARTMENT, INTERN -> SECTION". So manager C's DEPARTMENT scope should NOT match INTERN!
-        # Wait, the prompt says "Intern uses Section, Permanent uses Department".
+        # "PERMANENT -> DEPARTMENT, INTERN -> SECTION". So manager C's
+        # DEPARTMENT scope should NOT match INTERN!
+        # Wait, the prompt says "Intern uses Section, Permanent uses
+        # Department".
         self.assertNotIn(self.req_intern_c.id, ids)
         self.assertNotIn(self.req_perm_hr.id, ids)
 
@@ -269,7 +272,9 @@ class LeaveScopeTests(TestCase):
     def test_attachment_upload_validates_file_presence_type_and_size(self):
         self.client.force_authenticate(user=self.manager_a)
 
-        missing = self.client.post("/api/leave/upload/", {}, format="multipart")
+        missing = self.client.post(
+            "/api/leave/upload/", {}, format="multipart"
+        )
         self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(missing.data["error"], "No file provided.")
 
@@ -291,7 +296,9 @@ class LeaveScopeTests(TestCase):
             format="multipart",
         )
         self.assertEqual(oversized.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(oversized.data["error"], "File size exceeds 5MB limit.")
+        self.assertEqual(
+            oversized.data["error"], "File size exceeds 5MB limit."
+        )
 
     @patch(
         "leave_management.views.default_storage.save",
@@ -332,7 +339,8 @@ class LeaveScopeTests(TestCase):
         )
         self.assertEqual(malformed.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
-            malformed.data["error"], "Invalid date format. Expected YYYY-MM-DD."
+            malformed.data["error"],
+            "Invalid date format. Expected YYYY-MM-DD.",
         )
 
     def test_leave_duration_estimate_returns_working_day_total(self):

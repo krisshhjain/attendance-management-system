@@ -1,23 +1,27 @@
 from copy import deepcopy
 
+from accounts.models import ManagerScope
+from accounts.scope_service import (
+    employee_in_manager_scope,
+    filter_employees_by_manager_scope,
+)
+from attendance.face_service import FaceExtractionError, process_enrollment
 from django.contrib.auth import password_validation
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from leave_management.permissions import IsManagerOrSuperUser, IsSuperAdmin
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from accounts.models import ManagerScope
-from accounts.scope_service import (employee_in_manager_scope,
-                                    filter_employees_by_manager_scope)
-from attendance.face_service import FaceExtractionError, process_enrollment
-from leave_management.permissions import IsManagerOrSuperUser, IsSuperAdmin
 from system_logs.services import record_event
 
 from .models import Employee, FaceProfile
-from .serializers import (EmployeeCreateSerializer, EmployeeListSerializer,
-                          EmployeeUpdateSerializer)
+from .serializers import (
+    EmployeeCreateSerializer,
+    EmployeeListSerializer,
+    EmployeeUpdateSerializer,
+)
 
 
 def _employee_log_state(employee):

@@ -1,12 +1,14 @@
+from attendance.views import AdminDashboardView
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from attendance.views import AdminDashboardView
+from .health import health_check
 
 urlpatterns = [
+    path("healthz/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
     path("api/auth/", include("accounts.urls")),
     path(

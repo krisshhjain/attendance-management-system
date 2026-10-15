@@ -1,7 +1,6 @@
 from datetime import date
 
 from django.core.management.base import BaseCommand
-
 from leave_management.models import LeavePolicy, LeaveType
 
 

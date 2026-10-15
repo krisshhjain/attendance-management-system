@@ -9,11 +9,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-from hr_copilot.services.llm import generate_natural_answer
+from hr_copilot.services.llm import generate_natural_answer  # noqa: E402
 
 
 def test_response_generation_fallback():

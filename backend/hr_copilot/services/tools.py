@@ -4,10 +4,16 @@ from employees.models import Employee
 
 from .attendance_intelligence import attendance_intelligence
 from .employee_resolver import employee_resolver
-from .leave_regularization_intelligence import \
-    leave_regularization_intelligence
-from .pipeline import (CopilotError, build_sql, execute_query,
-                       serialize_result, validate_sql)
+from .leave_regularization_intelligence import (
+    leave_regularization_intelligence,
+)
+from .pipeline import (
+    CopilotError,
+    build_sql,
+    execute_query,
+    serialize_result,
+    validate_sql,
+)
 from .workforce_intelligence import workforce_intelligence
 
 

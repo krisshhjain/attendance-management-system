@@ -1,8 +1,8 @@
 """CPU MiniFASNet face presentation-attack detection for the FR service."""
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -10,14 +10,15 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-
 _MODEL_DIR = Path(__file__).resolve().parent / "models"
 _ANTISPOOF_MODEL = _MODEL_DIR / "mini_fas_best_model_quantized.onnx"
 _FACE_DETECTOR_MODEL = _MODEL_DIR / "mini_fas_detector_quantized.onnx"
 _INPUT_SIZE = 128
 # Provisional score boundary; default preserves the existing MiniFASNet rule.
 # Set FR_LIVENESS_REAL_LOGIT_THRESHOLD only during controlled calibration.
-_REAL_LOGIT_THRESHOLD = float(os.environ.get("FR_LIVENESS_REAL_LOGIT_THRESHOLD", "0.0"))
+_REAL_LOGIT_THRESHOLD = float(
+    os.environ.get("FR_LIVENESS_REAL_LOGIT_THRESHOLD", "0.0")
+)
 
 
 @dataclass(frozen=True)
@@ -36,17 +37,22 @@ def _load_runtime():
     """Load the quantized ONNX classifier and YuNet crop detector once."""
     for model_path in (_ANTISPOOF_MODEL, _FACE_DETECTOR_MODEL):
         if not model_path.is_file():
-            raise RuntimeError(f"Required liveness model is missing: {model_path.name}")
+            raise RuntimeError(
+                f"Required liveness model is missing: {model_path.name}"
+            )
 
     options = ort.SessionOptions()
     options.intra_op_num_threads = 1
     options.inter_op_num_threads = 1
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     classifier = ort.InferenceSession(
-        str(_ANTISPOOF_MODEL), sess_options=options, providers=["CPUExecutionProvider"]
+        str(_ANTISPOOF_MODEL),
+        sess_options=options,
+        providers=["CPUExecutionProvider"],
     )
     # A lower detector floor retains dim/glasses faces; the anti-spoof
-    # classifier still decides live versus spoof, and missing detections fail closed.
+    # classifier still decides live versus spoof, and missing detections fail
+    # closed.
     detector = cv2.FaceDetectorYN.create(
         str(_FACE_DETECTOR_MODEL), "", (320, 320), 0.2, 0.3, 5000
     )
@@ -58,7 +64,9 @@ def _load_runtime():
     return detector, classifier, inputs[0].name
 
 
-def _largest_face_crop(rgb_image: np.ndarray, detector) -> tuple[np.ndarray, int]:
+def _largest_face_crop(
+    rgb_image: np.ndarray, detector
+) -> tuple[np.ndarray, int]:
     height, width = rgb_image.shape[:2]
     bgr_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
     detector.setInputSize((width, height))
@@ -90,11 +98,18 @@ def _largest_face_crop(rgb_image: np.ndarray, detector) -> tuple[np.ndarray, int
 
     pad_left, pad_top = max(0, -crop_x1), max(0, -crop_y1)
     pad_right, pad_bottom = max(0, crop_x2 - width), max(0, crop_y2 - height)
-    crop = rgb_image[max(0, crop_y1):min(height, crop_y2),
-                     max(0, crop_x1):min(width, crop_x2)]
+    crop = rgb_image[
+        max(0, crop_y1):min(height, crop_y2),
+        max(0, crop_x1):min(width, crop_x2),
+    ]
     if any((pad_left, pad_top, pad_right, pad_bottom)):
         crop = cv2.copyMakeBorder(
-            crop, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_REFLECT_101
+            crop,
+            pad_top,
+            pad_bottom,
+            pad_left,
+            pad_right,
+            cv2.BORDER_REFLECT_101,
         )
     if crop.size == 0:
         raise ValueError("Unable to crop detected face")
@@ -110,9 +125,13 @@ def assess_liveness(image: np.ndarray) -> LivenessResult:
 
     detector, classifier, input_name = _load_runtime()
     face_crop, _ = _largest_face_crop(image, detector)
-    resized = cv2.resize(face_crop, (_INPUT_SIZE, _INPUT_SIZE), interpolation=cv2.INTER_AREA)
+    resized = cv2.resize(
+        face_crop, (_INPUT_SIZE, _INPUT_SIZE), interpolation=cv2.INTER_AREA
+    )
     tensor = (resized.astype(np.float32) / 255.0).transpose(2, 0, 1)[None, ...]
-    logits = np.asarray(classifier.run(None, {input_name: tensor})[0], dtype=np.float32)
+    logits = np.asarray(
+        classifier.run(None, {input_name: tensor})[0], dtype=np.float32
+    )
     if logits.shape != (1, 2) or not np.isfinite(logits).all():
         raise RuntimeError("MiniFASNet returned invalid scores")
 

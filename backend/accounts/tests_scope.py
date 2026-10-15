@@ -1,13 +1,16 @@
 from django.test import TestCase
-
 from employees.models import Employee
-from employees.serializers import (EmployeeCreateSerializer,
-                                   EmployeeUpdateSerializer)
+from employees.serializers import (
+    EmployeeCreateSerializer,
+    EmployeeUpdateSerializer,
+)
 from employees.views import _normalize_manager_scopes
 
 from .models import ManagerScope, User
-from .scope_service import (employee_in_manager_scope,
-                            filter_employees_by_manager_scope)
+from .scope_service import (
+    employee_in_manager_scope,
+    filter_employees_by_manager_scope,
+)
 
 
 class ManagerScopeFoundationTests(TestCase):

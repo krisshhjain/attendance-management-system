@@ -3,14 +3,19 @@
 import time
 
 from django.test import SimpleTestCase
-
 from hr_copilot.services.conversation import apply_context
-from hr_copilot.services.intent_normalizer import (IntentNormalizer,
-                                                   _is_find_employee_query)
-from hr_copilot.services.pipeline import (CopilotError,
-                                          _apply_deterministic_entities)
-from hr_copilot.services.regex_safety import (find_email_address,
-                                              has_ordered_regex_matches)
+from hr_copilot.services.intent_normalizer import (
+    IntentNormalizer,
+    _is_find_employee_query,
+)
+from hr_copilot.services.pipeline import (
+    CopilotError,
+    _apply_deterministic_entities,
+)
+from hr_copilot.services.regex_safety import (
+    find_email_address,
+    has_ordered_regex_matches,
+)
 from hr_copilot.services.semantic_interpreter import SemanticInterpreter
 
 

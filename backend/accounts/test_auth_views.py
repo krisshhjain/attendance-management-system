@@ -1,6 +1,5 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
-
 from system_logs.models import SystemLog
 
 from .models import User

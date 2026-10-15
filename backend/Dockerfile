@@ -9,8 +9,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY pip-bootstrap.lock requirements.lock ./
-RUN python -m pip install --no-cache-dir --require-hashes -r pip-bootstrap.lock \
-    && python -m pip install --require-hashes -r requirements.lock
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir --require-hashes -r pip-bootstrap.lock \
+    && python -m pip install --require-hashes -r requirements.lock \
+    && rm -rf /usr/local/lib/python3.10/site-packages/pip \
+        /usr/local/lib/python3.10/site-packages/pip-*.dist-info \
+        /usr/local/lib/python3.10/ensurepip \
+        /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.10
 
 COPY manage.py ./manage.py
 COPY accounts/ ./accounts/
@@ -26,9 +33,15 @@ COPY system_logs/ ./system_logs/
 COPY entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh \
     && chmod 0755 /entrypoint.sh \
+    && install -d -o nobody -g nogroup -m 0700 /home/app \
     && mkdir -p /app/media \
     && chown nobody:nogroup /app/media
 
+ENV HOME=/home/app
+
 USER nobody:nogroup
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=3)"]
 
 ENTRYPOINT ["/entrypoint.sh"]

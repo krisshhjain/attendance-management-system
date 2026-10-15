@@ -1,24 +1,27 @@
 from datetime import date, timedelta
 
+from accounts.scope_service import filter_employees_by_manager_scope
+from attendance.models import Attendance, AttendanceEvent
 from celery import shared_task
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-
-from accounts.scope_service import filter_employees_by_manager_scope
-from attendance.models import Attendance, AttendanceEvent
 from employees.models import Employee
 from holidays.services import is_working_day
 from leave_management.models import LeaveRequest
 from notifications.services import (
-    active_manager_users, get_or_create_notification,
-    queue_deduplicated_notification_after_commit)
+    active_manager_users,
+    get_or_create_notification,
+    queue_deduplicated_notification_after_commit,
+)
 from system_logs.services import record_event
 
 
 def _is_regularization_correction(event):
-    from attendance.models import (RegularizationRequest,
-                                   RegularizationRequestDay)
+    from attendance.models import (
+        RegularizationRequest,
+        RegularizationRequestDay,
+    )
 
     return (
         RegularizationRequest.objects.filter(

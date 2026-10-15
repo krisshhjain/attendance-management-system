@@ -5,7 +5,6 @@ from django.contrib.auth import get_user_model
 from django.core.management import CommandError, call_command
 from django.db import IntegrityError
 from django.test import TestCase
-
 from employees.models import Employee, FaceProfile
 
 User = get_user_model()

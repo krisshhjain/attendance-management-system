@@ -4,25 +4,35 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db import transaction
+from employees.models import Employee
+from notifications.services import queue_manager_notifications_after_commit
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from employees.models import Employee
-from notifications.services import queue_manager_notifications_after_commit
 from system_logs.services import record_event
 
 from .models import LeavePolicy, LeaveRequest, LeaveType
-from .permissions import (IsAdminOrSuperAdmin, IsEmployee, IsManagerOrAdmin,
-                          IsSystemAdminOrSuperAdminReadOnly)
-from .serializers import (CreateLeaveRequestSerializer, LeavePolicySerializer,
-                          LeaveRequestSerializer, LeaveTypeSerializer)
-from .services import (approve_leave_request,
-                       calculate_employee_leave_balances,
-                       calculate_working_days, cancel_leave_request,
-                       deny_leave_request, validate_leave_request)
+from .permissions import (
+    IsEmployee,
+    IsManagerOrAdmin,
+    IsSystemAdminOrSuperAdminReadOnly,
+)
+from .serializers import (
+    CreateLeaveRequestSerializer,
+    LeavePolicySerializer,
+    LeaveRequestSerializer,
+    LeaveTypeSerializer,
+)
+from .services import (
+    approve_leave_request,
+    calculate_employee_leave_balances,
+    calculate_working_days,
+    cancel_leave_request,
+    deny_leave_request,
+    validate_leave_request,
+)
 
 
 def _leave_log_state(leave_request):
@@ -36,13 +46,17 @@ def _leave_log_state(leave_request):
         "duration_days": str(leave_request.duration_days),
         "status": leave_request.status,
         "reviewed_by_id": leave_request.reviewed_by_id,
-        "reviewed_at": leave_request.reviewed_at.isoformat()
-        if leave_request.reviewed_at
-        else None,
+        "reviewed_at": (
+            leave_request.reviewed_at.isoformat()
+            if leave_request.reviewed_at
+            else None
+        ),
         "cancelled_by_id": leave_request.cancelled_by_id,
-        "cancelled_at": leave_request.cancelled_at.isoformat()
-        if leave_request.cancelled_at
-        else None,
+        "cancelled_at": (
+            leave_request.cancelled_at.isoformat()
+            if leave_request.cancelled_at
+            else None
+        ),
     }
 
 
@@ -71,9 +85,9 @@ def _leave_policy_log_state(policy):
         "min_notice_days": policy.min_notice_days,
         "is_active": policy.is_active,
         "effective_from": policy.effective_from.isoformat(),
-        "effective_to": policy.effective_to.isoformat()
-        if policy.effective_to
-        else None,
+        "effective_to": (
+            policy.effective_to.isoformat() if policy.effective_to else None
+        ),
     }
 
 
@@ -176,9 +190,13 @@ class EmployeeLeaveRequestsView(APIView):
         except ValidationError as e:
             return Response(
                 {
-                    "error": e.message
-                    if hasattr(e, "message")
-                    else str(e.messages[0] if hasattr(e, "messages") else e)
+                    "error": (
+                        e.message
+                        if hasattr(e, "message")
+                        else str(
+                            e.messages[0] if hasattr(e, "messages") else e
+                        )
+                    )
                 },
                 status=400,
             )
@@ -539,8 +557,9 @@ class AdminEmployeeLeaveBalancesView(APIView):
                 }
             )
         else:
-            from accounts.scope_service import \
-                filter_employees_by_manager_scope
+            from accounts.scope_service import (
+                filter_employees_by_manager_scope,
+            )
 
             employees = filter_employees_by_manager_scope(
                 request.user,
@@ -800,5 +819,5 @@ class FileUploadView(APIView):
                 }
             )
 
-        except Exception as e:
+        except Exception:
             return Response({"error": "Failed to upload file."}, status=500)

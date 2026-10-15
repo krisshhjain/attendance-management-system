@@ -3,29 +3,43 @@ import time
 import uuid
 from datetime import datetime
 
+from attendance.models import Attendance
+from leave_management.models import LeaveType
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from attendance.models import Attendance
-from leave_management.models import LeaveType
 from system_logs.services import record_event
 
 from .models import CopilotActionAudit, CopilotPendingAction, CopilotQueryAudit
-from .services.conversation import (append_message, apply_context,
-                                    load_context, load_messages, save_context,
-                                    update_action_message)
-from .services.llm import (extract_pending_action_fields,
-                           generate_natural_answer)
-from .services.pipeline import (CopilotError, analyze_question, build_sql,
-                                derive_scope, execute_query, generate_answer,
-                                plan_query, serialize_result, validate_sql)
+from .services.conversation import (
+    append_message,
+    apply_context,
+    load_context,
+    load_messages,
+    save_context,
+    update_action_message,
+)
+from .services.llm import (
+    extract_pending_action_fields,
+    generate_natural_answer,
+)
+from .services.pipeline import (
+    CopilotError,
+    analyze_question,
+    derive_scope,
+    execute_query,
+    generate_answer,
+    plan_query,
+    validate_sql,
+)
 from .services.providers import provider_health
 from .services.response_schema import safe_error_message
 from .services.tools import hr_tools
 from .services.write_actions import write_action_planner
-from .services.write_executor import (pending_action_manager,
-                                      write_action_executor)
+from .services.write_executor import (
+    pending_action_manager,
+    write_action_executor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -310,9 +324,9 @@ class HRCopilotQueryView(APIView):
                         current_state.update(
                             {
                                 "exists": attendance is not None,
-                                "current_status": attendance.status
-                                if attendance
-                                else None,
+                                "current_status": (
+                                    attendance.status if attendance else None
+                                ),
                                 "employee_id": employee["employee_id"],
                                 "date": target_data["date"],
                             }
@@ -662,11 +676,11 @@ class HRCopilotQueryView(APIView):
                                     "proposed_changes"
                                 ],
                                 "current_state": current_state,
-                                "expires_at": pending_action[
-                                    "expires_at"
-                                ].isoformat()
-                                if pending_action.get("expires_at")
-                                else None,
+                                "expires_at": (
+                                    pending_action["expires_at"].isoformat()
+                                    if pending_action.get("expires_at")
+                                    else None
+                                ),
                             },
                             "data": None,
                             "visualization": None,
@@ -926,9 +940,11 @@ class HRCopilotQueryView(APIView):
                     question.strip(),
                     intent.get("intent") if intent else "unknown",
                     intent.get("entities") if intent else {},
-                    intent.get("entities", {}).get("temporal_scope")
-                    if intent
-                    else None,
+                    (
+                        intent.get("entities", {}).get("temporal_scope")
+                        if intent
+                        else None
+                    ),
                     scope,
                     (time.monotonic() - started_at) * 1000,
                     "clarification_or_rejection",
@@ -981,25 +997,29 @@ class HRCopilotQueryView(APIView):
             )
             return Response(
                 {
-                    "response_type": "clarification"
-                    if error.code.endswith("ambiguous")
-                    or error.code
-                    in {
-                        "clarification_required",
-                        "employee_required",
-                        "request_required",
-                    }
-                    else "error",
+                    "response_type": (
+                        "clarification"
+                        if error.code.endswith("ambiguous")
+                        or error.code
+                        in {
+                            "clarification_required",
+                            "employee_required",
+                            "request_required",
+                        }
+                        else "error"
+                    ),
                     "detail": public_message,
                     "answer": public_message,
                     "intent": intent["intent"] if intent else "unknown",
-                    "scope": {
-                        "sections": scope.get("sections", []),
-                        "subsections": scope.get("subsections", []),
-                        "departments": scope.get("departments", []),
-                    }
-                    if scope
-                    else None,
+                    "scope": (
+                        {
+                            "sections": scope.get("sections", []),
+                            "subsections": scope.get("subsections", []),
+                            "departments": scope.get("departments", []),
+                        }
+                        if scope
+                        else None
+                    ),
                     "query_status": "rejected",
                     "conversation_id": conversation_id,
                     "data": None,
@@ -1053,13 +1073,15 @@ class HRCopilotQueryView(APIView):
                     "detail": "I couldn't complete that HR query. Please try a more specific question.",
                     "answer": "I couldn't complete that HR query. Please try a more specific question.",
                     "intent": intent["intent"] if intent else "unknown",
-                    "scope": {
-                        "sections": scope.get("sections", []),
-                        "subsections": scope.get("subsections", []),
-                        "departments": scope.get("departments", []),
-                    }
-                    if scope
-                    else None,
+                    "scope": (
+                        {
+                            "sections": scope.get("sections", []),
+                            "subsections": scope.get("subsections", []),
+                            "departments": scope.get("departments", []),
+                        }
+                        if scope
+                        else None
+                    ),
                     "query_status": "failed",
                     "conversation_id": conversation_id,
                     "data": None,
@@ -1145,7 +1167,7 @@ class HRCopilotActionApprovalView(APIView):
                 # Generate natural language response
                 from .services.llm import generate_natural_answer
 
-                natural_response = generate_natural_answer(
+                generate_natural_answer(
                     f"Action completed: {pending_action['description']}",
                     {"intent": pending_action["intent"]},
                     [result],
@@ -1218,7 +1240,7 @@ class HRCopilotActionApprovalView(APIView):
                 },
                 status=error.status,
             )
-        except Exception as e:
+        except Exception:
             logger.exception(f"Action {action} failed for {action_id}")
             if action == "approve" and action_id:
                 pending_action_manager.mark_failed(

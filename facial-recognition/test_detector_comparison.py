@@ -8,14 +8,12 @@ def get_embedding(image_path, detector):
         model_name="ArcFace",
         detector_backend=detector,
         normalize=False,
-        dtype=float
+        dtype=float,
     )
 
 
 def cosine_distance(a, b):
-    similarity = np.dot(a, b) / (
-        np.linalg.norm(a) * np.linalg.norm(b)
-    )
+    similarity = np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
     return 1 - similarity
 
 
