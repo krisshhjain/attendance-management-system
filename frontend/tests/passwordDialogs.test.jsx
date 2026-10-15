@@ -103,9 +103,9 @@ test("validates and resets an employee password, then clears the form on cancel"
   expect(payload).toBeUndefined();
 
   await user.clear(passwordInput);
-  await user.type(passwordInput, "temporary-2026");
+  await user.type(passwordInput, "ValidTest1!");
   await user.click(screen.getByRole("button", { name: "Reset Password" }));
-  await waitFor(() => expect(payload).toEqual({ new_password: "temporary-2026" }));
+  await waitFor(() => expect(payload).toEqual({ new_password: "ValidTest1!" }));
   expect(onSuccess).toHaveBeenCalledOnce();
   expect(state.success).toHaveBeenCalledWith("Employee password reset successfully.");
 

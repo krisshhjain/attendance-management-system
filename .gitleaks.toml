@@ -1,0 +1,14 @@
+title = "Attendance management system secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exclude local dependencies, duplicate worktrees, and generated local Bandit output from the intended source scan. These paths are not project source."
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.worktrees/''',
+  '''(^|/)\.kilo/worktrees/''',
+  '''^bandit-results\.json$''',
+]

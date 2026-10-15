@@ -10,20 +10,20 @@ class SystemAdminLoginViewTests(TestCase):
         self.client = APIClient()
         self.manager = User.objects.create_user(
             email="quality-manager@example.test",
-            password="Correct-pass-123",
+            password="test-password",
             is_system_admin=True,
         )
         self.employee = User.objects.create_user(
             email="quality-employee@example.test",
-            password="Correct-pass-123",
+            password="test-password",
         )
         self.superuser = User.objects.create_superuser(
             email="quality-root@example.test",
-            password="Correct-pass-123",
+            password="test-password",
             is_system_admin=True,
         )
 
-    def login(self, user, password="Correct-pass-123"):
+    def login(self, user, password="test-password"):
         return self.client.post(
             "/api/auth/systemadmin-login/",
             {"email": user.email, "password": password},
