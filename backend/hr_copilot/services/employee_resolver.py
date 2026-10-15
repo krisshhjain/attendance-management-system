@@ -16,7 +16,10 @@ class EmployeeResolution:
 
 
 class EmployeeResolver:
-    """Resolve only real employee records; never trust an LLM-provided identity."""
+    (
+        'Resolve only real employee records; never trust an LLM-provided '
+        'identity.'
+    )
 
     def resolve_employee(
         self, *, user=None, name=None, email=None, employee_id=None

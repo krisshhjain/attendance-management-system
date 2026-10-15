@@ -309,13 +309,15 @@ def recognize_sequence():
         or not SEQUENCE_MIN_FRAMES <= len(frames) <= SEQUENCE_MAX_FRAMES
     ):
         return (
-            jsonify(
-                {
-                    "status": "liveness_failed",
-                    "reason": "insufficient-frames",
-                    "error": f"A sequence must contain {SEQUENCE_MIN_FRAMES}-{SEQUENCE_MAX_FRAMES} frames",
-                }
-            ),
+            jsonify({
+                "status":
+                "liveness_failed",
+                "reason":
+                "insufficient-frames",
+                "error":
+                f"A sequence must contain {SEQUENCE_MIN_FRAMES}-"
+                    f"{SEQUENCE_MAX_FRAMES} frames",
+            }),
             400,
         )
     if not isinstance(candidates, list):

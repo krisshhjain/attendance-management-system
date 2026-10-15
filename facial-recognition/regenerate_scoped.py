@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""
-Scoped embedding regeneration script.
-
-Regenerates embeddings ONLY for the 20 identities and specific 6 files per identity
-that were used in the original experiment, based on the backed-up cache files.
-"""
+"""\nScoped embedding regeneration script.\n\nRegenerates embeddings ONLY for \
+the 20 identities and specific 6 files per identity\nthat were used in the \
+original experiment, based on the backed-up cache files.\n"""
 
 import json
 import logging
@@ -44,7 +41,10 @@ VAL_CACHE = CACHE_DIR / "val"
 def _save_embedding_atomically(
     cache_path: Path, embedding: np.ndarray
 ) -> None:
-    """Write a valid embedding without truncating an existing cache on failure."""
+    (
+        'Write a valid embedding without truncating an existing cache on '
+        'failure.'
+    )
     vector = np.asarray(embedding, dtype=np.float32)
     if vector.ndim != 1 or vector.size == 0 or not np.isfinite(vector).all():
         raise ValueError("Face model returned an invalid embedding")
@@ -368,7 +368,10 @@ class ScopedRegenerationStats:
 
 
 def find_image_file(identity_dir: Path, base_filename: str) -> Path:
-    """Find the actual image file given the base filename (without extension)."""
+    (
+        'Find the actual image file given the base filename (without '
+        'extension).'
+    )
     if not identity_dir.exists():
         raise FileNotFoundError(
             f"Identity directory not found: {identity_dir}"
@@ -391,8 +394,8 @@ def find_image_file(identity_dir: Path, base_filename: str) -> Path:
         pass
 
     raise FileNotFoundError(
-        f"Image file not found: {identity_dir}/{base_filename}{{.jpg,.jpeg,.png}}"
-    )
+        f"Image file not found: {identity_dir}/{base_filename}{{.jpg,.jpeg"
+        f",.png}}")
 
 
 def regenerate_scoped_embeddings():
@@ -400,8 +403,9 @@ def regenerate_scoped_embeddings():
     logger.info("=" * 80)
     logger.info("SCOPED FACE EMBEDDING REGENERATION")
     logger.info(
-        f"Processing {len(ORIGINAL_FILES)} identities, {sum(len(files) for files in ORIGINAL_FILES.values())} files total"
-    )
+        f"Processing {len(ORIGINAL_FILES)} identities, "
+        f"{sum(len(files) for files in ORIGINAL_FILES.values())} files tot"
+        f"al")
     logger.info("=" * 80)
 
     stats = ScopedRegenerationStats()
@@ -459,8 +463,8 @@ def regenerate_scoped_embeddings():
                 )
 
         logger.info(
-            f"Identity {identity}: {identity_successful}/{len(filenames)} files successful"
-        )
+            f"Identity {identity}: {identity_successful}/{len(filenames)} "
+            f"files successful")
 
     return stats
 

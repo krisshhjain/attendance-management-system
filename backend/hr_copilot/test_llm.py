@@ -338,7 +338,9 @@ def test_grounded_answers_use_only_the_typed_result(intent, data, expected):
         (
             {
                 "intent": "attendance_intelligence",
-                "entities": {"attendance_metric": "absence_streaks"},
+                "entities": {
+                    "attendance_metric": "absence_streaks"
+                },
             },
             [{}, {}],
             "Found 2 absence streaks of at least two working days.",
@@ -346,26 +348,34 @@ def test_grounded_answers_use_only_the_typed_result(intent, data, expected):
         (
             {
                 "intent": "attendance_intelligence",
-                "entities": {"attendance_metric": "summary"},
+                "entities": {
+                    "attendance_metric": "summary"
+                },
             },
             [{}],
             "Attendance summary returned 1 working-day row.",
         ),
         (
-            {"intent": "absence_count"},
-            [{"value": 1}],
+            {
+                "intent": "absence_count"
+            },
+            [{
+                "value": 1
+            }],
             "1 employee was absent.",
         ),
         (
-            {"intent": "employee_lookup", "source": "employee"},
-            [
-                {
-                    "first_name": "Asha",
-                    "last_name": "Rao",
-                    "department": "Engineering",
-                }
-            ],
-            "Asha Rao is an active employee in Engineering, Section , Subsection .",
+            {
+                "intent": "employee_lookup",
+                "source": "employee"
+            },
+            [{
+                "first_name": "Asha",
+                "last_name": "Rao",
+                "department": "Engineering",
+            }],
+            'Asha Rao is an active employee in Engineering, Section , '
+            'Subsection .',
         ),
     ],
 )
@@ -432,46 +442,56 @@ def test_grounding_validator_rejects_unverified_facts():
     ("intent", "data", "expected"),
     [
         (
-            {"intent": "absence_count"},
+            {
+                "intent": "absence_count"
+            },
             [],
             "No absent employees found for the specified criteria.",
         ),
         (
-            {"entities": {"is_active": False}},
+            {
+                "entities": {
+                    "is_active": False
+                }
+            },
             [],
             "No inactive employees found.",
         ),
         (
             {
                 "intent": "attendance_intelligence",
-                "entities": {"attendance_metric": "period_comparison"},
+                "entities": {
+                    "attendance_metric": "period_comparison"
+                },
             },
             [],
-            "Here is the attendance comparison for the current and previous week.",
+            'Here is the attendance comparison for the current and '
+            'previous week.',
         ),
         (
-            {"source": "employee"},
-            [
-                {
-                    "first_name": "Asha",
-                    "last_name": "Rao",
-                    "department": "People",
-                    "is_active": False,
-                    "employment_type": "CONTRACT",
-                }
-            ],
-            "Asha Rao is an inactive contract in People, Section , Subsection .",
+            {
+                "source": "employee"
+            },
+            [{
+                "first_name": "Asha",
+                "last_name": "Rao",
+                "department": "People",
+                "is_active": False,
+                "employment_type": "CONTRACT",
+            }],
+            'Asha Rao is an inactive contract in People, Section , '
+            'Subsection .',
         ),
         (
-            {"source": "attendance"},
-            [
-                {
-                    "first_name": "Asha",
-                    "last_name": "Rao",
-                    "date": "2026-10-13",
-                    "status": "INCOMPLETE_REVIEW",
-                }
-            ],
+            {
+                "source": "attendance"
+            },
+            [{
+                "first_name": "Asha",
+                "last_name": "Rao",
+                "date": "2026-10-13",
+                "status": "INCOMPLETE_REVIEW",
+            }],
             "Asha Rao was incomplete review on 2026-10-13.",
         ),
     ],

@@ -46,12 +46,18 @@ def get_day_classifications(target_dates) -> dict:
 
 
 def get_day_classification(target_date: date) -> dict:
-    """Resolve one business date, keeping weekly and company holidays distinct."""
+    (
+        'Resolve one business date, keeping weekly and company holidays '
+        'distinct.'
+    )
     return get_day_classifications([target_date])[target_date]
 
 
 def get_non_working_dates(start_date: date, end_date: date) -> list[date]:
-    """Return weekend and active company holiday dates in an inclusive range."""
+    (
+        'Return weekend and active company holiday dates in an inclusive '
+        'range.'
+    )
     dates = []
     current = start_date
     from datetime import timedelta

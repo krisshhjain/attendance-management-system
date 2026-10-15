@@ -213,10 +213,11 @@ class EmployeeLeaveRequestsView(APIView):
                 attachment=attachment,
                 status="PENDING",
             )
-            message = (
-                f"{employee.user.get_full_name().strip() or employee.user.email} "
-                f"submitted a {leave_type.name} leave request from {start_date} "
-                f"to {end_date}."
+            message = "{} submitted a {} leave request from {} to {}.".format(
+                employee.user.get_full_name().strip() or employee.user.email,
+                leave_type.name,
+                start_date,
+                end_date,
             )
             queue_manager_notifications_after_commit(
                 title="New leave request",
@@ -357,7 +358,8 @@ class AdminLeaveRequestDetailView(APIView):
         if not employee_in_manager_scope(request.user, leave_req.employee):
             return Response(
                 {
-                    "error": "You do not have permission to access this leave request."
+                    "error":
+                    "You do not have permission to access this leave request."
                 },
                 status=403,
             )
@@ -381,7 +383,8 @@ class AdminApproveLeaveView(APIView):
         if not employee_in_manager_scope(request.user, leave_req.employee):
             return Response(
                 {
-                    "error": "You do not have permission to access this leave request."
+                    "error":
+                    "You do not have permission to access this leave request."
                 },
                 status=403,
             )
@@ -432,7 +435,8 @@ class AdminDenyLeaveView(APIView):
         if not employee_in_manager_scope(request.user, leave_req.employee):
             return Response(
                 {
-                    "error": "You do not have permission to access this leave request."
+                    "error":
+                    "You do not have permission to access this leave request."
                 },
                 status=403,
             )
@@ -483,7 +487,8 @@ class AdminCancelApprovedLeaveView(APIView):
         if not employee_in_manager_scope(request.user, leave_req.employee):
             return Response(
                 {
-                    "error": "You do not have permission to access this leave request."
+                    "error":
+                    "You do not have permission to access this leave request."
                 },
                 status=403,
             )
@@ -542,7 +547,8 @@ class AdminEmployeeLeaveBalancesView(APIView):
             if not employee_in_manager_scope(request.user, emp):
                 return Response(
                     {
-                        "error": "You do not have permission to access this employee."
+                        "error":
+                        "You do not have permission to access this employee."
                     },
                     status=403,
                 )
@@ -793,7 +799,9 @@ class FileUploadView(APIView):
         if file_extension not in allowed_extensions:
             return Response(
                 {
-                    "error": f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
+                    "error":
+                    f"File type not allowed. Allowed types: "
+                        f"{', '.join(allowed_extensions)}"
                 },
                 status=400,
             )

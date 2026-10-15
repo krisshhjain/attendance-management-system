@@ -1,6 +1,7 @@
 from accounts.models import ManagerScope
 
-"""Phase 8: reproducible end-to-end coverage of the existing Copilot contract."""
+"""Phase 8: reproducible end-to-end coverage of the existing Copilot cont\
+ract."""
 
 from datetime import time, timedelta
 from decimal import Decimal
@@ -153,8 +154,10 @@ class Phase8ComprehensiveTests(TestCase):
         for question, expected_intent, expected_tool, entities in matrix:
             with self.subTest(question=question):
                 with patch(
-                    "hr_copilot.services.semantic_interpreter.get_structured_intent",
-                    return_value=self.raw_intent(expected_intent, entities),
+                    'hr_copilot.services.semantic_interpreter.get_stru'
+                    'ctured_intent',
+                        return_value=self.raw_intent(expected_intent,
+                                                     entities),
                 ):
                     intent = analyze_question(question)
                 self.assertEqual(intent["intent"], expected_intent)
@@ -194,15 +197,16 @@ class Phase8ComprehensiveTests(TestCase):
         )
         force_authenticate(request, user=self.admin)
         with (
-            patch(
-                "hr_copilot.services.semantic_interpreter.get_structured_intent",
-                return_value=raw,
-            ),
-            patch.object(
-                views.hr_tools,
-                "execute_attendance_intelligence",
-                return_value=tool_result,
-            ) as tool,
+                patch(
+                    'hr_copilot.services.semantic_interpreter.get_structur'
+                    'ed_intent',
+                    return_value=raw,
+                ),
+                patch.object(
+                    views.hr_tools,
+                    "execute_attendance_intelligence",
+                    return_value=tool_result,
+                ) as tool,
         ):
             response = views.HRCopilotQueryView.as_view()(request)
         self.assertEqual(response.status_code, 200)

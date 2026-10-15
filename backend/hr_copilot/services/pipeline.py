@@ -71,7 +71,8 @@ ALLOWED_TABLES = {
     "leave_management_leavetype",
 }
 FORBIDDEN_SQL = re.compile(
-    r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|call|do|execute|"
+    '\\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy'
+    '|call|do|execute|'
     r"comment|vacuum|attach|detach|pragma|set|reset|union|with)\b",
     re.IGNORECASE,
 )
@@ -86,7 +87,10 @@ class CopilotError(Exception):
 
 
 def analyze_question(question, context=None, session_id=None):
-    """Extract semantic intent from natural language using enhanced LLM interpretation."""
+    (
+        'Extract semantic intent from natural language using enhanced LLM '
+        'interpretation.'
+    )
     from .semantic_interpreter import semantic_interpreter
     from .write_actions import write_action_planner
 
@@ -111,7 +115,8 @@ def analyze_question(question, context=None, session_id=None):
         if "employee_identity" in ambiguities:
             raise CopilotError(
                 "employee_ambiguous",
-                "More than one employee matched. Please provide the employee's email address.",
+                'More than one employee matched. Please provide the '
+                "employee's email address.",
             )
         # Add other ambiguity handling as needed
 
@@ -312,7 +317,10 @@ def _apply_explicit_date_range(question, entities, today):
 
 
 def _apply_deterministic_entities(question, source, entities):
-    """Extract security and schema-sensitive filters independently of the LLM."""
+    (
+        'Extract security and schema-sensitive filters independently of the '
+        'LLM.'
+    )
     lower = question.casefold()
     if "comparison_subsections" not in entities:
         sub = re.search(
@@ -329,10 +337,10 @@ def _apply_deterministic_entities(question, source, entities):
                 entities["section"] = section.group(1).upper()
     has_employee_context = source == "employee" or bool(
         re.search(
-            r"\b(?:employee|attendance|present|absent|check.?in|check.?out|by\s+(?:name|email)|who|about|profile)\b",
+            '\\b(?:employee|attendance|present|absent|check.?in|check.?out'
+            '|by\\s+(?:name|email)|who|about|profile)\\b',
             lower,
-        )
-    )
+        ))
     has_section_reference = bool(re.search(r"\bsection\s+[a-z]\b", lower))
     if has_employee_context and not has_section_reference:
         email_match = find_email_address(question)
@@ -340,7 +348,13 @@ def _apply_deterministic_entities(question, source, entities):
             entities["employee_email"] = email_match.casefold()
         else:
             identity = re.search(
-                r"\b(?:employee named|named|for employee|employee|attendance for|for|about|who is|who's|tell me about|profile of|profile for)\s+([A-Z][A-Z .'-]{1,60}?)(?=\s+(?:present|absent|in|from|on|during|with|whose|today|yesterday|for the last|last 7 days)\b|[?.!,]|$)",
+                '\\b(?:employee named|named|for '
+                'employee|employee|attendance for|for|about|who '
+                "is|who's|tell me about|profile of|profile "
+                'for)\\s+([A-Z][A-Z '
+                ".'-]{1,60}?)(?=\\s+(?:present|absent|in|from|on|during|wi"
+                'th|whose|today|yesterday|for the last|last 7 '
+                'days)\\b|[?.!,]|$)',
                 question,
                 re.IGNORECASE,
             )
@@ -402,11 +416,11 @@ def _apply_deterministic_entities(question, source, entities):
                     }:
                         entities["employee_name"] = candidate
         if re.search(
-            r"\b(?:name or email|by name|by email|for employee|employee attendance|for name|for email)\b",
-            lower,
-        ) and not (
-            entities.get("employee_email") or entities.get("employee_name")
-        ):
+            '\\b(?:name or email|by name|by email|for '
+            'employee|employee attendance|for name|for email)\\b',
+                lower,
+        ) and not (entities.get("employee_email")
+                   or entities.get("employee_name")):
             if re.search(r"\bby\s+name\b", lower):
                 raise CopilotError(
                     "clarification_required",
@@ -466,12 +480,15 @@ def _validate_absence_date_range(entities):
     if not date_range:
         raise CopilotError(
             "clarification_required",
-            "Which past date should I check? Absence means an active employee has no attendance record and no approved leave for that date.",
+            'Which past date should I check? Absence means an active '
+            'employee has no attendance record and no approved leave for '
+            'that date.',
         )
     if date_range["start"] != date_range["end"]:
         raise CopilotError(
             "unsupported_absence_range",
-            "I can check absence for one past date at a time. Please give a single date.",
+            'I can check absence for one past date at a time. Please give '
+            'a single date.',
         )
     absence_date = date.fromisoformat(date_range["start"])
     if absence_date >= timezone.localdate():
@@ -492,7 +509,8 @@ def derive_scope(user):
     ):
         raise CopilotError(
             "scope_unassigned",
-            "Your HR Copilot scope has not been assigned. Contact a Super Admin.",
+            'Your HR Copilot scope has not been assigned. Contact a Super '
+            'Admin.',
             403,
         )
     return scope
@@ -532,7 +550,8 @@ def plan_query(intent, scope, user):
         if employee_resolution["status"] == "ambiguous":
             raise CopilotError(
                 "employee_ambiguous",
-                "More than one employee matched. Please provide the employee's email address.",
+                'More than one employee matched. Please provide the '
+                "employee's email address.",
             )
         entities["employee_id"] = employee_resolution["employee_id"]
     if entities.get("department"):
@@ -560,10 +579,10 @@ def plan_query(intent, scope, user):
             )
         if department is None:
             message = (
-                "The employee data does not identify a Student Department category."
-                if requested_department == "__STUDENT_DEPARTMENT__"
-                else "That department is not present in the employee data."
-            )
+                'The employee data does not identify a Student Department '
+                'category.'
+                if requested_department == "__STUDENT_DEPARTMENT__" else
+                "That department is not present in the employee data.")
             raise CopilotError("department_not_found", message)
         entities["department"] = department
     is_absence_query = intent["intent"].startswith("absence_")
@@ -719,13 +738,20 @@ def build_sql(plan):
             "e.date_joined",
         )
     elif source == "attendance":
-        from_sql = "attendance_attendance a JOIN employees_employee e ON e.id = a.employee_id JOIN accounts_user u ON u.id = e.user_id"
+        from_sql = (
+            'attendance_attendance a JOIN employees_employee e ON e.id = '
+            'a.employee_id JOIN accounts_user u ON u.id = e.user_id'
+        )
         date_field = "a.date"
         if filters.get("attendance_status"):
             where.append("a.status = %s")
             params.append(filters["attendance_status"])
     else:
-        from_sql = "leave_management_leaverequest lr JOIN employees_employee e ON e.id = lr.employee_id JOIN accounts_user u ON u.id = e.user_id JOIN leave_management_leavetype lt ON lt.id = lr.leave_type_id"
+        from_sql = (
+            'leave_management_leaverequest lr JOIN employees_employee e ON '
+            'e.id = lr.employee_id JOIN accounts_user u ON u.id = e.user_id '
+            'JOIN leave_management_leavetype lt ON lt.id = lr.leave_type_id'
+        )
         date_field = "lr.start_date"
         if filters.get("leave_status"):
             where.append("lr.status = %s")
@@ -742,17 +768,21 @@ def build_sql(plan):
             )
         if not is_working_day(required_date):
             where.append("1 = 0")
-        where.extend(
-            [
-                "e.is_active = TRUE",
-                "e.date_joined <= %s",
-                "NOT EXISTS (SELECT 1 FROM attendance_attendance absent_attendance "
-                "WHERE absent_attendance.employee_id = e.id AND absent_attendance.date = %s AND absent_attendance.status <> 'ABSENT')",
-                "NOT EXISTS (SELECT 1 FROM leave_management_leaverequest approved_leave "
-                "WHERE approved_leave.employee_id = e.id AND approved_leave.status = 'APPROVED' "
-                "AND approved_leave.start_date <= %s AND approved_leave.end_date >= %s)",
-            ]
-        )
+        where.extend([
+            "e.is_active = TRUE",
+            "e.date_joined <= %s",
+            'NOT EXISTS (SELECT 1 FROM attendance_attendance '
+            'absent_attendance '
+            'WHERE absent_attendance.employee_id = e.id AND '
+            'absent_attendance.date = %s AND absent_attendance.status <> '
+            "'ABSENT')",
+            'NOT EXISTS (SELECT 1 FROM leave_management_leaverequest '
+            'approved_leave '
+            'WHERE approved_leave.employee_id = e.id AND '
+            "approved_leave.status = 'APPROVED' "
+            'AND approved_leave.start_date <= %s AND '
+            'approved_leave.end_date >= %s)',
+        ])
         params.extend([absence_date, absence_date, absence_date, absence_date])
 
     if source == "attendance" and filters.get("date_range"):
@@ -839,15 +869,26 @@ def build_sql(plan):
         )
         params.append(plan["limit"])
     elif source == "employee":
-        select_sql = "e.id, u.first_name, u.last_name, u.email, e.department, e.employment_type, e.section, e.subsection, e.is_active, e.date_joined"
+        select_sql = (
+            'e.id, u.first_name, u.last_name, u.email, e.department, '
+            'e.employment_type, e.section, e.subsection, e.is_active, '
+            'e.date_joined'
+        )
         group_sql = " ORDER BY u.last_name, u.first_name LIMIT %s"
         params.append(plan["limit"])
     elif source == "attendance":
-        select_sql = "u.first_name, u.last_name, e.section, e.subsection, a.date, a.status, a.check_in, a.check_out, a.working_duration"
+        select_sql = (
+            'u.first_name, u.last_name, e.section, e.subsection, a.date, '
+            'a.status, a.check_in, a.check_out, a.working_duration'
+        )
         group_sql = " ORDER BY a.date DESC LIMIT %s"
         params.append(plan["limit"])
     else:
-        select_sql = "u.first_name, u.last_name, e.section, e.subsection, lt.name AS leave_type, lr.start_date, lr.end_date, lr.duration_days, lr.status, lr.reason"
+        select_sql = (
+            'u.first_name, u.last_name, e.section, e.subsection, lt.name AS '
+            'leave_type, lr.start_date, lr.end_date, lr.duration_days, '
+            'lr.status, lr.reason'
+        )
         group_sql = " ORDER BY lr.submitted_at DESC LIMIT %s"
         params.append(plan["limit"])
     # SQL structure is assembled from fixed templates above; all request
@@ -893,7 +934,8 @@ def _validate_query_plan(plan, *, require_authorized_scope=False):
         require_authorized_scope
         and not scope.get("unrestricted", False)
         and not any(
-        scope.get(key) for key in ("sections", "subsections", "departments")
+            scope.get(key)
+            for key in ("sections", "subsections", "departments")
         )
     ):
         raise CopilotError("sql_rejected", "The query scope is empty.")
@@ -989,10 +1031,16 @@ def generate_answer(intent, data):
     intent_name = intent.get("intent", "")
     if not data:
         if intent_name.startswith("absence_"):
-            return "No absent employees were found for that date and authorized scope."
+            return (
+                'No absent employees were found for that date and authorized '
+                'scope.'
+            )
         if intent.get("entities", {}).get("is_active") is False:
             return "No inactive employees were found in your authorized scope."
-        return "No matching HR records were found for your authorized scope and filters."
+        return (
+            'No matching HR records were found for your authorized scope and '
+            'filters.'
+        )
     if len(data) == 1 and "value" in data[0] and "category" not in data[0]:
         value = data[0]["value"]
         if intent_name == "absence_count":
@@ -1017,7 +1065,12 @@ def generate_answer(intent, data):
     ):
         employee = data[0]
         status = "active" if employee["is_active"] else "inactive"
-        return f"{employee['name']} is an {status} {employee['employment_type'].lower()} employee in {employee['department']}, Section {employee['section']}, Subsection {employee['subsection']}."
+        return (
+            f"{employee['name']} is an {status} "
+            f"{employee['employment_type'].lower()} employee in "
+            f"{employee['department']}, Section {employee['section']}, Subsect"
+            f"ion {employee['subsection']}."
+        )
     if (
         intent.get("source") == "attendance"
         and len(data) == 1

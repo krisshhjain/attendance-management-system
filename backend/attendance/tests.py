@@ -5,18 +5,31 @@ from unittest.mock import Mock, patch
 
 import requests
 from accounts.models import ManagerScope
-from attendance.face_service import (FaceExtractionError, FaceLivenessError,
-                                     _recognize_payload, find_closest_match,
-                                     process_enrollment)
-from attendance.geofence import (GEOFENCE_RADIUS_METERS, WORKPLACE_LATITUDE,
-                                 WORKPLACE_LONGITUDE,
-                                 calculate_haversine_distance)
-from attendance.models import (Attendance, AttendanceCorrection,
-                               AttendanceEvent, OfficeLocation,
-                               RegularizationQuotaPolicy,
-                               RegularizationRequest, Shift,
-                               attendance_day_end, calculate_working_duration,
-                               get_effective_attendance_events)
+from attendance.face_service import (
+    FaceExtractionError,
+    FaceLivenessError,
+    _recognize_payload,
+    find_closest_match,
+    process_enrollment,
+)
+from attendance.geofence import (
+    GEOFENCE_RADIUS_METERS,
+    WORKPLACE_LATITUDE,
+    WORKPLACE_LONGITUDE,
+    calculate_haversine_distance,
+)
+from attendance.models import (
+    Attendance,
+    AttendanceCorrection,
+    AttendanceEvent,
+    OfficeLocation,
+    RegularizationQuotaPolicy,
+    RegularizationRequest,
+    Shift,
+    attendance_day_end,
+    calculate_working_duration,
+    get_effective_attendance_events,
+)
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
@@ -508,26 +521,34 @@ class RegularizationWorkflowTests(APITestCase):
             response = self.client.post(
                 "/api/attendance/regularization/",
                 {
-                    "period_type": "WEEK",
+                    "period_type":
+                    "WEEK",
                     "days": [
                         {
-                            "attendance_date": self.attendance_date.isoformat(),
-                            "request_type": "INCORRECT_ATTENDANCE",
-                            "requested_check_in": (
-                                self.check_in + timedelta(minutes=10)
-                            ).isoformat(),
-                            "requested_check_out": self.check_out.isoformat(),
-                            "reason": "Correct first day.",
+                            "attendance_date":
+                            self.attendance_date.isoformat(),
+                            "request_type":
+                            "INCORRECT_ATTENDANCE",
+                            "requested_check_in":
+                            (self.check_in +
+                             timedelta(minutes=10)).isoformat(),
+                            "requested_check_out":
+                            self.check_out.isoformat(),
+                            "reason":
+                            "Correct first day.",
                         },
                         {
-                            "attendance_date": second_date.isoformat(),
-                            "request_type": "FORGOT_CHECK_OUT",
-                            "requested_check_out": timezone.make_aware(
-                                datetime.combine(
-                                    second_date, datetime_time(17, 0)
-                                )
-                            ).isoformat(),
-                            "reason": "Forgot to check out.",
+                            "attendance_date":
+                            second_date.isoformat(),
+                            "request_type":
+                            "FORGOT_CHECK_OUT",
+                            "requested_check_out":
+                            timezone.make_aware(
+                                datetime.combine(second_date,
+                                                 datetime_time(
+                                                     17, 0))).isoformat(),
+                            "reason":
+                            "Forgot to check out.",
                         },
                     ],
                 },
@@ -998,7 +1019,8 @@ class RegularizationWorkflowTests(APITestCase):
         )
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn(
-            "multi-day requests are only allowed for dates in the current calendar week",
+            'multi-day requests are only allowed for dates in the current '
+            'calendar week',
             str(res.data),
         )
 
@@ -1380,8 +1402,10 @@ class RegularizationWorkflowTests(APITestCase):
         response = self.client.post(
             f"/api/attendance/admin/regularization/{self.request.id}/approve/",
             {
-                "check_in": f"{self.attendance_date.isoformat()}T17:00:00+05:30",
-                "check_out": f"{self.attendance_date.isoformat()}T09:00:00+05:30",
+                "check_in":
+                f"{self.attendance_date.isoformat()}T17:00:00+05:30",
+                "check_out":
+                f"{self.attendance_date.isoformat()}T09:00:00+05:30",
             },
             format="json",
         )
@@ -1528,7 +1552,8 @@ class AttendanceGeofenceTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
             response.data["error"],
-            "Your location accuracy is too low. Please enable precise location and try again.",
+            'Your location accuracy is too low. Please enable precise '
+            'location and try again.',
         )
 
     def test_check_in_rejected_missing_coordinates(self):
@@ -2311,7 +2336,10 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
 
     @patch("attendance.views.verify_employee_face")
     def test_facial_immediate_checkout_allowed(self, mock_verify):
-        """Immediate facial check-out after check-in is now allowed (no cooldown)."""
+        (
+            'Immediate facial check-out after check-in is now allowed (no '
+            'cooldown).'
+        )
         # Pre-create check-in with event
         past_time = timezone.now() - timedelta(minutes=2)
         AttendanceEvent.objects.create(
@@ -2613,41 +2641,33 @@ class KioskLivenessAttendanceTests(APITestCase):
 
 
 class MyTeamViewTests(APITestCase):
-    """
-    Full coverage of GET /api/attendance/my-team/
-
-    Scenarios tested
-    ----------------
-    Authentication
-      - Unauthenticated request is rejected (401)
-      - Non-employee user (no employee profile) is rejected
-    Team filtering
-      - Same employment_type + section are included
-      - Same employment_type but different section is excluded
-      - Different employment_type but same section is excluded
-      - Inactive employees are excluded
-      - Subsection does NOT restrict results (A1 sees A2, A3, …)
-    Status classification
-      - CHECKED_IN: has a today check_in
-      - CHECKED_IN: already checked OUT today is still CHECKED_IN (not YET_TO_CHECK_IN)
-      - YET_TO_CHECK_IN: no attendance record today, not on leave
-      - ON_LEAVE: has an APPROVED LeaveRequest covering today
-      - Pending leave does NOT count as ON_LEAVE
-      - Rejected/Cancelled leave does NOT count as ON_LEAVE
-    Edge cases
-      - Empty section → returns note, empty members list
-      - Empty employment_type → returns note, empty members list
-      - No team members → total_members = 0
-      - Everyone checked in → yet_to_check_in_count = 0, on_leave_count = 0
-      - Everyone on leave → on_leave_count = total_members
-    Security
-      - Response does NOT expose face_template / biometric fields
-      - Response does NOT expose password / sensitive user fields
-      - Employee cannot inject section/employment_type via query params
-    Counts
-      - checked_in_count, yet_to_check_in_count, on_leave_count are accurate
-      - leave_type label is present in ON_LEAVE member data
-    """
+    (
+        '\n    Full coverage of GET /api/attendance/my-team/\n\n    Scenarios '
+        'tested\n    ----------------\n    Authentication\n      - '
+        'Unauthenticated request is rejected (401)\n      - Non-employee user '
+        '(no employee profile) is rejected\n    Team filtering\n      - Same '
+        'employment_type + section are included\n      - Same employment_type '
+        'but different section is excluded\n      - Different employment_type '
+        'but same section is excluded\n      - Inactive employees are '
+        'excluded\n      - Subsection does NOT restrict results (A1 sees A2, '
+        'A3, …)\n    Status classification\n      - CHECKED_IN: has a today '
+        'check_in\n      - CHECKED_IN: already checked OUT today is still '
+        'CHECKED_IN (not YET_TO_CHECK_IN)\n      - YET_TO_CHECK_IN: no '
+        'attendance record today, not on leave\n      - ON_LEAVE: has an '
+        'APPROVED LeaveRequest covering today\n      - Pending leave does NOT '
+        'count as ON_LEAVE\n      - Rejected/Cancelled leave does NOT count '
+        'as ON_LEAVE\n    Edge cases\n      - Empty section → returns note, '
+        'empty members list\n      - Empty employment_type → returns note, '
+        'empty members list\n      - No team members → total_members = 0\n    '
+        '  - Everyone checked in → yet_to_check_in_count = 0, on_leave_count '
+        '= 0\n      - Everyone on leave → on_leave_count = total_members\n    '
+        'Security\n      - Response does NOT expose face_template / biometric '
+        'fields\n      - Response does NOT expose password / sensitive user '
+        'fields\n      - Employee cannot inject section/employment_type via '
+        'query params\n    Counts\n      - checked_in_count, '
+        'yet_to_check_in_count, on_leave_count are accurate\n      - '
+        'leave_type label is present in ON_LEAVE member data\n    '
+    )
 
     URL = "/api/attendance/my-team/"
 
@@ -2745,7 +2765,10 @@ class MyTeamViewTests(APITestCase):
     # ------------------------------------------------------------------
 
     def test_same_type_and_section_are_included(self):
-        """Teammates with identical employment_type + section appear in results."""
+        (
+            'Teammates with identical employment_type + section appear in '
+            'results.'
+        )
         _, teammate = self._make_user_and_employee(
             "teammate@example.com",
             employment_type="INTERN",
@@ -2774,7 +2797,10 @@ class MyTeamViewTests(APITestCase):
         self.assertNotIn(other.id, ids)
 
     def test_different_employment_type_is_excluded(self):
-        """A PERMANENT employee in section A must not appear in INTERN section A's team."""
+        (
+            'A PERMANENT employee in section A must not appear in INTERN '
+            "section A's team."
+        )
         _, other = self._make_user_and_employee(
             "permanent@example.com",
             employment_type="PERMANENT",
@@ -2870,7 +2896,10 @@ class MyTeamViewTests(APITestCase):
         self.assertIsNotNone(me_data["check_out_time"])
 
     def test_yet_to_check_in_classification(self):
-        """Employee with no attendance record and no leave → YET_TO_CHECK_IN."""
+        (
+            'Employee with no attendance record and no leave → '
+            'YET_TO_CHECK_IN.'
+        )
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.URL)
         self.assertEqual(response.status_code, 200)
@@ -3026,7 +3055,10 @@ class MyTeamViewTests(APITestCase):
         self.assertIn("note", response.data)
 
     def test_no_team_members_returns_empty_list(self):
-        """Single employee in a unique type+section: only themselves, no errors."""
+        (
+            'Single employee in a unique type+section: only themselves, no '
+            'errors.'
+        )
         self.me.employment_type = "CONTRACT"
         self.me.section = "UNIQUE"
         self.me.save()
@@ -3038,7 +3070,10 @@ class MyTeamViewTests(APITestCase):
         self.assertEqual(response.data["members"][0]["id"], self.me.id)
 
     def test_everyone_checked_in(self):
-        """All members checked in → yet_to_check_in_count=0, on_leave_count=0."""
+        (
+            'All members checked in → yet_to_check_in_count=0, '
+            'on_leave_count=0.'
+        )
         _, t1 = self._make_user_and_employee(
             "t1b@example.com",
             employment_type="INTERN",
@@ -3081,7 +3116,10 @@ class MyTeamViewTests(APITestCase):
     # ------------------------------------------------------------------
 
     def test_face_biometric_fields_not_exposed(self):
-        """face_template or any biometric field must never appear in the response."""
+        (
+            'face_template or any biometric field must never appear in the '
+            'response.'
+        )
         from employees.models import FaceProfile
 
         FaceProfile.objects.create(
@@ -3147,7 +3185,10 @@ class MyTeamViewTests(APITestCase):
             self.assertIn(key, response.data)
 
     def test_member_fields_are_correct(self):
-        """Each member dict contains id, name, department, subsection, status, check_in_time, check_out_time."""
+        (
+            'Each member dict contains id, name, department, subsection, '
+            'status, check_in_time, check_out_time.'
+        )
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.URL)
         self.assertEqual(response.status_code, 200)
@@ -3177,7 +3218,10 @@ class MyTeamViewTests(APITestCase):
         self.assertEqual(me_data["leave_type"], "Casual Leave")
 
     def test_team_metadata_in_response(self):
-        """team_employment_type and team_section in response match the authenticated employee."""
+        (
+            'team_employment_type and team_section in response match the '
+            'authenticated employee.'
+        )
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.URL)
         self.assertEqual(response.status_code, 200)
@@ -3401,7 +3445,10 @@ class AttendanceDailySummaryConstraintTests(TestCase):
             Attendance.objects.create(employee=self.employee, date=self.today)
 
     def test_attendance_allows_multiple_events_but_one_summary(self):
-        """Multiple AttendanceEvents can exist while Attendance remains one row."""
+        (
+            'Multiple AttendanceEvents can exist while Attendance remains one '
+            'row.'
+        )
         # Create summary row
         Attendance.objects.create(employee=self.employee, date=self.today)
         # Create multiple events — should not conflict with Attendance
@@ -3502,7 +3549,10 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(events.first().source, "MOBILE")
 
     def test_first_checkout_creates_event(self):
-        """First check-out creates AttendanceEvent and sets status to PRESENT."""
+        (
+            'First check-out creates AttendanceEvent and sets status to '
+            'PRESENT.'
+        )
         # Pre-create attendance with check_in
         past_time = timezone.now() - timedelta(minutes=10)
         Attendance.objects.create(
@@ -3761,7 +3811,10 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertIn("Already checked out today", response.data["error"])
 
     def test_shift_end_does_not_finalize_attendance(self):
-        """Attendance is not finalized at shift end - events continue to accumulate."""
+        (
+            'Attendance is not finalized at shift end - events continue to '
+            'accumulate.'
+        )
         # This test verifies the design principle - no auto-finalization
         # Create events manually to avoid cooldown issues
         base_time = timezone.make_aware(
@@ -4187,7 +4240,10 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertIsNotNone(today_attendance.check_out)
 
     def test_open_interval_after_checkout_includes_only_current_interval(self):
-        """A current check-in adds to completed intervals without counting the break."""
+        (
+            'A current check-in adds to completed intervals without counting '
+            'the break.'
+        )
         today = timezone.localdate()
         start = timezone.make_aware(
             timezone.datetime.combine(today, timezone.datetime.min.time())
@@ -4217,7 +4273,10 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(duration, timedelta(hours=5))
 
     def test_events_from_another_date_are_not_connected(self):
-        """Working duration is calculated only from events on the attendance date."""
+        (
+            'Working duration is calculated only from events on the '
+            'attendance date.'
+        )
         today = timezone.localdate()
         today_start = timezone.make_aware(
             timezone.datetime.combine(today, timezone.datetime.min.time())
@@ -4582,11 +4641,12 @@ class ShiftAssignmentTests(APITestCase):
 
     # Concurrent self-assignment test
     def test_concurrent_self_assignment_race_condition(self):
-        """Two concurrent self-assignment requests cannot overwrite shift.
-
-        Uses a single test client with manual transaction isolation to simulate
-        concurrent requests. The view uses select_for_update() to prevent races.
-        """
+        (
+            'Two concurrent self-assignment requests cannot overwrite shift.\n'
+            '\n        Uses a single test client with manual transaction '
+            'isolation to simulate\n        concurrent requests. The view '
+            'uses select_for_update() to prevent races.\n        '
+        )
 
         from django.db import transaction
 
@@ -5249,7 +5309,10 @@ class WeekendAttendanceTests(APITestCase):
         self.assertIsNotNone(response.data["check_in"])
 
     def test_weekend_without_attendance_not_treated_as_absence(self):
-        """Weekend without attendance should not be marked as YET_TO_CHECK_IN."""
+        (
+            'Weekend without attendance should not be marked as '
+            'YET_TO_CHECK_IN.'
+        )
         # Create another employee for team context
         other_user = User.objects.create_user(
             email="other@example.com",
@@ -5342,7 +5405,10 @@ class WeekendAttendanceTests(APITestCase):
     def test_weekend_with_attendance_shows_checked_in_in_team(
         self, mock_localdate, mock_now
     ):
-        """Weekend attendance with check-in shows CHECKED_IN status in team view."""
+        (
+            'Weekend attendance with check-in shows CHECKED_IN status in team '
+            'view.'
+        )
         saturday = self._get_next_saturday()
         mock_localdate.return_value = saturday
 
@@ -5518,7 +5584,10 @@ class AdminShiftAssignmentTests(APITestCase):
         self.assertIsNone(employee_data["shift"])
 
     def test_shift_assignment_preserves_historical_events(self):
-        """Changing employee shift doesn't affect historical AttendanceEvents."""
+        (
+            "Changing employee shift doesn't affect historical "
+            'AttendanceEvents.'
+        )
         from django.utils import timezone as tz
 
         # Create some historical events with original shift
@@ -6201,7 +6270,8 @@ class AttendanceAdminValidationCoverageTests(APITestCase):
             ("FORGOT_CHECK_OUT", "requested check-out time is required"),
             (
                 "INCORRECT_ATTENDANCE",
-                "At least one requested check-in or check-out time is required",
+                'At least one requested check-in or check-out time is '
+                'required',
             ),
         ):
             with self.subTest(request_type=request_type):

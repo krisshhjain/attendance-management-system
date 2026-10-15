@@ -150,8 +150,11 @@ class RegularizationScopeTests(TestCase):
         # here, reject just needs reason)
         self.assertEqual(
             self.client.post(
-                f"/api/attendance/admin/regularization/{self.req_intern_d.id}/reject/",
-                {"rejection_reason": "no"},
+                f"/api/attendance/admin/regularization/"
+                f"{self.req_intern_d.id}/reject/",
+                {
+                    "rejection_reason": "no"
+                },
             ).status_code,
             403,
         )

@@ -1,4 +1,5 @@
-"""Deterministic safety tests for the retained dataset maintenance utilities."""
+"""Deterministic safety tests for the retained dataset maintenance utilit\
+ies."""
 
 import builtins
 import importlib

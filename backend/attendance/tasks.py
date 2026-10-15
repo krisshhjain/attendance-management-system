@@ -157,7 +157,10 @@ def check_consecutive_absences(
             title = "Employee Absent for 2 Consecutive Working Days"
             message = f"{employee_name} has been absent on {date_label}."
             subject = "Attendance alert: 2 consecutive absences"
-            deduplication_prefix = f"ABSENCE_ALERT:{employee.pk}:{second_absence_date}:{first_absence_date}"
+            deduplication_prefix = (
+                f"ABSENCE_ALERT:{employee.pk}:{second_absence_date}:"
+                f"{first_absence_date}"
+            )
 
             record_event(
                 event_type="ABSENCE_DETECTED",

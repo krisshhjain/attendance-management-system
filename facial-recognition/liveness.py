@@ -117,7 +117,10 @@ def _largest_face_crop(
 
 
 def assess_liveness(image: np.ndarray) -> LivenessResult:
-    """Classify one decoded RGB frame; runtime failures are raised to fail closed."""
+    (
+        'Classify one decoded RGB frame; runtime failures are raised to fail '
+        'closed.'
+    )
     if image is None or image.size == 0:
         raise ValueError("Empty image provided to liveness assessment")
     if image.ndim != 3 or image.shape[2] != 3:

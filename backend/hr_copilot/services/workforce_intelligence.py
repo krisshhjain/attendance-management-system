@@ -142,7 +142,9 @@ class WorkforceIntelligence:
             return self._result(
                 metric,
                 rows,
-                "Employee results are limited to the authenticated Copilot scope and use effective shift and face-profile status.",
+                'Employee results are limited to the authenticated '
+                'Copilot scope and use effective shift and face-profile '
+                'status.',
             )
         if metric == "org_counts":
             rows = []
@@ -158,7 +160,8 @@ class WorkforceIntelligence:
             return self._result(
                 metric,
                 rows,
-                "Counts include employees in the authenticated scope and respect the requested employee filters.",
+                'Counts include employees in the authenticated scope and '
+                'respect the requested employee filters.',
             )
         if metric == "manager_info":
             from django.contrib.auth import get_user_model
@@ -198,7 +201,9 @@ class WorkforceIntelligence:
             return self._result(
                 metric,
                 rows,
-                "Manager information is limited to active Copilot managers whose configured scope overlaps the requester's scope.",
+                'Manager information is limited to active Copilot '
+                "managers whose configured scope overlaps the requester's "
+                'scope.',
             )
         if metric == "shift_assignments" and employee_id:
             employee = employees.first()
@@ -211,7 +216,8 @@ class WorkforceIntelligence:
                 return self._result(
                     metric,
                     [],
-                    "The requested employee is outside the authenticated Copilot scope.",
+                    'The requested employee is outside the authenticated '
+                    'Copilot scope.',
                 )
             # This branch is deliberately employee-centric. It must never
             # fall back to the list of configured shifts.
@@ -226,7 +232,8 @@ class WorkforceIntelligence:
             return self._result(
                 metric,
                 [row],
-                "The result uses the employee's explicit Employee-to-Shift assignment.",
+                "The result uses the employee's explicit "
+                'Employee-to-Shift assignment.',
             )
         if metric == "shift_assignments":
             rows = [
@@ -236,7 +243,8 @@ class WorkforceIntelligence:
             return self._result(
                 metric,
                 rows,
-                "Employee shift results use explicit Employee-to-Shift assignments and the authenticated scope.",
+                'Employee shift results use explicit Employee-to-Shift '
+                'assignments and the authenticated scope.',
             )
         if metric == "shift_configuration":
             shifts = Shift.objects.filter(is_active=True).order_by(
@@ -260,7 +268,8 @@ class WorkforceIntelligence:
             return self._result(
                 metric,
                 rows,
-                "Shift assignments use explicit employee assignments; effective auto-selection is included in employee results.",
+                'Shift assignments use explicit employee assignments; '
+                'effective auto-selection is included in employee results.',
             )
         if metric == "office_locations":
             rows = [
@@ -277,7 +286,8 @@ class WorkforceIntelligence:
             return self._result(
                 metric,
                 rows,
-                "Office locations are read-only configuration records visible to the authorized Copilot user.",
+                'Office locations are read-only configuration records '
+                'visible to the authorized Copilot user.',
             )
 
     @staticmethod

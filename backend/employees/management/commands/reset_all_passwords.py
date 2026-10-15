@@ -5,7 +5,10 @@ from employees.models import Employee
 
 
 class Command(BaseCommand):
-    help = "Disable all user passwords and require administrators to assign new ones."
+    help = (
+        'Disable all user passwords and require administrators to assign new '
+        'ones.'
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -18,7 +21,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not options["confirm"]:
             raise CommandError(
-                "This changes every account password. Re-run with --confirm to proceed."
+                'This changes every account password. Re-run with '
+                '--confirm to proceed.'
             )
 
         users = list(User.objects.select_for_update().order_by("pk"))

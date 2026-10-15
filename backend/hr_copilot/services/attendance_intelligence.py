@@ -135,7 +135,8 @@ class AttendanceIntelligence:
                 target_date,
                 target_date,
                 [
-                    f"{day['day_type'].title()} dates are excluded from missing-check-in detection."
+                    f"{day['day_type'].title()} dates are excluded from mi"
+                    f"ssing-check-in detection."
                 ],
                 [],
             )
@@ -178,7 +179,8 @@ class AttendanceIntelligence:
                 target_date,
                 target_date,
                 [
-                    "Attendance is not required on weekends or active company holidays."
+                    'Attendance is not required on weekends or active '
+                    'company holidays.'
                 ],
                 [],
             )
@@ -209,8 +211,10 @@ class AttendanceIntelligence:
             target_date,
             target_date,
             [
-                "Late means the existing Attendance shift-adherence rule returned LATE.",
-                "Employees without a check-in or assigned shift are not listed as late.",
+                'Late means the existing Attendance shift-adherence rule '
+                'returned LATE.',
+                'Employees without a check-in or assigned shift are not '
+                'listed as late.',
             ],
             rows,
         )
@@ -224,7 +228,8 @@ class AttendanceIntelligence:
         if employee_id is None:
             raise CopilotError(
                 "employee_required",
-                "Specify an employee or use an account linked to an employee profile.",
+                'Specify an employee or use an account linked to an '
+                'employee profile.',
             )
         employees = list(self._employees(user, scope, employee_id))
         if not employees:
@@ -253,19 +258,19 @@ class AttendanceIntelligence:
             start,
             end,
             [
-                "Only closed effective CHECK_IN/CHECK_OUT intervals are summed.",
-                "Open intervals and weekly holidays are reported but do not add completed hours.",
+                'Only closed effective CHECK_IN/CHECK_OUT intervals are '
+                'summed.',
+                'Open intervals and weekly holidays are reported but do '
+                'not add completed hours.',
             ],
-            [
-                {
-                    "employee_id": employee.id,
-                    "employee_name": self._employee_name(employee),
-                    "email": employee.user.email,
-                    "total_working_seconds": int(total.total_seconds()),
-                    "total_working_duration": str(total),
-                    "daily": daily,
-                }
-            ],
+            [{
+                "employee_id": employee.id,
+                "employee_name": self._employee_name(employee),
+                "email": employee.user.email,
+                "total_working_seconds": int(total.total_seconds()),
+                "total_working_duration": str(total),
+                "daily": daily,
+            }],
         )
 
     def incomplete_explanation(
@@ -277,7 +282,8 @@ class AttendanceIntelligence:
         if employee_id is None:
             raise CopilotError(
                 "employee_required",
-                "Specify an employee or use an account linked to an employee profile.",
+                'Specify an employee or use an account linked to an '
+                'employee profile.',
             )
         employees = list(
             self._employees(user, scope, employee_id, target_date)
@@ -290,9 +296,15 @@ class AttendanceIntelligence:
         state = self._state(employee, target_date)
         events = state["events"]
         if state["status"] != "INCOMPLETE":
-            explanation = f"Attendance is {state['status'].lower()} for this date, not incomplete."
+            explanation = (
+                f"Attendance is {state['status'].lower()} for this date, not i"
+                f"ncomplete."
+            )
         elif events and events[-1].event_type == "CHECK_IN":
-            explanation = "The effective attendance events contain a check-in without a following check-out."
+            explanation = (
+                'The effective attendance events contain a check-in without a '
+                'following check-out.'
+            )
         else:
             explanation = (
                 "The attendance record is marked incomplete and needs review."
@@ -302,31 +314,31 @@ class AttendanceIntelligence:
             target_date,
             target_date,
             [
-                "The explanation uses effective attendance events, approved leave, and the persisted attendance status."
+                'The explanation uses effective attendance events, '
+                'approved leave, and the persisted attendance status.'
             ],
-            [
-                {
-                    "employee_id": employee.id,
-                    "employee_name": self._employee_name(employee),
-                    "date": target_date.isoformat(),
-                    "status": state["status"],
-                    "explanation": explanation,
-                    "check_in": (
-                        events[0].timestamp.isoformat()
-                        if events and events[0].event_type == "CHECK_IN"
-                        else None
-                    ),
-                    "check_out": next(
-                        (
-                            event.timestamp.isoformat()
-                            for event in reversed(events)
-                            if event.event_type == "CHECK_OUT"
-                        ),
-                        None,
-                    ),
-                    "needs_regularization": state["status"] == "INCOMPLETE",
-                }
-            ],
+            [{
+                "employee_id":
+                employee.id,
+                "employee_name":
+                self._employee_name(employee),
+                "date":
+                target_date.isoformat(),
+                "status":
+                state["status"],
+                "explanation":
+                explanation,
+                "check_in": (events[0].timestamp.isoformat() if events
+                             and events[0].event_type == "CHECK_IN" else None),
+                "check_out":
+                next(
+                    (event.timestamp.isoformat() for event in reversed(events)
+                     if event.event_type == "CHECK_OUT"),
+                    None,
+                ),
+                "needs_regularization":
+                state["status"] == "INCOMPLETE",
+            }],
         )
 
     def _absence_dates(self, start, end):
@@ -386,7 +398,8 @@ class AttendanceIntelligence:
             end,
             [
                 "Only Monday-Friday working days are evaluated.",
-                "Approved leave and effective attendance check-ins are excluded from absence streaks.",
+                'Approved leave and effective attendance check-ins are '
+                'excluded from absence streaks.',
                 "Only streaks of at least two working days are returned.",
             ],
             rows,
@@ -445,9 +458,12 @@ class AttendanceIntelligence:
             start,
             end,
             [
-                "Counts cover active employees who had joined by each working date.",
-                "Weekends are omitted; company holidays appear as zero-count rows.",
-                "Absence is inferred from no effective check-in and no approved leave.",
+                'Counts cover active employees who had joined by each '
+                'working date.',
+                'Weekends are omitted; company holidays appear as '
+                'zero-count rows.',
+                'Absence is inferred from no effective check-in and no '
+                'approved leave.',
             ],
             rows,
         )

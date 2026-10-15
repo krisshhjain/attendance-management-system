@@ -886,7 +886,8 @@ def test_leave_follow_up_handles_configured_leave_type(
         },
         "validation_errors": [],
         "status": "PENDING",
-        "description": f"Confirm Asha Rao's leave on {today}: Medical appointment",
+        "description":
+        f"Confirm Asha Rao's leave on {today}: Medical appointment",
     }
     monkeypatch.setattr(
         views.pending_action_manager,
@@ -1460,11 +1461,17 @@ def test_pipeline_requires_identity_when_a_name_or_email_filter_is_requested():
 def test_pipeline_marks_live_date_scope_and_write_intent(monkeypatch):
     today = timezone.localdate().isoformat()
     monkeypatch.setattr(
-        "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
+        'hr_copilot.services.semantic_interpreter.semantic_interpreter.int'
+        'erpret_query',
         lambda *args, **kwargs: {
             "intent": "attendance_lookup",
             "source": "attendance",
-            "entities": {"date_range": {"start": today, "end": today}},
+            "entities": {
+                "date_range": {
+                    "start": today,
+                    "end": today
+                }
+            },
         },
     )
 
@@ -1477,7 +1484,8 @@ def test_pipeline_marks_live_date_scope_and_write_intent(monkeypatch):
 
 def test_pipeline_marks_write_intents_as_approval_required(monkeypatch):
     monkeypatch.setattr(
-        "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
+        'hr_copilot.services.semantic_interpreter.semantic_interpreter.int'
+        'erpret_query',
         lambda *args, **kwargs: {
             "intent": "attendance_create",
             "source": "attendance",
@@ -1865,63 +1873,92 @@ def test_executor_rejects_unsupported_action_type_before_audit_write(
     ("intent", "data", "expected"),
     [
         (
-            {"intent": "absence_count"},
+            {
+                "intent": "absence_count"
+            },
             [],
-            "No absent employees were found for that date and authorized scope.",
+            'No absent employees were found for that date and authorized '
+            'scope.',
         ),
         (
-            {"intent": "employee_lookup", "entities": {"is_active": False}},
+            {
+                "intent": "employee_lookup",
+                "entities": {
+                    "is_active": False
+                }
+            },
             [],
             "No inactive employees were found in your authorized scope.",
         ),
         (
-            {"intent": "absence_count"},
-            [{"value": 1}],
+            {
+                "intent": "absence_count"
+            },
+            [{
+                "value": 1
+            }],
             "1 employee was absent on that date.",
         ),
         (
-            {"intent": "absence_count"},
-            [{"value": 3}],
+            {
+                "intent": "absence_count"
+            },
+            [{
+                "value": 3
+            }],
             "3 employees were absent on that date.",
         ),
         (
-            {"intent": "employee_lookup", "source": "employee"},
-            [{"value": 2}],
+            {
+                "intent": "employee_lookup",
+                "source": "employee"
+            },
+            [{
+                "value": 2
+            }],
             "2 employees matched your question.",
         ),
         (
-            {"intent": "employee_lookup", "source": "employee"},
-            [
-                {
-                    "name": "Asha Rao",
-                    "is_active": False,
-                    "employment_type": "FULL_TIME",
-                    "department": "HR",
-                    "section": "C",
-                    "subsection": "C1",
-                }
-            ],
-            "Asha Rao is an inactive full_time employee in HR, Section C, Subsection C1.",
+            {
+                "intent": "employee_lookup",
+                "source": "employee"
+            },
+            [{
+                "name": "Asha Rao",
+                "is_active": False,
+                "employment_type": "FULL_TIME",
+                "department": "HR",
+                "section": "C",
+                "subsection": "C1",
+            }],
+            'Asha Rao is an inactive full_time employee in HR, Section C, '
+            'Subsection C1.',
         ),
         (
             {
                 "intent": "attendance_lookup",
                 "source": "attendance",
-                "entities": {"employee_id": 7},
+                "entities": {
+                    "employee_id": 7
+                },
             },
-            [
-                {
-                    "first_name": "Asha",
-                    "last_name": "Rao",
-                    "date": "2026-10-12",
-                    "status": "HALF_DAY",
-                }
-            ],
+            [{
+                "first_name": "Asha",
+                "last_name": "Rao",
+                "date": "2026-10-12",
+                "status": "HALF_DAY",
+            }],
             "Asha Rao was Half day on 2026-10-12.",
         ),
         (
-            {"intent": "employee_lookup", "source": "employee"},
-            [{"category": "section", "value": "C"}],
+            {
+                "intent": "employee_lookup",
+                "source": "employee"
+            },
+            [{
+                "category": "section",
+                "value": "C"
+            }],
             "I found 1 result group(s). See the data below for details.",
         ),
     ],
@@ -2386,7 +2423,8 @@ def test_pipeline_rejects_department_ambiguity_before_query_planning(
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
+        'hr_copilot.services.semantic_interpreter.semantic_interpreter.int'
+        'erpret_query',
         lambda *_args, **_kwargs: {
             "intent": "employee_lookup",
             "source": "employee",
@@ -2579,7 +2617,8 @@ def test_pipeline_rejects_ambiguous_or_unresolved_required_entities(
     monkeypatch, intent, code
 ):
     monkeypatch.setattr(
-        "hr_copilot.services.semantic_interpreter.semantic_interpreter.interpret_query",
+        'hr_copilot.services.semantic_interpreter.semantic_interpreter.int'
+        'erpret_query',
         lambda *args, **kwargs: intent,
     )
 

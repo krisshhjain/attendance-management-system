@@ -182,7 +182,8 @@ def validate_leave_request(
 
     if not leave_type.allow_future_dates and start_date > today:
         raise ValidationError(
-            "Leave request for future dates is not allowed for this leave type."
+            'Leave request for future dates is not allowed for this leave '
+            'type.'
         )
 
     if day_type in ("FIRST_HALF", "SECOND_HALF"):
@@ -211,14 +212,16 @@ def validate_leave_request(
         days_notice = (start_date - today).days
         if days_notice < min_notice:
             raise ValidationError(
-                f"Minimum notice period for {leave_type.name} is {min_notice} days."
+                f"Minimum notice period for {leave_type.name} is "
+                f"{min_notice} days."
             )
 
     # Max consecutive days check
     max_consecutive = policy.max_consecutive_days if policy else 10
     if duration > max_consecutive:
         raise ValidationError(
-            f"Maximum consecutive days allowed for {leave_type.name} is {max_consecutive} days."
+            f"Maximum consecutive days allowed for {leave_type.name} is "
+            f"{max_consecutive} days."
         )
 
     # Documentation requirement check
@@ -239,7 +242,8 @@ def validate_leave_request(
     )
     if overlapping.exists():
         raise ValidationError(
-            "You already have a pending or approved leave request for this date range."
+            'You already have a pending or approved leave request for '
+            'this date range.'
         )
 
     # Available balance check for paid leave types
@@ -255,7 +259,9 @@ def validate_leave_request(
             available = Decimal(str(lt_balance["available"]))
             if duration > available:
                 raise ValidationError(
-                    f"Insufficient leave balance for {leave_type.name}. Requested: {duration} days, Available: {available} days."
+                    f"Insufficient leave balance for {leave_type.name}. Re"
+                    f"quested: {duration} days, Available: {available} day"
+                    f"s."
                 )
 
     return duration
@@ -267,7 +273,8 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
 
     if req.status != "PENDING":
         raise ValidationError(
-            f"Cannot approve leave request with status '{req.status}'. Only PENDING requests can be approved."
+            f"Cannot approve leave request with status '{req.status}'. Onl"
+            f"y PENDING requests can be approved."
         )
 
     # Re-evaluate pending requests against current active holidays. This covers
@@ -279,7 +286,8 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
     )
     if current_duration <= Decimal("0.0"):
         raise ValidationError(
-            "This leave request now contains no working days because its dates are non-working days."
+            'This leave request now contains no working days because its '
+            'dates are non-working days.'
         )
     if current_duration != prior_duration:
         policy = get_active_policy(
@@ -288,7 +296,8 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
         max_consecutive = policy.max_consecutive_days if policy else 10
         if current_duration > max_consecutive:
             raise ValidationError(
-                f"Maximum consecutive days allowed for {req.leave_type.name} is {max_consecutive} days."
+                f"Maximum consecutive days allowed for "
+                f"{req.leave_type.name} is {max_consecutive} days."
             )
         if req.leave_type.is_paid:
             balances = calculate_employee_leave_balances(
@@ -310,7 +319,8 @@ def approve_leave_request(leave_request, reviewer_user, remarks=""):
             if current_duration > available:
                 raise ValidationError(
                     f"Insufficient leave balance for {req.leave_type.name}. "
-                    f"Requested: {current_duration} days, Available: {available} days."
+                    f"Requested: {current_duration} days, Available: "
+                    f"{available} days."
                 )
     req.duration_days = current_duration
 
@@ -362,7 +372,8 @@ def deny_leave_request(leave_request, reviewer_user, remarks):
 
     if req.status != "PENDING":
         raise ValidationError(
-            f"Cannot deny leave request with status '{req.status}'. Only PENDING requests can be denied."
+            f"Cannot deny leave request with status '{req.status}'. Only P"
+            f"ENDING requests can be denied."
         )
 
     if not remarks or not remarks.strip():

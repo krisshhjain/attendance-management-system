@@ -582,12 +582,15 @@ class AttendanceEventLoggingTests(TestCase):
         created = self.client.post(
             "/api/attendance/regularization/",
             {
-                "attendance_date": request_date.isoformat(),
-                "request_type": "FORGOT_CHECK_OUT",
-                "requested_check_out": timezone.make_aware(
-                    datetime.combine(request_date, time(17, 0))
-                ).isoformat(),
-                "reason": "Regularization reason should not become central metadata",
+                "attendance_date":
+                request_date.isoformat(),
+                "request_type":
+                "FORGOT_CHECK_OUT",
+                "requested_check_out":
+                timezone.make_aware(datetime.combine(request_date, time(
+                    17, 0))).isoformat(),
+                "reason":
+                "Regularization reason should not become central metadata",
             },
             format="json",
         )
@@ -1360,7 +1363,8 @@ class SystemLogAPITests(TestCase):
         date_to = (timezone.localdate() - timedelta(days=1)).isoformat()
         response = self.get_as(
             self.superuser,
-            f"/api/system-logs/?category=LEAVE&status=SUCCESS&date_from={date_from}&date_to={date_to}",
+            f"/api/system-logs/?category=LEAVE&status=SUCCESS&date_from="
+            f"{date_from}&date_to={date_to}",
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)

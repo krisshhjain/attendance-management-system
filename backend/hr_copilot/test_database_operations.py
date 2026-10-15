@@ -100,7 +100,10 @@ class HRCopilotDatabaseOperationTests(TransactionTestCase):
             return views.HRCopilotQueryView.as_view()(request)
 
     def modify_analyze_intent(self, intent):
-        """Patch only NLP extraction; the query planner and test DB stay real."""
+        (
+            'Patch only NLP extraction; the query planner and test DB stay '
+            'real.'
+        )
         from unittest.mock import patch
 
         return patch.object(views, "analyze_question", return_value=intent)

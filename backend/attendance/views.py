@@ -262,9 +262,9 @@ class CheckInView(APIView):
         ):
             return Response(
                 {
-                    "error": "You cannot check in because your attendance is marked as "
-                    + attendance.status.lower()
-                    + " today."
+                    "error":
+                    "You cannot check in because your attendance is marked as "
+                    + attendance.status.lower() + " today."
                 },
                 status=400,
             )
@@ -279,7 +279,9 @@ class CheckInView(APIView):
         if has_approved_leave:
             return Response(
                 {
-                    "error": "You cannot check in because you are on approved leave today."
+                    "error":
+                    'You cannot check in because you are on approved '
+                        'leave today.'
                 },
                 status=400,
             )
@@ -289,7 +291,9 @@ class CheckInView(APIView):
         if effective_shift is None:
             return Response(
                 {
-                    "error": "You must have a shift assigned before checking in. Please self-assign a shift or contact admin."
+                    "error":
+                    'You must have a shift assigned before checking in. '
+                        'Please self-assign a shift or contact admin.'
                 },
                 status=400,
             )
@@ -538,21 +542,20 @@ class TodayAttendanceView(APIView):
 
 
 class MyTeamView(APIView):
-    """
-    GET /api/attendance/my-team/
-
-    Returns today's status for every active employee who shares the same
-    employment_type AND section as the requesting employee.
-    subsection is intentionally ignored so that A1, A2, A3 … all appear.
-
-    Classification rules (applied in priority order):
-      - ON_LEAVE      : has an APPROVED LeaveRequest covering today
-      - CHECKED_IN    : has a today Attendance record with check_in set
-                        (includes both still-checked-in and already-checked-out)
-      - WEEKEND       : today is Saturday/Sunday and employee has no attendance
-      - HOLIDAY       : today is an active company holiday and employee has no attendance
-      - YET_TO_CHECK_IN : active team member with no check_in today and not on leave
-    """
+    (
+        "\n    GET /api/attendance/my-team/\n\n    Returns today's status for "
+        'every active employee who shares the same\n    employment_type AND '
+        'section as the requesting employee.\n    subsection is intentionally '
+        'ignored so that A1, A2, A3 … all appear.\n\n    Classification rules '
+        '(applied in priority order):\n      - ON_LEAVE      : has an '
+        'APPROVED LeaveRequest covering today\n      - CHECKED_IN    : has a '
+        'today Attendance record with check_in set\n                        '
+        '(includes both still-checked-in and already-checked-out)\n      - '
+        'WEEKEND       : today is Saturday/Sunday and employee has no '
+        'attendance\n      - HOLIDAY       : today is an active company '
+        'holiday and employee has no attendance\n      - YET_TO_CHECK_IN : '
+        'active team member with no check_in today and not on leave\n    '
+    )
 
     permission_classes = [IsEmployee]
     app_access_key = "attendance"
@@ -572,7 +575,8 @@ class MyTeamView(APIView):
                     "yet_to_check_in_count": 0,
                     "on_leave_count": 0,
                     "members": [],
-                    "note": "Team information is incomplete for this employee.",
+                    "note":
+                    "Team information is incomplete for this employee.",
                 },
                 status=200,
             )
@@ -809,7 +813,8 @@ class AttendanceHistoryView(APIView):
             if is_manager_or_admin:
                 record["employee_id"] = attendance.employee.id
                 record["employee_name"] = (
-                    f"{attendance.employee.user.first_name} {attendance.employee.user.last_name}"
+                    f"{attendance.employee.user.first_name} "
+                    f"{attendance.employee.user.last_name}"
                 )
                 record["employee_email"] = attendance.employee.user.email
 
@@ -835,7 +840,9 @@ class AdminAttendanceView(APIView):
             except ValueError:
                 return Response(
                     {
-                        "error": f"Invalid date '{date_param}'. Expected format: YYYY-MM-DD."
+                        "error":
+                        f"Invalid date '{date_param}'. Expected format: YY"
+                            f"YY-MM-DD."
                     },
                     status=400,
                 )
@@ -880,33 +887,35 @@ class AdminAttendanceView(APIView):
                     else "ABSENT"
                 )
 
-            data.append(
-                {
-                    "employee": emp.user.email,
-                    "employee_name": f"{emp.user.first_name} {emp.user.last_name}".strip(),
-                    "section": emp.section,
-                    "subsection": emp.subsection,
-                    "date": filter_date,
-                    "status": status_display,
-                    "day_type": day_classification["day_type"],
-                    "holiday_name": day_classification["holiday_name"],
-                    "attendance_required": day_classification[
-                        "attendance_required"
-                    ],
-                    "check_in": att.check_in if att else None,
-                    "check_out": att.check_out if att else None,
-                    "working_duration": (
-                        str(
-                            calculate_working_duration(
-                                events,
-                                end_at=attendance_day_end(filter_date),
-                            )
-                        )
-                        if att
-                        else None
-                    ),
-                }
-            )
+            data.append({
+                "employee":
+                emp.user.email,
+                "employee_name":
+                f"{emp.user.first_name} {emp.user.last_name}".strip(),
+                "section":
+                emp.section,
+                "subsection":
+                emp.subsection,
+                "date":
+                filter_date,
+                "status":
+                status_display,
+                "day_type":
+                day_classification["day_type"],
+                "holiday_name":
+                day_classification["holiday_name"],
+                "attendance_required":
+                day_classification["attendance_required"],
+                "check_in":
+                att.check_in if att else None,
+                "check_out":
+                att.check_out if att else None,
+                "working_duration": (str(
+                    calculate_working_duration(
+                        events,
+                        end_at=attendance_day_end(filter_date),
+                    )) if att else None),
+            })
 
         # Sort: Present first, then Incomplete, then Absent/Leave
         data.sort(
@@ -1142,7 +1151,8 @@ class AdminEditAttendanceView(APIView):
         if not all([employee_email, date_str, reason, status]):
             return Response(
                 {
-                    "error": "Employee email, date, status, and reason are required"
+                    "error":
+                    "Employee email, date, status, and reason are required"
                 },
                 status=400,
             )
@@ -1162,7 +1172,9 @@ class AdminEditAttendanceView(APIView):
             day = get_day_classification(target_date)
             return Response(
                 {
-                    "error": f"Cannot mark an employee absent on a {day['day_type'].lower()} date."
+                    "error":
+                    f"Cannot mark an employee absent on a "
+                        f"{day['day_type'].lower()} date."
                 },
                 status=400,
             )
@@ -1369,7 +1381,9 @@ class AdminForceCheckoutView(APIView):
             if not attendances:
                 return Response(
                     {
-                        "error": "No active check-in found for this employee on this date"
+                        "error":
+                        'No active check-in found for this employee on '
+                            'this date'
                     },
                     status=404,
                 )
@@ -1410,12 +1424,10 @@ class AdminForceCheckoutView(APIView):
             )
             count += 1
 
-        return Response(
-            {
-                "message": f"Successfully forced check-out for {count} records",
-                "count": count,
-            }
-        )
+        return Response({
+            "message": f"Successfully forced check-out for {count} records",
+            "count": count,
+        })
 
 
 class WebsiteFacialCheckInView(APIView):
@@ -1459,7 +1471,9 @@ class WebsiteFacialCheckInView(APIView):
         if not is_match:
             return Response(
                 {
-                    "error": "Recognized face does not match your authenticated account."
+                    "error":
+                    'Recognized face does not match your authenticated '
+                        'account.'
                 },
                 status=403,
             )
@@ -1475,9 +1489,9 @@ class WebsiteFacialCheckInView(APIView):
         ):
             return Response(
                 {
-                    "error": "You cannot check in because your attendance is marked as "
-                    + attendance.status.lower()
-                    + " today."
+                    "error":
+                    "You cannot check in because your attendance is marked as "
+                    + attendance.status.lower() + " today."
                 },
                 status=400,
             )
@@ -1492,7 +1506,9 @@ class WebsiteFacialCheckInView(APIView):
         if has_approved_leave:
             return Response(
                 {
-                    "error": "You cannot check in because you are on approved leave today."
+                    "error":
+                    'You cannot check in because you are on approved '
+                        'leave today.'
                 },
                 status=400,
             )
@@ -1589,7 +1605,9 @@ class WebsiteFacialCheckOutView(APIView):
         if not is_match:
             return Response(
                 {
-                    "error": "Recognized face does not match your authenticated account."
+                    "error":
+                    'Recognized face does not match your authenticated '
+                        'account.'
                 },
                 status=403,
             )
@@ -1731,7 +1749,9 @@ class KioskFaceCheckInView(APIView):
         if has_approved_leave:
             return Response(
                 {
-                    "error": f"Hello {employee.user.first_name}, you cannot check in because you are on approved leave today."
+                    "error":
+                    f"Hello {employee.user.first_name}, you cannot check i"
+                        f"n because you are on approved leave today."
                 },
                 status=400,
             )
@@ -1741,7 +1761,9 @@ class KioskFaceCheckInView(APIView):
         if effective_shift is None:
             return Response(
                 {
-                    "error": "You must have a shift assigned before checking in. Please contact admin."
+                    "error":
+                    'You must have a shift assigned before checking in. '
+                        'Please contact admin.'
                 },
                 status=400,
             )
@@ -1751,7 +1773,9 @@ class KioskFaceCheckInView(APIView):
         if state == "CHECKED_IN":
             return Response(
                 {
-                    "error": f"Hello {employee.user.first_name}, you are already checked in today."
+                    "error":
+                    f"Hello {employee.user.first_name}, you are already ch"
+                        f"ecked in today."
                 },
                 status=400,
             )
@@ -1856,7 +1880,9 @@ class KioskFaceCheckOutView(APIView):
         except Attendance.DoesNotExist:
             return Response(
                 {
-                    "error": f"Hello {employee.user.first_name}, you have not checked in today."
+                    "error":
+                    f"Hello {employee.user.first_name}, you have not check"
+                        f"ed in today."
                 },
                 status=400,
             )
@@ -1866,14 +1892,18 @@ class KioskFaceCheckOutView(APIView):
         if state == "NOT_CHECKED_IN":
             return Response(
                 {
-                    "error": f"Hello {employee.user.first_name}, you have not checked in today."
+                    "error":
+                    f"Hello {employee.user.first_name}, you have not check"
+                        f"ed in today."
                 },
                 status=400,
             )
         if state == "CHECKED_OUT":
             return Response(
                 {
-                    "error": f"Hello {employee.user.first_name}, you are already checked out today."
+                    "error":
+                    f"Hello {employee.user.first_name}, you are already ch"
+                        f"ecked out today."
                 },
                 status=400,
             )
@@ -1915,7 +1945,8 @@ class KioskFaceCheckOutView(APIView):
         )
         return Response(
             {
-                "message": f"Goodbye, {employee.user.first_name}! Check-out successful.",
+                "message":
+                f"Goodbye, {employee.user.first_name}! Check-out successful.",
                 "check_out": attendance.check_out,
             },
             status=200,
@@ -2036,7 +2067,10 @@ class ShiftListView(APIView):
 
 
 class EmployeeShiftSelfAssignView(APIView):
-    """Employee self-assigns a shift (only if no shift assigned and from their employment type)."""
+    (
+        'Employee self-assigns a shift (only if no shift assigned and from '
+        'their employment type).'
+    )
 
     permission_classes = [IsEmployee]
 
@@ -2047,7 +2081,9 @@ class EmployeeShiftSelfAssignView(APIView):
         if employee.shift is not None:
             return Response(
                 {
-                    "error": "You already have a shift assigned. Contact admin to change it."
+                    "error":
+                    'You already have a shift assigned. Contact admin to '
+                        'change it.'
                 },
                 status=400,
             )
@@ -2068,7 +2104,9 @@ class EmployeeShiftSelfAssignView(APIView):
         ):
             return Response(
                 {
-                    "error": f"This shift is configured for {shift.employment_type} employees only"
+                    "error":
+                    f"This shift is configured for {shift.employment_type}"
+                        f" employees only"
                 },
                 status=400,
             )
@@ -2144,7 +2182,9 @@ class AdminEmployeeShiftAssignView(APIView):
             if not employee_in_manager_scope(request.user, employee):
                 return Response(
                     {
-                        "error": "You do not have permission to manage this employee's shift"
+                        "error":
+                        'You do not have permission to manage this '
+                            "employee's shift"
                     },
                     status=403,
                 )
@@ -2282,7 +2322,10 @@ class AdminEmployeeShiftBulkAssignView(APIView):
 
 
 class MyShiftView(APIView):
-    """Get current employee's effective shift (assigned or auto-assigned from configuration)."""
+    (
+        "Get current employee's effective shift (assigned or auto-assigned "
+        'from configuration).'
+    )
 
     permission_classes = [IsEmployee]
 
@@ -2301,13 +2344,11 @@ class MyShiftView(APIView):
             ).count()
 
             if configured_count == 0:
-                return Response(
-                    {
-                        "shift": None,
-                        "message": "No shifts configured for your employment type",
-                        "requires_configuration": True,
-                    }
-                )
+                return Response({
+                    "shift": None,
+                    "message": "No shifts configured for your employment type",
+                    "requires_configuration": True,
+                })
             else:
                 return Response(
                     {
@@ -2443,7 +2484,8 @@ class AdminShiftConfigurationView(APIView):
                 except (ValueError, AttributeError):
                     return Response(
                         {
-                            "error": f"Shift {i + 1}: invalid time format (use HH:MM)"
+                            "error":
+                            f"Shift {i + 1}: invalid time format (use HH:MM)"
                         },
                         status=400,
                     )
@@ -2456,7 +2498,9 @@ class AdminShiftConfigurationView(APIView):
                     ).exists():
                         return Response(
                             {
-                                "error": f"Shift {i + 1}: code '{custom_code}' is already in use"
+                                "error":
+                                f"Shift {i + 1}: code '{custom_code}' is a"
+                                    f"lready in use"
                             },
                             status=400,
                         )
@@ -2504,13 +2548,12 @@ class AdminShiftConfigurationView(APIView):
                 "shifts": created_shifts,
             },
         )
-        return Response(
-            {
-                "message": f"Configured {len(created_shifts)} shifts for {employment_type}",
-                "employment_type": employment_type,
-                "shifts": created_shifts,
-            }
-        )
+        return Response({
+            "message":
+            f"Configured {len(created_shifts)} shifts for {employment_type}",
+            "employment_type": employment_type,
+            "shifts": created_shifts,
+        })
 
 
 class AdminAllShiftsView(APIView):
@@ -2573,7 +2616,8 @@ class RegularizationRequestCreateView(APIView):
         if not all([attendance_date_str, request_type, reason]):
             return Response(
                 {
-                    "error": "attendance_date, request_type, and reason are required."
+                    "error":
+                    "attendance_date, request_type, and reason are required."
                 },
                 status=400,
             )
@@ -2585,7 +2629,8 @@ class RegularizationRequestCreateView(APIView):
         if request_type not in valid_types:
             return Response(
                 {
-                    "error": f"Invalid request_type. Must be one of: {valid_types}"
+                    "error":
+                    f"Invalid request_type. Must be one of: {valid_types}"
                 },
                 status=400,
             )
@@ -2618,7 +2663,9 @@ class RegularizationRequestCreateView(APIView):
         if attendance_date < max_allowed_date:
             return Response(
                 {
-                    "error": "Regularization requests are only allowed within 48 hours of the attendance date."
+                    "error":
+                    'Regularization requests are only allowed within 48 '
+                        'hours of the attendance date.'
                 },
                 status=400,
             )
@@ -2667,21 +2714,27 @@ class RegularizationRequestCreateView(APIView):
         if request_type == "FORGOT_CHECK_IN" and not requested_check_in:
             return Response(
                 {
-                    "error": "A requested check-in time is required for this request type."
+                    "error":
+                    'A requested check-in time is required for this '
+                        'request type.'
                 },
                 status=400,
             )
         if request_type == "FORGOT_CHECK_OUT" and not requested_check_out:
             return Response(
                 {
-                    "error": "A requested check-out time is required for this request type."
+                    "error":
+                    'A requested check-out time is required for this '
+                        'request type.'
                 },
                 status=400,
             )
         if not requested_check_in and not requested_check_out:
             return Response(
                 {
-                    "error": "At least one requested check-in or check-out time is required."
+                    "error":
+                    'At least one requested check-in or check-out time is '
+                        'required.'
                 },
                 status=400,
             )
@@ -2691,7 +2744,8 @@ class RegularizationRequestCreateView(APIView):
             if requested_check_out <= requested_check_in:
                 return Response(
                     {
-                        "error": "Requested check-out time must be after check-in time."
+                        "error":
+                        "Requested check-out time must be after check-in time."
                     },
                     status=400,
                 )
@@ -2719,7 +2773,9 @@ class RegularizationRequestCreateView(APIView):
         if existing_request:
             return Response(
                 {
-                    "error": "You already have a pending regularization request for this date."
+                    "error":
+                    'You already have a pending regularization request '
+                        'for this date.'
                 },
                 status=400,
             )
@@ -2735,9 +2791,13 @@ class RegularizationRequestCreateView(APIView):
                     or usage["monthly_used"] >= usage["monthly_limit"]
                 ):
                     detail = (
-                        f"You have reached the limit of {usage['weekly_limit']} regularization request(s) for this calendar week."
-                        if usage["weekly_used"] >= usage["weekly_limit"]
-                        else f"You have reached the limit of {usage['monthly_limit']} regularization request(s) for this calendar month."
+                        f"You have reached the limit of "
+                        f"{usage['weekly_limit']} regularization request(s"
+                        f") for this calendar week."
+                        if usage["weekly_used"] >= usage["weekly_limit"] else
+                        f"You have reached the limit of "
+                        f"{usage['monthly_limit']} regularization request("
+                        f"s) for this calendar month."
                     )
                     return Response(
                         {
@@ -2754,7 +2814,9 @@ class RegularizationRequestCreateView(APIView):
                 if existing_request:
                     return Response(
                         {
-                            "error": "You already have a pending regularization request for this date."
+                            "error":
+                            'You already have a pending regularization '
+                                'request for this date.'
                         },
                         status=400,
                     )
@@ -2796,7 +2858,8 @@ class RegularizationRequestCreateView(APIView):
 
             return Response(
                 {
-                    "message": "Regularization request submitted successfully.",
+                    "message":
+                    "Regularization request submitted successfully.",
                     "request_id": regularization_request.id,
                     "status": regularization_request.status,
                     "attendance_date": regularization_request.attendance_date,
@@ -2808,14 +2871,17 @@ class RegularizationRequestCreateView(APIView):
         except IntegrityError:
             return Response(
                 {
-                    "error": "You already have a pending regularization request for this date."
+                    "error":
+                    'You already have a pending regularization request '
+                        'for this date.'
                 },
                 status=400,
             )
         except Exception as e:
             return Response(
                 {
-                    "error": f"Failed to create regularization request: {str(e)}"
+                    "error":
+                    f"Failed to create regularization request: {str(e)}"
                 },
                 status=500,
             )
@@ -2864,12 +2930,14 @@ class RegularizationRequestCreateView(APIView):
                 if period_type in ("WEEK", "MONTH"):
                     if day_date < week_start:
                         raise ValueError(
-                            f"{day_date}: multi-day requests are only allowed for dates in the current calendar week."
+                            f"{day_date}: multi-day requests are only allo"
+                            f"wed for dates in the current calendar week."
                         )
                 else:
                     if day_date < earliest:
                         raise ValueError(
-                            f"{day_date}: date must be within the past 48 hours."
+                            f"{day_date}: date must be within the past 48 "
+                            f"hours."
                         )
 
                 if not is_working_day(day_date):
@@ -2880,7 +2948,8 @@ class RegularizationRequestCreateView(APIView):
                         else "company holidays"
                     )
                     raise ValueError(
-                        f"{day_date}: {reason} are not eligible for regularization."
+                        f"{day_date}: {reason} are not eligible for regula"
+                        f"rization."
                     )
                 if kind not in valid_types or not reason:
                     raise ValueError(
@@ -2963,9 +3032,13 @@ class RegularizationRequestCreateView(APIView):
                     or usage["monthly_used"] >= usage["monthly_limit"]
                 ):
                     detail = (
-                        f"You have reached the limit of {usage['weekly_limit']} regularization request(s) for this calendar week."
-                        if usage["weekly_used"] >= usage["weekly_limit"]
-                        else f"You have reached the limit of {usage['monthly_limit']} regularization request(s) for this calendar month."
+                        f"You have reached the limit of "
+                        f"{usage['weekly_limit']} regularization request(s"
+                        f") for this calendar week."
+                        if usage["weekly_used"] >= usage["weekly_limit"] else
+                        f"You have reached the limit of "
+                        f"{usage['monthly_limit']} regularization request("
+                        f"s) for this calendar month."
                     )
                     return Response(
                         {
@@ -2988,7 +3061,8 @@ class RegularizationRequestCreateView(APIView):
                 )
                 if has_pending:
                     raise ValueError(
-                        "A pending request already includes one or more selected dates."
+                        'A pending request already includes one or more '
+                        'selected dates.'
                     )
                 first = parsed[0]
                 first_attendance = Attendance.objects.filter(
@@ -3058,7 +3132,8 @@ class RegularizationRequestCreateView(APIView):
             )
             return Response(
                 {
-                    "message": "Regularization request submitted successfully.",
+                    "message":
+                    "Regularization request submitted successfully.",
                     "request_id": parent.id,
                     "status": parent.status,
                     "period_type": period_type,
@@ -3071,7 +3146,9 @@ class RegularizationRequestCreateView(APIView):
         except IntegrityError:
             return Response(
                 {
-                    "error": "A pending request already includes one or more selected dates."
+                    "error":
+                    'A pending request already includes one or more '
+                        'selected dates.'
                 },
                 status=400,
             )
@@ -3284,17 +3361,20 @@ class RegularizationRequestListView(APIView):
                 "days": day_rows,
             }
             if manager:
-                record.update(
-                    {
-                        "employee_id": req.employee.id,
-                        "employee_name": f"{req.employee.user.first_name} {req.employee.user.last_name}".strip(),
-                        "employee_email": req.employee.user.email,
-                    }
-                )
+                record.update({
+                    "employee_id":
+                    req.employee.id,
+                    "employee_name":
+                    f"{req.employee.user.first_name} "
+                        f"{req.employee.user.last_name}"
+                    .strip(),
+                    "employee_email":
+                    req.employee.user.email,
+                })
             if req.reviewed_by:
                 record["reviewed_by_name"] = (
-                    f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}".strip()
-                )
+                    f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}"
+                    .strip())
             data.append(record)
         return Response(data)
 
@@ -3328,7 +3408,8 @@ class RegularizationRequestDetailView(APIView):
             if not employee_in_manager_scope(request.user, req.employee):
                 return Response(
                     {
-                        "error": "You do not have permission to access this request."
+                        "error":
+                        "You do not have permission to access this request."
                     },
                     status=403,
                 )
@@ -3367,27 +3448,43 @@ class RegularizationRequestDetailView(APIView):
             ]
         first = days[0]
         data = {
-            "id": req.id,
-            "employee_id": req.employee.id,
-            "employee_name": f"{req.employee.user.first_name} {req.employee.user.last_name}".strip(),
-            "employee_email": req.employee.user.email,
+            "id":
+            req.id,
+            "employee_id":
+            req.employee.id,
+            "employee_name":
+            f"{req.employee.user.first_name} {req.employee.user.last_name}".
+            strip(),
+            "employee_email":
+            req.employee.user.email,
             **first,
-            "status": req.status,
-            "created_at": req.created_at,
-            "reviewed_at": req.reviewed_at,
-            "rejection_reason": req.rejection_reason,
-            "is_within_48_hours": req.is_within_48_hours,
-            "can_be_processed": req.can_be_processed,
-            "period_type": req.period_type,
-            "period_start": req.period_start or req.attendance_date,
-            "period_end": req.period_end or req.attendance_date,
-            "attachment": req.attachment,
-            "days": days,
+            "status":
+            req.status,
+            "created_at":
+            req.created_at,
+            "reviewed_at":
+            req.reviewed_at,
+            "rejection_reason":
+            req.rejection_reason,
+            "is_within_48_hours":
+            req.is_within_48_hours,
+            "can_be_processed":
+            req.can_be_processed,
+            "period_type":
+            req.period_type,
+            "period_start":
+            req.period_start or req.attendance_date,
+            "period_end":
+            req.period_end or req.attendance_date,
+            "attachment":
+            req.attachment,
+            "days":
+            days,
         }
         if req.reviewed_by:
             data["reviewed_by_name"] = (
-                f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}".strip()
-            )
+                f"{req.reviewed_by.first_name} {req.reviewed_by.last_name}".
+                strip())
         return Response(data)
 
 
@@ -3407,7 +3504,9 @@ class RegularizationRequestApproveView(APIView):
                 if not employee_in_manager_scope(request.user, req.employee):
                     return Response(
                         {
-                            "error": "You do not have permission to access this request."
+                            "error":
+                            'You do not have permission to access this '
+                                'request.'
                         },
                         status=403,
                     )
@@ -3415,14 +3514,16 @@ class RegularizationRequestApproveView(APIView):
                 if req.status != "PENDING":
                     return Response(
                         {
-                            "error": f"Cannot approve request with status {req.status}."
+                            "error":
+                            f"Cannot approve request with status {req.status}."
                         },
                         status=400,
                     )
                 if not req.is_within_48_hours:
                     return Response(
                         {
-                            "error": "Cannot approve request outside 48-hour window."
+                            "error":
+                            "Cannot approve request outside 48-hour window."
                         },
                         status=400,
                     )
@@ -3442,7 +3543,8 @@ class RegularizationRequestApproveView(APIView):
                     for row in rows:
                         if is_company_holiday(row.attendance_date):
                             raise ValueError(
-                                f"Cannot approve regularization for company holiday {row.attendance_date}."
+                                f"Cannot approve regularization for compan"
+                                f"y holiday {row.attendance_date}."
                             )
                         item = by_id.get(row.id, {})
 
@@ -3462,7 +3564,8 @@ class RegularizationRequestApproveView(APIView):
                                 != row.attendance_date
                             ):
                                 raise ValueError(
-                                    f"Final {field} must be on {row.attendance_date}."
+                                    f"Final {field} must be on "
+                                    f"{row.attendance_date}."
                                 )
                             return parsed
 
@@ -3478,11 +3581,13 @@ class RegularizationRequestApproveView(APIView):
                         )
                         if not check_in and not check_out:
                             raise ValueError(
-                                f"At least one final time is required for {row.attendance_date}."
+                                f"At least one final time is required for "
+                                f"{row.attendance_date}."
                             )
                         if check_in and check_out and check_out <= check_in:
                             raise ValueError(
-                                f"Check-out must be after check-in for {row.attendance_date}."
+                                f"Check-out must be after check-in for "
+                                f"{row.attendance_date}."
                             )
                         final.append(
                             (
@@ -3585,14 +3690,13 @@ class RegularizationRequestApproveView(APIView):
                         after_state=_regularization_log_state(req),
                         metadata={"approved_days": len(rows)},
                     )
-                    return Response(
-                        {
-                            "message": "Regularization request approved successfully.",
-                            "request_id": req.id,
-                            "status": req.status,
-                            "approved_days": len(rows),
-                        }
-                    )
+                    return Response({
+                        "message":
+                        "Regularization request approved successfully.",
+                        "request_id": req.id,
+                        "status": req.status,
+                        "approved_days": len(rows),
+                    })
 
                 def parse_legacy(field, fallback):
                     value = request.data.get(field, fallback)
@@ -3617,7 +3721,9 @@ class RegularizationRequestApproveView(APIView):
                 if is_company_holiday(req.attendance_date):
                     return Response(
                         {
-                            "error": f"Cannot approve regularization for company holiday {req.attendance_date}."
+                            "error":
+                            f"Cannot approve regularization for company ho"
+                                f"liday {req.attendance_date}."
                         },
                         status=400,
                     )
@@ -3631,14 +3737,18 @@ class RegularizationRequestApproveView(APIView):
                 if not check_in and not check_out:
                     return Response(
                         {
-                            "error": "At least one final check-in or check-out time is required."
+                            "error":
+                            'At least one final check-in or check-out '
+                                'time is required.'
                         },
                         status=400,
                     )
                 if check_in and check_out and check_out <= check_in:
                     return Response(
                         {
-                            "error": "Final check-out time must be after final check-in time."
+                            "error":
+                            'Final check-out time must be after final '
+                                'check-in time.'
                         },
                         status=400,
                     )
@@ -3661,18 +3771,26 @@ class RegularizationRequestApproveView(APIView):
                     before_state=before_state,
                     after_state=_regularization_log_state(req),
                 )
-                return Response(
-                    {
-                        "message": "Regularization request approved successfully.",
-                        "request_id": req.id,
-                        "status": req.status,
-                        "correction_id": correction.id if correction else None,
-                        "approved_check_in": req.approved_check_in,
-                        "approved_check_out": req.approved_check_out,
-                        "employee_name": f"{req.employee.user.first_name} {req.employee.user.last_name}".strip(),
-                        "attendance_date": req.attendance_date,
-                    }
-                )
+                return Response({
+                    "message":
+                    "Regularization request approved successfully.",
+                    "request_id":
+                    req.id,
+                    "status":
+                    req.status,
+                    "correction_id":
+                    correction.id if correction else None,
+                    "approved_check_in":
+                    req.approved_check_in,
+                    "approved_check_out":
+                    req.approved_check_out,
+                    "employee_name":
+                    f"{req.employee.user.first_name} "
+                        f"{req.employee.user.last_name}"
+                    .strip(),
+                    "attendance_date":
+                    req.attendance_date,
+                })
         except RegularizationRequest.DoesNotExist:
             return Response(
                 {"error": "Regularization request not found."}, status=404
@@ -3713,14 +3831,18 @@ class RegularizationRequestRejectView(APIView):
                 ):
                     return Response(
                         {
-                            "error": "You do not have permission to access this request."
+                            "error":
+                            'You do not have permission to access this '
+                                'request.'
                         },
                         status=403,
                     )
                 if regularization_request.status != "PENDING":
                     return Response(
                         {
-                            "error": f"Cannot reject request with status {regularization_request.status}."
+                            "error":
+                            f"Cannot reject request with status "
+                                f"{regularization_request.status}."
                         },
                         status=400,
                     )
@@ -3763,16 +3885,21 @@ class RegularizationRequestRejectView(APIView):
             after_state=after_state,
         )
 
-        return Response(
-            {
-                "message": "Regularization request rejected.",
-                "request_id": regularization_request.id,
-                "status": regularization_request.status,
-                "rejection_reason": regularization_request.rejection_reason,
-                "employee_name": f"{regularization_request.employee.user.first_name} {regularization_request.employee.user.last_name}",
-                "attendance_date": regularization_request.attendance_date,
-            }
-        )
+        return Response({
+            "message":
+            "Regularization request rejected.",
+            "request_id":
+            regularization_request.id,
+            "status":
+            regularization_request.status,
+            "rejection_reason":
+            regularization_request.rejection_reason,
+            "employee_name":
+            f"{regularization_request.employee.user.first_name} "
+                f"{regularization_request.employee.user.last_name}",
+            "attendance_date":
+            regularization_request.attendance_date,
+        })
 
 
 class OfficeLocationListCreateView(APIView):

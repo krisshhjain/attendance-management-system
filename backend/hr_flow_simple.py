@@ -114,7 +114,8 @@ print("-> generate_natural_answer() sends verified data to Qwen3-8B:")
 print("   System: 'Create natural response using ONLY verified data'")
 print("   User Query: 'When did Akshat Awasthi last took leave'")
 print(
-    "   Verified Data: [{name: 'Akshat Awasthi', start_date: '2024-03-15', ...}]"
+    "   Verified Data: [{name: 'Akshat Awasthi', start_date: "
+    "'2024-03-15', ...}]"
 )
 print(
     "-> Qwen3-8B generates: 'Akshat Awasthi last took leave on March 15, 2024'"

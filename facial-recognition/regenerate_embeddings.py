@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
-"""
-Robust bulk embedding regeneration script.
-
-This script safely regenerates all cached embeddings using the fixed face extraction
-logic, handling failures gracefully and providing detailed reports.
-
-Key features:
-- Backs up existing embeddings before regeneration
-- Catches and logs FaceExtractionError exceptions without aborting
-- Reports detailed failure information (face areas, ratios, reasons)
-- Validates minimum enrollment counts per identity
-- Generates comprehensive success/failure statistics
-- Can resume from partial runs
-"""
+"""\nRobust bulk embedding regeneration script.\n\nThis script safely regenera\
+tes all cached embeddings using the fixed face extraction\nlogic, handling \
+failures gracefully and providing detailed reports.\n\nKey features:\n- Bac\
+ks up existing embeddings before regeneration\n- Catches and logs FaceExtra\
+ctionError exceptions without aborting\n- Reports detailed failure informat\
+ion (face areas, ratios, reasons)\n- Validates minimum enrollment counts pe\
+r identity\n- Generates comprehensive success/failure statistics\n- Can res\
+ume from partial runs\n"""
 
 import json
 import logging
@@ -167,9 +161,9 @@ class RegenerationStats:
             }
         )
 
-        logger.error(
-            f"⚠ Identity {identity}: only {successful_count}/{total_attempted} usable enrollment images (need {MIN_ENROLLMENT_IMAGES})"
-        )
+        logger.error(f"⚠ Identity {identity}: only {successful_count}/"
+                     f"{total_attempted} usable enrollment images (need "
+                     f"{MIN_ENROLLMENT_IMAGES})")
 
     def generate_report(self) -> Dict:
         """Generate comprehensive failure report."""
@@ -286,9 +280,8 @@ def regenerate_identity_embeddings(
     images = get_images(identity_dir)
 
     if len(images) < REQUIRED_TOTAL_IMAGES:
-        logger.warning(
-            f"Identity {identity}: only {len(images)} images (need {REQUIRED_TOTAL_IMAGES})"
-        )
+        logger.warning(f"Identity {identity}: only {len(images)} images (need "
+                       f"{REQUIRED_TOTAL_IMAGES})")
         return False
 
     logger.info(f"Processing identity {identity}: {len(images)} images")
@@ -342,8 +335,8 @@ def regenerate_identity_embeddings(
                 shutil.rmtree(backup_dir, ignore_errors=True)
 
         logger.info(
-            f"Identity {identity}: {successful_embeddings}/{len(images)} embeddings extracted successfully"
-        )
+            f"Identity {identity}: {successful_embeddings}/{len(images)} e"
+            f"mbeddings extracted successfully")
         return True
     finally:
         if staging_dir.exists():
@@ -379,8 +372,8 @@ def regenerate_all_embeddings(
             continue
 
     logger.info(
-        f"Completed {dataset_dir.name}: {sufficient_identities}/{len(identity_dirs)} identities have sufficient usable images"
-    )
+        f"Completed {dataset_dir.name}: {sufficient_identities}/"
+        f"{len(identity_dirs)} identities have sufficient usable images")
 
 
 def main():
@@ -436,7 +429,10 @@ def main():
     report = stats.generate_report()
 
     # Save detailed report
-    report_path = f"embedding_regeneration_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    report_path = (
+        f"embedding_regeneration_report_"
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
 

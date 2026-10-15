@@ -60,7 +60,10 @@ def test_2_empty_result_truthful_no_record_response(monkeypatch):
 
 
 def test_3_employee_profile_result_natural_response(monkeypatch):
-    answer = "Asha Rao is an active permanent employee in Engineering, Section C, Subsection C1."
+    answer = (
+        'Asha Rao is an active permanent employee in Engineering, Section C, '
+        'Subsection C1.'
+    )
     use_provider(monkeypatch, answer)
     data = [
         {

@@ -41,7 +41,10 @@ class FaceProfileModelTests(TestCase):
         self.assertEqual(len(profile.face_template), 512)
 
     def test_one_to_one_constraint(self):
-        """Test that an employee cannot have multiple FaceProfile rows (integrity error)."""
+        (
+            'Test that an employee cannot have multiple FaceProfile rows '
+            '(integrity error).'
+        )
         FaceProfile.objects.create(
             employee=self.employee, face_template=self.dummy_template
         )

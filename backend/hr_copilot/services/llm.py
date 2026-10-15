@@ -216,26 +216,86 @@ def get_structured_intent(question, session_id=None, context=None):
 
     # Build compact system prompt - focus only on semantic understanding
     system_content = (
-        "Extract exactly one HR semantic intent as JSON. Focus on WHAT the user wants, not backend implementation.\n"
-        "READ/WRITE RULE: questions beginning with who, what, when, where, why, how, show, list, find, is, does, did, or compare are READ requests. They must never use a write intent, must never require approval, and must never be treated as an action. Use a write intent only for an explicit command to change data such as approve, reject, cancel, create, mark, edit, assign, activate, deactivate, or force checkout.\n"
-        "Return ONLY the required JSON object. Use only the declared intent and entity enum values. Do not emit unrelated entities, guessed fields, missing-information fields for values that are not required by the selected read tool, or action fields for a read request.\n"
-        "Intents include attendance_intelligence for attendance metrics and leave_regularization_intelligence for leave/regularization read-only metrics; choose the matching metric rather than inventing a new intent.\n"
-        "Attendance metrics: missing_checkins, late_employees, working_hours, incomplete_explanation, absence_streaks, summary, period_comparison.\n"
-        "Leave/regularization metrics: leave_balance, leave_requests, leave_history, leave_summary, leave_usage, regularization_history, regularization_pending, regularization_summary, attendance_correction_explanation, leave_policy.\n"
-        "Workforce metrics: employee_search, employee_details, org_counts, manager_info, shift_assignments, shift_configuration, face_enrollment, office_locations, employee_status, access_status.\n"
-        "Supported writes: attendance_update for explicit past attendance edits, attendance_force_checkout, leave_create/leave_cancel/leave_approve/leave_deny, regularization_create/regularization_approve/regularization_reject, and employee_shift_assign. All writes require confirmation. Extract request_id, date_range, employee identity, reason, leave_type, request_type, check times, shift_id or shift_name when explicitly supplied.\n"
-        "Read mappings: 'not checked in' -> attendance_intelligence/missing_checkins; 'late' -> attendance_intelligence/late_employees; 'hours worked' -> attendance_intelligence/working_hours; 'incomplete' or 'forgot to check out' -> attendance_intelligence/incomplete_explanation; 'leave balance' -> leave_regularization_intelligence/leave_balance; 'pending leave' -> leave_regularization_intelligence/leave_requests; 'pending regularization' -> leave_regularization_intelligence/regularization_pending; employee details -> workforce_intelligence/employee_details; assigned shift -> workforce_intelligence/shift_assignments.\n"
-        "Intents: attendance_lookup, attendance_summary, attendance_trend, employee_lookup, leave_lookup, leave_create, absence_lookup\n"
-        "Use attendance_update when the user asks to mark/change an employee's attendance status to PRESENT, ABSENT, or LEAVE. Keep ABSENT distinct from LEAVE; only use LEAVE for an explicit leave status. Use leave_create only when they ask to submit/file a leave request.\n"
-        "Partial write actions are valid: extract every known employee/date/action field even when time or reason is missing; leave missing fields absent and report them in missing_information.\n"
-        "For attendance writes, recognize employee names after mark/make/set and extract dates such as 29th September, September 29, or numeric day/month/year.\n"
-        "When a user says 'Mark [employee] as present for [date]', classify it as attendance_update with target_status PRESENT, preserving employee_name and date_range even when check-in and check-out are missing. For 'absent', use target_status ABSENT; for explicit 'on leave', use target_status LEAVE. Never substitute one for the other.\n"
-        "Extract: intent, employee_name, employee_email, temporal_expression or date_range, target_status (for updates)\n"
-        "For PRESENT attendance updates, also extract check_in_time and check_out_time when provided. For LEAVE attendance changes and leave requests, extract reason when provided.\n"
-        "Write operations: 'mark as', 'set to', 'make', 'put on', 'create', 'update', 'change'\n"
+        'Extract exactly one HR semantic intent as JSON. Focus on WHAT '
+        'the user wants, not backend implementation.\n'
+        'READ/WRITE RULE: questions beginning with who, what, when, '
+        'where, why, how, show, list, find, is, does, did, or compare are '
+        'READ requests. They must never use a write intent, must never '
+        'require approval, and must never be treated as an action. Use a '
+        'write intent only for an explicit command to change data such as '
+        'approve, reject, cancel, create, mark, edit, assign, activate, '
+        'deactivate, or force checkout.\n'
+        'Return ONLY the required JSON object. Use only the declared '
+        'intent and entity enum values. Do not emit unrelated entities, '
+        'guessed fields, missing-information fields for values that are '
+        'not required by the selected read tool, or action fields for a '
+        'read request.\n'
+        'Intents include attendance_intelligence for attendance metrics '
+        'and leave_regularization_intelligence for leave/regularization '
+        'read-only metrics; choose the matching metric rather than '
+        'inventing a new intent.\n'
+        'Attendance metrics: missing_checkins, late_employees, '
+        'working_hours, incomplete_explanation, absence_streaks, summary, '
+        'period_comparison.\n'
+        'Leave/regularization metrics: leave_balance, leave_requests, '
+        'leave_history, leave_summary, leave_usage, '
+        'regularization_history, regularization_pending, '
+        'regularization_summary, attendance_correction_explanation, '
+        'leave_policy.\n'
+        'Workforce metrics: employee_search, employee_details, '
+        'org_counts, manager_info, shift_assignments, '
+        'shift_configuration, face_enrollment, office_locations, '
+        'employee_status, access_status.\n'
+        'Supported writes: attendance_update for explicit past attendance '
+        'edits, attendance_force_checkout, '
+        'leave_create/leave_cancel/leave_approve/leave_deny, '
+        'regularization_create/regularization_approve/regularization_rejec'
+        't, and employee_shift_assign. All writes require confirmation. '
+        'Extract request_id, date_range, employee identity, reason, '
+        'leave_type, request_type, check times, shift_id or shift_name '
+        'when explicitly supplied.\n'
+        "Read mappings: 'not checked in' -> "
+        "attendance_intelligence/missing_checkins; 'late' -> "
+        "attendance_intelligence/late_employees; 'hours worked' -> "
+        "attendance_intelligence/working_hours; 'incomplete' or 'forgot "
+        "to check out' -> attendance_intelligence/incomplete_explanation; "
+        "'leave balance' -> "
+        "leave_regularization_intelligence/leave_balance; 'pending leave' "
+        "-> leave_regularization_intelligence/leave_requests; 'pending "
+        "regularization' -> "
+        'leave_regularization_intelligence/regularization_pending; '
+        'employee details -> workforce_intelligence/employee_details; '
+        'assigned shift -> workforce_intelligence/shift_assignments.\n'
+        'Intents: attendance_lookup, attendance_summary, '
+        'attendance_trend, employee_lookup, leave_lookup, leave_create, '
+        'absence_lookup\n'
+        'Use attendance_update when the user asks to mark/change an '
+        "employee's attendance status to PRESENT, ABSENT, or LEAVE. Keep "
+        'ABSENT distinct from LEAVE; only use LEAVE for an explicit leave '
+        'status. Use leave_create only when they ask to submit/file a '
+        'leave request.\n'
+        'Partial write actions are valid: extract every known '
+        'employee/date/action field even when time or reason is missing; '
+        'leave missing fields absent and report them in '
+        'missing_information.\n'
+        'For attendance writes, recognize employee names after '
+        'mark/make/set and extract dates such as 29th September, '
+        'September 29, or numeric day/month/year.\n'
+        "When a user says 'Mark [employee] as present for [date]', "
+        'classify it as attendance_update with target_status PRESENT, '
+        'preserving employee_name and date_range even when check-in and '
+        "check-out are missing. For 'absent', use target_status ABSENT; "
+        "for explicit 'on leave', use target_status LEAVE. Never "
+        'substitute one for the other.\n'
+        'Extract: intent, employee_name, employee_email, '
+        'temporal_expression or date_range, target_status (for updates)\n'
+        'For PRESENT attendance updates, also extract check_in_time and '
+        'check_out_time when provided. For LEAVE attendance changes and '
+        'leave requests, extract reason when provided.\n'
+        "Write operations: 'mark as', 'set to', 'make', 'put on', "
+        "'create', 'update', 'change'\n"
         "Read operations: 'who was', 'show', 'list', 'when did', 'how many'\n"
-        "Status values: 'absent', 'present', 'incomplete'\n"
-    )
+        "Status values: 'absent', 'present', 'incomplete'\n")
 
     # Add minimal context if available
     if session_context:
@@ -466,7 +526,10 @@ def get_structured_intent(question, session_id=None, context=None):
 
 
 def extract_pending_action_fields(question, required_fields):
-    """Use the configured intent provider to extract only fields for an active draft."""
+    (
+        'Use the configured intent provider to extract only fields for an '
+        'active draft.'
+    )
     try:
         provider = get_llm_provider()
     except LLMProviderError as error:
@@ -485,14 +548,23 @@ def extract_pending_action_fields(question, required_fields):
     }
     messages = [
         {
-            "role": "system",
-            "content": "Extract only explicitly supplied values for the requested missing HR action fields. Do not infer missing values. For times, return 24-hour HH:MM; interpret a lone checkout hour from 1 through 11 as PM when it follows a morning check-in. Return an empty object if the message supplies none.",
+            "role":
+            "system",
+            "content":
+            'Extract only explicitly supplied values for the requested '
+                'missing HR action fields. Do not infer missing values. For '
+                'times, return 24-hour HH:MM; interpret a lone checkout hour '
+                'from 1 through 11 as PM when it follows a morning check-in. '
+                'Return an empty object if the message supplies none.',
         },
         {
-            "role": "user",
-            "content": json.dumps(
-                {"missing_fields": required_fields, "reply": question}
-            ),
+            "role":
+            "user",
+            "content":
+            json.dumps({
+                "missing_fields": required_fields,
+                "reply": question
+            }),
         },
     ]
     try:
@@ -548,9 +620,15 @@ def _deterministic_grounded_answer(intent, data):
             return f"{name} has no shift assigned."
         return f"{name} is assigned to the {assigned} shift."
     if metric == "missing_checkins":
-        return f"{len(data)} employee{'s' if len(data) != 1 else ''} have not checked in today."
+        return (
+            f"{len(data)} employee{'s' if len(data) != 1 else ''} have not che"
+            f"cked in today."
+        )
     if metric == "late_employees":
-        return f"{len(data)} employee{'s' if len(data) != 1 else ''} arrived late today."
+        return (
+            f"{len(data)} employee{'s' if len(data) != 1 else ''} arrived late"
+            f" today."
+        )
     if metric == "working_hours":
         row = data[0]
         name = row.get("employee_name") or "The employee"
@@ -566,7 +644,10 @@ def _deterministic_grounded_answer(intent, data):
         )
     if metric == "period_comparison":
         row = data[0]
-        return f"Attendance comparison is available for the requested periods: {json.dumps(row, default=str, sort_keys=True)}."
+        return (
+            f"Attendance comparison is available for the requested periods: "
+            f"{json.dumps(row, default=str, sort_keys=True)}."
+        )
     if metric in {
         "absence_streaks",
         "summary",
@@ -576,7 +657,10 @@ def _deterministic_grounded_answer(intent, data):
     }:
         return f"Found {len(data)} summary row{'s' if len(data) != 1 else ''}."
     if metric:
-        return f"Found {len(data)} result{'s' if len(data) != 1 else ''} for {metric.replace('_', ' ')}."
+        return (
+            f"Found {len(data)} result{'s' if len(data) != 1 else ''} for "
+            f"{metric.replace('_', ' ')}."
+        )
 
     if len(data) == 1 and "value" in data[0]:
         return f"The result is {data[0]['value']}."
@@ -585,23 +669,46 @@ def _deterministic_grounded_answer(intent, data):
 
 
 def _generate_deterministic_answer(intent, data):
-    """Generate deterministic responses for common cases without needing Qwen."""
+    (
+        'Generate deterministic responses for common cases without needing '
+        'Qwen.'
+    )
     intent_name = intent.get("intent", "")
 
     if intent_name == "attendance_intelligence":
         metric = intent.get("entities", {}).get("attendance_metric")
         if metric == "missing_checkins":
-            return f"{len(data)} employee{'s' if len(data) != 1 else ''} have not checked in today."
+            return (
+                f"{len(data)} employee{'s' if len(data) != 1 else ''} have not"
+                f" checked in today."
+            )
         if metric == "late_employees":
-            return f"{len(data)} employee{'s' if len(data) != 1 else ''} arrived late today."
+            return (
+                f"{len(data)} employee{'s' if len(data) != 1 else ''} arrived "
+                f"late today."
+            )
         if metric == "absence_streaks":
-            return f"Found {len(data)} absence streak{'s' if len(data) != 1 else ''} of at least two working days."
+            return (
+                f"Found {len(data)} absence streak"
+                f"{'s' if len(data) != 1 else ''} of at least two working days"
+                f"."
+            )
         if metric == "summary":
-            return f"Attendance summary returned {len(data)} working-day row{'s' if len(data) != 1 else ''}."
+            return (
+                f"Attendance summary returned {len(data)} working-day row"
+                f"{'s' if len(data) != 1 else ''}."
+            )
         if metric == "period_comparison":
-            return "Here is the attendance comparison for the current and previous week."
+            return (
+                'Here is the attendance comparison for the current and '
+                'previous week.'
+            )
         if metric == "working_hours" and data:
-            return f"{data[0].get('employee_name', 'The employee')} worked {data[0].get('total_working_duration', '0:00:00')} in the requested range."
+            return (
+                f"{data[0].get('employee_name', 'The employee')} worked "
+                f"{data[0].get('total_working_duration', '0:00:00')} in the re"
+                f"quested range."
+            )
         if metric == "incomplete_explanation" and data:
             return data[0].get("explanation", "The attendance needs review.")
 
@@ -618,25 +725,43 @@ def _generate_deterministic_answer(intent, data):
     if len(data) == 1 and "value" in data[0] and "category" not in data[0]:
         value = data[0]["value"]
         if intent_name == "absence_count":
-            return f"{value} employee{'s' if value != 1 else ''} {'were' if value != 1 else 'was'} absent."
+            return (
+                f"{value} employee{'s' if value != 1 else ''} "
+                f"{'were' if value != 1 else 'was'} absent."
+            )
         elif intent_name.endswith("_count"):
             entity_type = intent_name.replace("_count", "").replace("_", " ")
-            return f"{value} {entity_type} record{'s' if value != 1 else ''} found."
+            return (
+                f"{value} {entity_type} record{'s' if value != 1 else ''} foun"
+                f"d."
+            )
 
     # Handle single employee profile
     if intent.get("source") == "employee" and len(data) == 1:
         employee = data[0]
-        name = f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip()
+        name = (
+            f"{employee.get('first_name', '')} "
+            f"{employee.get('last_name', '')}"
+        ).strip()
         if name and employee.get("department"):
             status = (
                 "active" if employee.get("is_active", True) else "inactive"
             )
-            return f"{name} is an {status} {employee.get('employment_type', 'employee').lower()} in {employee.get('department')}, Section {employee.get('section', '')}, Subsection {employee.get('subsection', '')}."
+            return (
+                f"{name} is an {status} "
+                f"{employee.get('employment_type', 'employee').lower()} in "
+                f"{employee.get('department')}, Section "
+                f"{employee.get('section', '')}, Subsection "
+                f"{employee.get('subsection', '')}."
+            )
 
     # Handle single attendance record
     if intent.get("source") == "attendance" and len(data) == 1:
         record = data[0]
-        name = f"{record.get('first_name', '')} {record.get('last_name', '')}".strip()
+        name = (
+            f"{record.get('first_name', '')} "
+            f"{record.get('last_name', '')}"
+        ).strip()
         if name and record.get("date") and record.get("status"):
             status = record["status"].replace("_", " ").lower()
             return f"{name} was {status} on {record['date']}."
@@ -677,17 +802,23 @@ def _compact_result_data(data, intent):
     # For single employee profile, keep essential fields only
     if intent.get("source") == "employee" and len(data) == 1:
         employee = data[0]
-        return [
-            {
-                "name": f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip(),
-                "email": employee.get("email"),
-                "department": employee.get("department"),
-                "employment_type": employee.get("employment_type"),
-                "section": employee.get("section"),
-                "subsection": employee.get("subsection"),
-                "is_active": employee.get("is_active"),
-            }
-        ]
+        return [{
+            "name":
+            f"{employee.get('first_name', '')} {employee.get('last_name', '')}"
+            .strip(),
+            "email":
+            employee.get("email"),
+            "department":
+            employee.get("department"),
+            "employment_type":
+            employee.get("employment_type"),
+            "section":
+            employee.get("section"),
+            "subsection":
+            employee.get("subsection"),
+            "is_active":
+            employee.get("is_active"),
+        }]
 
     # For attendance records, keep only essential fields
     if intent.get("source") == "attendance":
@@ -739,7 +870,10 @@ def _compact_result_data(data, intent):
 
 
 def _validate_grounded_answer(answer, data):
-    """Reject likely factual additions before a model response reaches the client."""
+    (
+        'Reject likely factual additions before a model response reaches the '
+        'client.'
+    )
     if not data:
         answer_lower = answer.casefold()
         if not any(

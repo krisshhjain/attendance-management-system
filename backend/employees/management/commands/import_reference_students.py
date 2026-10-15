@@ -105,7 +105,10 @@ def email_slug(name):
 
 
 class Command(BaseCommand):
-    help = "Add missing reference students without changing existing employee records."
+    help = (
+        'Add missing reference students without changing existing employee '
+        'records.'
+    )
 
     def handle(self, *args, **options):
         supplied = len(STUDENTS)

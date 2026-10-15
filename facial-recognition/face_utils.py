@@ -33,34 +33,28 @@ def extract_primary_face_embedding(
     area_tolerance: float = 1.5,
     min_confidence: float = 0.95,
 ) -> np.ndarray:
-    """
-    Extract face embedding from an image, selecting the largest face when multiple faces are detected.
-
-    This function fixes the multi-face bug by:
-    1. Using enforce_detection=True to ensure proper face detection
-    2. When multiple faces are found, selecting the one with largest bounding box area
-    3. Flagging ambiguous cases where top 2 faces are similar in size
-    4. Never falling back to enforce_detection=False (which can embed garbage)
-
-    Args:
-        img_path: Path to image file or numpy array of image
-        model_name: Face recognition model ("ArcFace", "VGG-Face", etc.)
-        detector_backend: Face detector ("retinaface", "opencv", etc.)
-        normalize: Whether to L2-normalize the embedding
-        dtype: Output numpy dtype for the embedding
-        area_tolerance: If top 2 faces are within this ratio, flag for manual review
-
-    Returns:
-        numpy.ndarray: Face embedding vector
-
-    Raises:
-        FaceExtractionError: If no faces detected, detection fails, or ambiguous multi-face case
-
-    Example:
-        >>> embedding = extract_primary_face_embedding("person1.jpg")
-        >>> print(f"Embedding shape: {embedding.shape}")
-        Embedding shape: (512,)
-    """
+    (
+        '\n    Extract face embedding from an image, selecting the largest '
+        'face when multiple faces are detected.\n\n    This function fixes '
+        'the multi-face bug by:\n    1. Using enforce_detection=True to '
+        'ensure proper face detection\n    2. When multiple faces are found, '
+        'selecting the one with largest bounding box area\n    3. Flagging '
+        'ambiguous cases where top 2 faces are similar in size\n    4. Never '
+        'falling back to enforce_detection=False (which can embed garbage)\n\n'
+        '    Args:\n        img_path: Path to image file or numpy array of '
+        'image\n        model_name: Face recognition model ("ArcFace", '
+        '"VGG-Face", etc.)\n        detector_backend: Face detector '
+        '("retinaface", "opencv", etc.)\n        normalize: Whether to '
+        'L2-normalize the embedding\n        dtype: Output numpy dtype for '
+        'the embedding\n        area_tolerance: If top 2 faces are within '
+        'this ratio, flag for manual review\n\n    Returns:\n        '
+        'numpy.ndarray: Face embedding vector\n\n    Raises:\n        '
+        'FaceExtractionError: If no faces detected, detection fails, or '
+        'ambiguous multi-face case\n\n    Example:\n        >>> embedding = '
+        'extract_primary_face_embedding("person1.jpg")\n        >>> '
+        'print(f"Embedding shape: {embedding.shape}")\n        Embedding '
+        'shape: (512,)\n    '
+    )
     try:
         # Use enforce_detection=True to ensure proper face detection
         result = DeepFace.represent(
@@ -85,7 +79,8 @@ def extract_primary_face_embedding(
         confidence = result[0].get("face_confidence", 1.0)
         if confidence is not None and confidence < min_confidence:
             raise FaceExtractionError(
-                f"Face quality too low: confidence {confidence:.3f} < {min_confidence}"
+                f"Face quality too low: confidence {confidence:.3f} < "
+                f"{min_confidence}"
             )
 
         embedding = np.array(result[0]["embedding"], dtype=dtype)
@@ -119,26 +114,32 @@ def extract_primary_face_embedding(
             ):
                 raise FaceExtractionError(
                     f"Ambiguous multi-face image {img_path}: "
-                    f"largest face area={largest_area}, second largest area={second_area} "
-                    f"(ratio={second_area/largest_area:.3f} >= {1.0/area_tolerance:.3f}). "
-                    f"Manual review required - cannot reliably select correct face."
+                    f"largest face area={largest_area}, second largest are"
+                    f"a={second_area} "
+                    f"(ratio={second_area/largest_area:.3f} >= "
+                    f"{1.0/area_tolerance:.3f}). "
+                    f"Manual review required - cannot reliably select corr"
+                    f"ect face."
                 )
 
         confidence = largest_face.get("face_confidence", 1.0)
         if confidence is not None and confidence < min_confidence:
             raise FaceExtractionError(
-                f"Face quality too low: confidence {confidence:.3f} < {min_confidence}"
+                f"Face quality too low: confidence {confidence:.3f} < "
+                f"{min_confidence}"
             )
 
         embedding = np.array(largest_face["embedding"], dtype=dtype)
         logger.info(
-            f"Selected largest face (index {largest_idx}, area={largest_area}) from {img_path}"
+            f"Selected largest face (index {largest_idx}, area="
+            f"{largest_area}) from {img_path}"
         )
 
     else:
         # Should never happen with enforce_detection=True, but be defensive
         raise FaceExtractionError(
-            f"Unexpected result format from DeepFace.represent() for {img_path}"
+            f"Unexpected result format from DeepFace.represent() for "
+            f"{img_path}"
         )
 
     # Apply L2 normalization if requested
@@ -184,17 +185,14 @@ def get_face_count(
 def get_face_details(
     img_path: Union[str, np.ndarray], detector_backend: str = "retinaface"
 ) -> list:
-    """
-    Get detailed information about all faces detected in an image.
-
-    Args:
-        img_path: Path to image file or numpy array of image
-        detector_backend: Face detector to use
-
-    Returns:
-        list: List of dicts with face detection details (bounding boxes, confidence, etc.)
-              Empty list if detection fails.
-    """
+    (
+        '\n    Get detailed information about all faces detected in an '
+        'image.\n\n    Args:\n        img_path: Path to image file or numpy '
+        'array of image\n        detector_backend: Face detector to use\n\n   '
+        ' Returns:\n        list: List of dicts with face detection details '
+        '(bounding boxes, confidence, etc.)\n              Empty list if '
+        'detection fails.\n    '
+    )
     try:
         result = DeepFace.represent(
             img_path=img_path,

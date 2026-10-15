@@ -10,7 +10,10 @@ from hr_copilot.services.semantic_interpreter import SemanticInterpreter
 
 
 class TestSemanticGeneralization(TestCase):
-    """Test semantic understanding across paraphrases and natural language variations."""
+    (
+        'Test semantic understanding across paraphrases and natural language '
+        'variations.'
+    )
 
     def setUp(self):
         self.interpreter = SemanticInterpreter()
@@ -55,7 +58,10 @@ class TestSemanticGeneralization(TestCase):
 
     @patch("hr_copilot.services.semantic_interpreter.get_structured_intent")
     def test_absence_query_paraphrases(self, mock_llm):
-        """Test that all absence query variations map to the same semantic intent."""
+        (
+            'Test that all absence query variations map to the same semantic '
+            'intent.'
+        )
         absence_queries = [
             "Who was absent today?",
             "Who didn't come today?",
@@ -364,7 +370,10 @@ class TestSemanticGeneralization(TestCase):
 
 
 class TestGeneralizationEvaluation(TestCase):
-    """Evaluation framework for testing generalization across intent categories."""
+    (
+        'Evaluation framework for testing generalization across intent '
+        'categories.'
+    )
 
     def setUp(self):
         self.intent_categories = {
@@ -445,12 +454,14 @@ class TestGeneralizationEvaluation(TestCase):
                     self.assertEqual(
                         result["intent"],
                         expected["intent"],
-                        f"Query '{query}' in category '{category}' should map to {expected['intent']}",
+                        f"Query '{query}' in category '{category}' should "
+                        f"map to {expected['intent']}",
                     )
                     self.assertEqual(
                         result["source"],
                         expected["source"],
-                        f"Query '{query}' in category '{category}' should have source {expected['source']}",
+                        f"Query '{query}' in category '{category}' should "
+                        f"have source {expected['source']}",
                     )
 
     def test_temporal_expression_coverage(self):
@@ -514,7 +525,10 @@ class TestRealWorldScenarios(TestCase):
 
     @patch("hr_copilot.services.semantic_interpreter.get_structured_intent")
     def test_vague_vs_ambiguous_distinction(self, mock_llm):
-        """Test distinction between vague (use defaults) vs ambiguous (need clarification)."""
+        (
+            'Test distinction between vague (use defaults) vs ambiguous (need '
+            'clarification).'
+        )
 
         # Vague query - should get safe defaults
         mock_llm.return_value = {
