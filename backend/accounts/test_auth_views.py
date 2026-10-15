@@ -79,4 +79,4 @@ class SystemAdminLoginViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("incorrect", str(response.data["current_password"]))
         self.manager.refresh_from_db()
-        self.assertTrue(self.manager.check_password("Correct-pass-123"))
+        self.assertTrue(self.manager.check_password("test-password"))
