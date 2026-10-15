@@ -11,6 +11,58 @@ from .employee_resolver import employee_resolver
 from .regex_safety import find_email_address
 
 MAX_ROWS = 100
+ALLOWED_SOURCES = {"employee", "attendance", "leave"}
+ALLOWED_QUERY_INTENTS = {
+    "employee_lookup",
+    "employee_count",
+    "employee_summary",
+    "employee_trend",
+    "attendance_lookup",
+    "attendance_count",
+    "attendance_summary",
+    "attendance_trend",
+    "leave_lookup",
+    "leave_count",
+    "leave_summary",
+    "leave_trend",
+    "comparison",
+    "absence_lookup",
+    "absence_count",
+}
+ALLOWED_FILTERS = {
+    "section",
+    "subsection",
+    "employee_type",
+    "employee_id",
+    "employee_email",
+    "department",
+    "is_active",
+    "comparison_subsections",
+    "date_range",
+    "attendance_status",
+    "leave_status",
+    # Recognized metadata that may be present in semantic plans but never
+    # participates in SQL construction.
+    "employee_name",
+    "temporal_scope",
+    "temporal_expression",
+    "attendance_metric",
+    "intelligence_metric",
+    "workforce_metric",
+    "request_id",
+    "regularization_status",
+    "access_key",
+    "face_enrolled",
+    "shift_id",
+    "shift_name",
+    "year",
+}
+ALLOWED_SCOPE_KEYS = {
+    "sections",
+    "subsections",
+    "departments",
+    "unrestricted",
+}
 ALLOWED_TABLES = {
     "employees_employee",
     "accounts_user",
@@ -610,6 +662,7 @@ def plan_query(intent, scope, user):
 
 
 def build_sql(plan):
+    _validate_query_plan(plan)
     source, filters, scope = plan["source"], plan["filters"], plan["scope"]
     intent = plan["intent"]
     is_absence_query = intent.startswith("absence_")
@@ -619,6 +672,13 @@ def build_sql(plan):
             "e.section IN (" + ", ".join(["%s"] * len(scope["sections"])) + ")"
         )
         params.extend(scope["sections"])
+    if scope.get("departments"):
+        where.append(
+            "e.department IN ("
+            + ", ".join(["%s"] * len(scope["departments"]))
+            + ")"
+        )
+        params.extend(scope["departments"])
     if scope.get("subsections"):
         where.append(
             "e.subsection IN ("
@@ -790,18 +850,72 @@ def build_sql(plan):
         select_sql = "u.first_name, u.last_name, e.section, e.subsection, lt.name AS leave_type, lr.start_date, lr.end_date, lr.duration_days, lr.status, lr.reason"
         group_sql = " ORDER BY lr.submitted_at DESC LIMIT %s"
         params.append(plan["limit"])
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
-    return (
-        "SELECT " + select_sql + " FROM " + from_sql + where_sql + group_sql,
-        params,
+    # SQL structure is assembled from fixed templates above; all request
+    # values remain separate parameters passed to cursor.execute().
+    query_parts = ["SELECT", select_sql, "FROM", from_sql]
+    if where:
+        query_parts.extend(["WHERE", " AND ".join(where)])
+    if group_sql:
+        query_parts.append(group_sql.strip())
+    return " ".join(query_parts), params
+
+
+def _validate_query_plan(plan, *, require_authorized_scope=False):
+    """Reject malformed plans before any fields can affect query structure."""
+    if not isinstance(plan, dict):
+        raise CopilotError("sql_rejected", "The query plan is invalid.")
+    source = plan.get("source")
+    if not isinstance(source, str) or source not in ALLOWED_SOURCES:
+        raise CopilotError("sql_rejected", "The query source is not allowed.")
+    intent = plan.get("intent")
+    if not isinstance(intent, str) or intent not in ALLOWED_QUERY_INTENTS:
+        raise CopilotError("sql_rejected", "The query intent is invalid.")
+    filters, scope, limit = (
+        plan.get("filters"),
+        plan.get("scope"),
+        plan.get("limit"),
     )
+    if (
+        not isinstance(filters, dict)
+        or set(filters) - ALLOWED_FILTERS
+        or not isinstance(scope, dict)
+        or set(scope) - ALLOWED_SCOPE_KEYS
+        or (
+            require_authorized_scope
+            and not isinstance(scope.get("unrestricted"), bool)
+        )
+        or not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 1 <= limit <= MAX_ROWS
+    ):
+        raise CopilotError("sql_rejected", "The query plan is invalid.")
+    if (
+        require_authorized_scope
+        and not scope.get("unrestricted", False)
+        and not any(
+        scope.get(key) for key in ("sections", "subsections", "departments")
+        )
+    ):
+        raise CopilotError("sql_rejected", "The query scope is empty.")
+    for key in ("sections", "subsections", "departments"):
+        values = scope.get(key)
+        if values is not None and (
+            not isinstance(values, list)
+            or any(not isinstance(value, str) for value in values)
+        ):
+            raise CopilotError("sql_rejected", "The query scope is invalid.")
 
 
 def validate_sql(sql, plan=None):
-    # In the request path, require the exact query text generated for the
-    # validated
-    # plan. This also bounds columns and joins to the fixed templates above.
-    if plan is not None and sql != build_sql(plan)[0]:
+    # SQL without its server-derived plan has no authorization context and is
+    # never accepted for execution.
+    if plan is None:
+        raise CopilotError(
+            "sql_rejected", "A validated query plan is required."
+        )
+    _validate_query_plan(plan, require_authorized_scope=True)
+    expected_sql, _ = build_sql(plan)
+    if sql != expected_sql:
         raise CopilotError(
             "sql_rejected",
             "The query does not match an approved query template.",
@@ -835,8 +949,16 @@ def validate_sql(sql, plan=None):
     return True
 
 
-def execute_query(sql, params):
+def execute_query(sql, params, plan=None):
     from django.db import transaction
+
+    validate_sql(sql, plan)
+    expected_sql, expected_params = build_sql(plan)
+    if sql != expected_sql or params != expected_params:
+        raise CopilotError(
+            "sql_rejected",
+            "The query does not match its approved plan and parameters.",
+        )
 
     with transaction.atomic():
         with connection.cursor() as cursor:

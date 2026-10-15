@@ -7,10 +7,7 @@ import pytest
 from accounts.models import ManagerScope
 from django.utils import timezone
 from hr_copilot import views
-from hr_copilot.services import (
-    conversation,
-    pipeline,
-)
+from hr_copilot.services import conversation, pipeline
 from hr_copilot.services import write_actions as write_action_module
 from hr_copilot.services import write_executor as write_executor_module
 from hr_copilot.services.pipeline import CopilotError
@@ -2639,7 +2636,9 @@ def test_user_provided_scope_is_ignored_and_server_scope_is_returned(
 ):
     factory, audit_records = api
     monkeypatch.setattr(
-        views, "execute_query", lambda sql, params: (["value"], [(3,)])
+        views,
+        "execute_query",
+        lambda sql, params, plan: (["value"], [(3,)]),
     )
     response = call_endpoint(
         factory,
@@ -2721,7 +2720,7 @@ def test_absence_query_uses_scoped_inference_and_returns_absent_employees(
     captured = {}
     monkeypatch.setattr("holidays.services.is_working_day", lambda _day: True)
 
-    def execute(sql, params):
+    def execute(sql, params, plan):
         captured["sql"] = sql
         captured["params"] = params
         return ["first_name", "last_name"], [("Asha", "Rao")]

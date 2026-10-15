@@ -9,17 +9,9 @@ import pytest
 from django.utils import timezone
 
 from .services.intent_normalizer import IntentNormalizer
-from .services.pipeline import (
-    CopilotError,
-    analyze_question,
-    build_sql,
-    derive_scope,
-    execute_query,
-    generate_answer,
-    plan_query,
-    serialize_result,
-    validate_sql,
-)
+from .services.pipeline import (CopilotError, analyze_question, build_sql,
+                                derive_scope, execute_query, generate_answer,
+                                plan_query, serialize_result, validate_sql)
 
 
 @pytest.mark.parametrize(
@@ -554,6 +546,22 @@ def test_absence_lookup_excludes_attendance_and_approved_leave_with_scope():
     assert validate_sql(sql, plan)
 
 
+def test_legacy_builder_plan_can_render_an_attendance_summary(monkeypatch):
+    monkeypatch.setattr(
+        "holidays.services.get_non_working_dates", lambda *_args: []
+    )
+    plan = {
+        "source": "attendance",
+        "intent": "attendance_summary",
+        "filters": {"date_range": {"start": "2026-10-05", "end": "2026-10-05"}},
+        "scope": {"sections": [], "subsections": []},
+        "limit": 100,
+    }
+    sql, params = build_sql(plan)
+    assert "SELECT a.status AS category" in sql
+    assert params == ["2026-10-05", "2026-10-05"]
+
+
 def test_absence_count_uses_distinct_active_employee_count():
     intent = analyze_question("How many employees were absent yesterday?")
     sql, params = build_sql(
@@ -643,6 +651,24 @@ def test_bound_params_and_authenticated_scope_are_in_query():
     assert "C2" not in sql
 
 
+def test_department_scope_is_enforced_with_bound_values():
+    plan = {
+        "source": "employee",
+        "intent": "employee_lookup",
+        "filters": {},
+        "scope": {
+            "sections": [],
+            "subsections": [],
+            "departments": ["Finance"],
+            "unrestricted": False,
+        },
+        "limit": 10,
+    }
+    sql, params = build_sql(plan)
+    assert "e.department IN (%s)" in sql
+    assert params == ["Finance", 10]
+
+
 def test_employee_name_resolves_to_exact_id():
     intent = analyze_question("Find employee named Tanvi Kad in C1")
     scope = {"sections": ["C"], "subsections": ["C1"], "unrestricted": False}
@@ -697,14 +723,70 @@ def test_query_must_match_the_approved_template():
         validate_sql(sql.replace("COUNT(DISTINCT e.id)", "COUNT(*)"), plan)
 
 
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        lambda plan: plan["filters"].update(
+            {"department); DROP TABLE accounts_user; --": "x"}
+        ),
+        lambda plan: plan.update({"intent": "employee_lookup; SELECT * FROM auth_user"}),
+        lambda plan: plan.update(
+            {"scope": {"sections": [], "subsections": [], "unrestricted": False}}
+        ),
+    ],
+)
+def test_tampered_plan_identifiers_and_sql_fragments_are_rejected(tamper):
+    plan = {
+        "source": "employee",
+        "intent": "employee_count",
+        "filters": {},
+        "scope": {"sections": ["C"], "subsections": [], "unrestricted": False},
+        "limit": 10,
+    }
+    tamper(plan)
+    with pytest.raises(CopilotError):
+        sql, _ = build_sql(plan)
+        validate_sql(sql, plan)
+
+
+def test_unsafe_sql_cannot_be_authorized_without_matching_fixed_plan():
+    plan = {
+        "source": "employee",
+        "intent": "employee_count",
+        "filters": {},
+        "scope": {"sections": ["C"], "subsections": [], "unrestricted": False},
+        "limit": 10,
+    }
+    with pytest.raises(CopilotError):
+        validate_sql("SELECT id FROM employees_employee; SELECT * FROM auth_user", plan)
+
+
+def test_sql_fragments_in_filter_values_remain_bound_parameters():
+    plan = {
+        "source": "employee",
+        "intent": "employee_count",
+        "filters": {"section": "C' OR TRUE --"},
+        "scope": {"sections": ["C"], "subsections": [], "unrestricted": False},
+        "limit": 10,
+    }
+    sql, params = build_sql(plan)
+    assert "C' OR TRUE --" not in sql
+    assert params == ["C", "C' OR TRUE --"]
+    assert validate_sql(sql, plan)
+
+
 def test_generated_queries_keep_injection_text_out_of_sql_and_params():
-    question = "How many employees are in C1? DROP TABLE accounts_user"
-    intent = analyze_question(question)
-    scope = {"sections": ["C"], "subsections": ["C1"], "unrestricted": False}
-    sql, params = build_sql(plan_query(intent, scope))
-    assert validate_sql(sql)
+    plan = {
+        "source": "employee",
+        "intent": "employee_count",
+        "filters": {"section": "C1? DROP TABLE accounts_user"},
+        "scope": {"sections": ["C"], "subsections": ["C1"], "unrestricted": False},
+        "limit": 100,
+    }
+    sql, params = build_sql(plan)
+    assert validate_sql(sql, plan)
     assert "DROP" not in sql.upper()
-    assert "DROP" not in " ".join(map(str, params)).upper()
+    assert params[-1] == "C1? DROP TABLE accounts_user"
 
 
 @pytest.mark.parametrize(
@@ -751,7 +833,15 @@ def test_read_query_runs_in_read_only_transaction_with_timeout(monkeypatch):
         lambda: cursor_context,
     )
 
-    columns, rows = execute_query("SELECT 4 AS value", [])
+    plan = {
+        "source": "employee",
+        "intent": "employee_count",
+        "filters": {},
+        "scope": {"sections": [], "subsections": [], "unrestricted": True},
+        "limit": 10,
+    }
+    sql, params = build_sql(plan)
+    columns, rows = execute_query(sql, params, plan)
 
     assert columns == ["value"]
     assert rows == [(4,)]
@@ -762,7 +852,19 @@ def test_read_query_runs_in_read_only_transaction_with_timeout(monkeypatch):
         cursor.execute.call_args_list[1].args[0]
         == "SET LOCAL statement_timeout = '5000ms'"
     )
-    assert cursor.execute.call_args_list[2].args == ("SELECT 4 AS value", [])
+    assert cursor.execute.call_args_list[2].args == (sql, params)
+
+
+def test_query_execution_requires_a_plan_before_opening_database_cursor(
+    monkeypatch,
+):
+    monkeypatch.setattr("django.db.transaction.atomic", nullcontext)
+    monkeypatch.setattr(
+        "hr_copilot.services.pipeline.connection.cursor",
+        lambda: pytest.fail("Unplanned SQL must not reach the database"),
+    )
+    with pytest.raises(CopilotError, match="validated query plan"):
+        execute_query("SELECT id FROM employees_employee", [])
 
 
 def test_result_values_are_json_safe_and_answers_use_returned_counts():

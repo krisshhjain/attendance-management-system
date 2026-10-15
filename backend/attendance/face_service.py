@@ -9,9 +9,9 @@ from employees.models import Employee, FaceProfile
 logger = logging.getLogger(__name__)
 
 
-def _face_service_request_kwargs(payload, timeout):
+def _face_service_request_kwargs(payload):
     """Build request options, adding service authentication when configured."""
-    kwargs = {"json": payload, "timeout": timeout}
+    kwargs = {"json": payload}
     service_token = getattr(settings, "FACE_SERVICE_TOKEN", "")
     if service_token:
         kwargs["headers"] = {"Authorization": f"Bearer {service_token}"}
@@ -97,7 +97,8 @@ def _recognize_payload(image_data, candidates, threshold, captured_at_ms=None):
         timeout = 60
     return requests.post(
         f"{settings.FACE_SERVICE_URL}{endpoint}",
-        **_face_service_request_kwargs(payload, timeout),
+        **_face_service_request_kwargs(payload),
+        timeout=timeout,
     )
 
 
@@ -114,7 +115,8 @@ def process_enrollment(images: List[Union[str, bytes]]) -> List[float]:
     try:
         response = requests.post(
             f"{settings.FACE_SERVICE_URL}/enroll",
-            **_face_service_request_kwargs({"images": b64_images}, 90),
+            **_face_service_request_kwargs({"images": b64_images}),
+            timeout=90,
         )
     except requests.RequestException as e:
         logger.error(f"FR Service connection error: {e}")
