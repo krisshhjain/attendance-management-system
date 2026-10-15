@@ -269,7 +269,7 @@ class EmployeeAccountEventTests(TestCase):
             "/api/admin/employees/",
             {
                 "email": "phase4.employee@example.com",
-                "password": "employee-secret-123",
+                "password": "test-password",
                 "first_name": "Original",
                 "last_name": "Employee",
                 "department": "Engineering",
@@ -335,7 +335,7 @@ class EmployeeAccountEventTests(TestCase):
 
         response = self.client.post(
             f"/api/admin/employees/{employee.pk}/change-password/",
-            {"new_password": "replacement-secret-123"},
+            {"new_password": "new-test-password"},
             format="json",
         )
         self.assertEqual(response.status_code, 200)
