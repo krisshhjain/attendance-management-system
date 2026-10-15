@@ -37,10 +37,11 @@ Gitleaks 8.30.1 results:
 - `.env` and `bandit-results.json` are not tracked. Only the audit inventory, audit summary, Gitleaks config, and fixture changes are intended for this branch.
 - `git diff --check`: passed.
 - A focused Gitleaks scan of the changed Django auth fixture: passed with 0 findings.
-- Backend test execution was attempted but could not complete: the test process stalled on its first database-backed test, and the configured local PostgreSQL endpoint (`127.0.0.1:5434`) is not listening. The process was stopped. The repository `.venv` does not contain pytest.
-- Frontend test execution was attempted but could not start because Vitest is not installed in `frontend/node_modules` or the root `node_modules`.
-- Bandit, CI, and Sonar configuration were not changed. CI and Sonar Quality Gate results require the PR workflow and are pending.
+- Local backend and frontend test attempts could not complete because the configured PostgreSQL endpoint (`127.0.0.1:5434`) is unavailable and Vitest is not installed in the local dependency tree. The repository `.venv` also does not contain pytest. GitHub Actions supplied its own test dependencies and database.
+- GitHub Actions run 107 passed on commit `eb46add`: backend tests (511 tests), frontend lint, formatting, build and tests, and facial-recognition checks (66 tests). An earlier run exposed a stale expected password in the changed auth test; commit `eb46add` corrected it before run 107.
+- SonarQube Cloud reported **Quality Gate passed** on PR #21, with 0 new issues and 0 security hotspots. Sonar reported 0.0% new-code coverage because this change contains tests and documentation, not production code.
+- Bandit and Sonar configuration were not changed.
 
 ## Review checkpoint
 
-No secret rotation is claimed. The deployment owner still needs to confirm whether the local `.env` RabbitMQ password is reused by production. Do not merge until that answer is recorded and the PR's required human review, GitHub Actions, and Sonar Quality Gate have completed.
+No secret rotation is claimed. The deployment owner still needs to confirm whether the local `.env` RabbitMQ password is reused by production. The PR remains open and unmerged for human review and that owner confirmation.
