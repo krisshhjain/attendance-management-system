@@ -5,32 +5,20 @@ from unittest.mock import Mock, patch
 
 import requests
 from accounts.models import ManagerScope
-from attendance.face_service import (
-    FaceExtractionError,
-    FaceLivenessError,
-    find_closest_match,
-    process_enrollment,
-)
-from attendance.geofence import (
-    GEOFENCE_RADIUS_METERS,
-    WORKPLACE_LATITUDE,
-    WORKPLACE_LONGITUDE,
-    calculate_haversine_distance,
-)
-from attendance.models import (
-    Attendance,
-    AttendanceCorrection,
-    AttendanceEvent,
-    OfficeLocation,
-    RegularizationQuotaPolicy,
-    RegularizationRequest,
-    Shift,
-    attendance_day_end,
-    calculate_working_duration,
-    get_effective_attendance_events,
-)
+from attendance.face_service import (FaceExtractionError, FaceLivenessError,
+                                     _recognize_payload, find_closest_match,
+                                     process_enrollment)
+from attendance.geofence import (GEOFENCE_RADIUS_METERS, WORKPLACE_LATITUDE,
+                                 WORKPLACE_LONGITUDE,
+                                 calculate_haversine_distance)
+from attendance.models import (Attendance, AttendanceCorrection,
+                               AttendanceEvent, OfficeLocation,
+                               RegularizationQuotaPolicy,
+                               RegularizationRequest, Shift,
+                               attendance_day_end, calculate_working_duration,
+                               get_effective_attendance_events)
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from employees.models import Employee, FaceProfile
@@ -39,6 +27,84 @@ from rest_framework.test import APITestCase
 
 User = get_user_model()
 ATTENDANCE_TEST_WORKDAY = date(2026, 10, 12)  # Monday
+
+
+class FaceServiceTimeoutUnitTests(SimpleTestCase):
+    @override_settings(
+        FACE_SERVICE_URL="http://face.test",
+        FACE_SERVICE_TOKEN="face-service-test-token",
+    )
+    @patch("attendance.face_service.requests.post")
+    def test_single_image_request_has_exact_url_payload_headers_and_timeout(
+        self, mock_post
+    ):
+        mock_post.return_value = Mock()
+
+        _recognize_payload("image-data", [{"id": 7, "template": [0.5]}], 0.61)
+
+        mock_post.assert_called_once_with(
+            "http://face.test/recognize",
+            json={
+                "image": "image-data",
+                "candidates": [{"id": 7, "template": [0.5]}],
+                "threshold": 0.61,
+            },
+            headers={"Authorization": "Bearer face-service-test-token"},
+            timeout=60,
+        )
+
+    @override_settings(
+        FACE_SERVICE_URL="http://face.test",
+        FACE_SERVICE_TOKEN="face-service-test-token",
+    )
+    @patch("attendance.face_service.requests.post")
+    def test_sequence_request_has_exact_url_payload_headers_and_timeout(
+        self, mock_post
+    ):
+        mock_post.return_value = Mock()
+        frames = ["one", "two", "three"]
+        timestamps = [0, 300, 600]
+
+        _recognize_payload(
+            frames,
+            [{"id": 7, "template": [0.5]}],
+            0.62,
+            captured_at_ms=timestamps,
+        )
+
+        mock_post.assert_called_once_with(
+            "http://face.test/recognize-sequence",
+            json={
+                "frames": frames,
+                "captured_at_ms": timestamps,
+                "candidates": [{"id": 7, "template": [0.5]}],
+                "threshold": 0.62,
+            },
+            headers={"Authorization": "Bearer face-service-test-token"},
+            timeout=90,
+        )
+
+    @override_settings(
+        FACE_SERVICE_URL="http://face.test",
+        FACE_SERVICE_TOKEN="face-service-test-token",
+    )
+    @patch("attendance.face_service.requests.post")
+    def test_enrollment_request_has_exact_url_payload_headers_and_timeout(
+        self, mock_post
+    ):
+        mock_post.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"template": [0.1] * 512}),
+        )
+
+        process_enrollment(["image-1", "image-2", "image-3"])
+
+        mock_post.assert_called_once_with(
+            "http://face.test/enroll",
+            json={"images": ["image-1", "image-2", "image-3"]},
+            headers={"Authorization": "Bearer face-service-test-token"},
+            timeout=90,
+        )
 
 
 def camera_sequence_payload(**extra):

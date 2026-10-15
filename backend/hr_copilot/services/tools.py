@@ -4,16 +4,10 @@ from employees.models import Employee
 
 from .attendance_intelligence import attendance_intelligence
 from .employee_resolver import employee_resolver
-from .leave_regularization_intelligence import (
-    leave_regularization_intelligence,
-)
-from .pipeline import (
-    CopilotError,
-    build_sql,
-    execute_query,
-    serialize_result,
-    validate_sql,
-)
+from .leave_regularization_intelligence import \
+    leave_regularization_intelligence
+from .pipeline import (CopilotError, build_sql, execute_query,
+                       serialize_result, validate_sql)
 from .workforce_intelligence import workforce_intelligence
 
 
@@ -107,7 +101,7 @@ class HRTools:
     ):
         sql, params = build_sql(plan)
         validate_sql_fn(sql, plan)
-        columns, rows = execute_query_fn(sql, params)
+        columns, rows = execute_query_fn(sql, params, plan)
         return sql, serialize_result(columns, rows), columns
 
 

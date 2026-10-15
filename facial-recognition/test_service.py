@@ -1,12 +1,12 @@
 import base64
 import io
+import ipaddress
 import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
-
 # Import the flask app for testing
 from app import app
 from liveness import LivenessInputError, assess_liveness
@@ -93,11 +93,12 @@ class FRServiceTests(unittest.TestCase):
 
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(_configured_bind_host(), "127.0.0.1")
-            os.environ["FR_BIND_HOST"] = "0.0.0.0"
+            all_interfaces_host = str(ipaddress.IPv4Address(0))
+            os.environ["FR_BIND_HOST"] = all_interfaces_host
             with self.assertRaisesRegex(RuntimeError, "FACE_SERVICE_TOKEN"):
                 _configured_bind_host()
             os.environ["FACE_SERVICE_TOKEN"] = "test-only-token"
-            self.assertEqual(_configured_bind_host(), "0.0.0.0")
+            self.assertEqual(_configured_bind_host(), all_interfaces_host)
 
     def test_recognize_missing_fields(self):
         response = self.app.post("/recognize", json={"image": "dummy"})
