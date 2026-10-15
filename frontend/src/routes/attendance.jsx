@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { EmployeeAttendancePage } from "../components/employee-dashboard/EmployeeAttendancePage.jsx";
 import { AdminAttendancePage } from "../components/admin/AdminAttendancePage.jsx";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 
 function AttendancePageContent() {
   const { user, loginType } = useAuth();

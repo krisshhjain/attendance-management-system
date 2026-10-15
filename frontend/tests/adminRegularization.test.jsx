@@ -18,7 +18,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../src/components/RequireAuth.jsx", () => ({
   RequireAuth: ({ children }) => children,
 }));
-vi.mock("../src/lib/auth.jsx", () => ({
+vi.mock("../src/lib/useAuth.js", () => ({
   useAuth: () => ({ user: state.user, loginType: state.loginType }),
 }));
 vi.mock("../src/lib/api.js", () => ({
@@ -26,7 +26,7 @@ vi.mock("../src/lib/api.js", () => ({
   fetchAdminRegularizationQuotaPolicy: state.policy,
   updateAdminRegularizationQuotaPolicy: state.savePolicy,
 }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({ useFeedback: () => state.feedback }));
+vi.mock("../src/feedback/useFeedback.js", () => ({ useFeedback: () => state.feedback }));
 
 function renderPage() {
   const Component = Route.component;

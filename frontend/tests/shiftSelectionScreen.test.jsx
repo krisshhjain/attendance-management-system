@@ -8,7 +8,7 @@ import { ShiftSelectionScreen } from "../src/components/ShiftSelectionScreen.jsx
 import { server } from "./mocks/server.js";
 
 const feedback = vi.hoisted(() => ({ success: vi.fn(), notifyError: vi.fn() }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({
+vi.mock("../src/feedback/useFeedback.js", () => ({
   FeedbackProvider: ({ children }) => children,
   useFeedback: () => feedback,
 }));

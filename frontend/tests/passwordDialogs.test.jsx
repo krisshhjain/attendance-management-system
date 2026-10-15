@@ -13,10 +13,10 @@ const state = vi.hoisted(() => ({
   success: vi.fn(),
   notifyError: vi.fn(),
 }));
-vi.mock("../src/lib/auth.jsx", () => ({
+vi.mock("../src/lib/useAuth.js", () => ({
   useAuth: () => ({ logout: state.logout, refreshUser: state.refreshUser }),
 }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({
+vi.mock("../src/feedback/useFeedback.js", () => ({
   useFeedback: () => ({ success: state.success, notifyError: state.notifyError }),
 }));
 

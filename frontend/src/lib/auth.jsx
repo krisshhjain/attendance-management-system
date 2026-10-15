@@ -1,7 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest, tokenStore } from "./api.js";
-
-const AuthContext = createContext(null);
+import { AuthContext } from "./authContext.js";
 
 // Helpers — always read/write localStorage directly so loginType
 // is never out-of-sync with React state during re-renders
@@ -99,10 +98,4 @@ export function AuthProvider({ children }) {
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
 }

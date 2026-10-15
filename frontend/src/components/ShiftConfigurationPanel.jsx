@@ -20,7 +20,7 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SaveIcon from "@mui/icons-material/Save";
 import { fetchAdminShiftConfiguration, configureEmploymentTypeShifts } from "../lib/api.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 import { getErrorMessage } from "../feedback/errorMessage.js";
 
 export function ShiftConfigurationPanel() {

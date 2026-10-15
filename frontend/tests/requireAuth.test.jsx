@@ -15,7 +15,7 @@ import { server } from "./mocks/server.js";
 import { API_BASE_URL } from "../src/lib/api.js";
 
 const authState = vi.hoisted(() => ({ value: null }));
-vi.mock("../src/lib/auth.jsx", () => ({ useAuth: () => authState.value }));
+vi.mock("../src/lib/useAuth.js", () => ({ useAuth: () => authState.value }));
 vi.mock("../src/components/SuperAdminLayout.jsx", () => ({
   SuperAdminLayout: ({ children }) => <div data-testid="admin-layout">{children}</div>,
 }));

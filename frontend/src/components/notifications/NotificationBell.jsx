@@ -23,7 +23,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api.js";
-import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../../feedback/useFeedback.js";
 
 const notificationsQueryKey = ["notifications"];
 const unreadNotificationsQueryKey = ["notifications", "unread"];

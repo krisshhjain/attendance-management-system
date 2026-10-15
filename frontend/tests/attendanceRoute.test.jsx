@@ -6,7 +6,7 @@ const state = vi.hoisted(() => ({ user: null, loginType: "employee" }));
 
 vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => (options) => options }));
 vi.mock("../src/components/RequireAuth.jsx", () => ({ RequireAuth: ({ children }) => children }));
-vi.mock("../src/lib/auth.jsx", () => ({ useAuth: () => state }));
+vi.mock("../src/lib/useAuth.js", () => ({ useAuth: () => state }));
 vi.mock("../src/components/admin/AdminAttendancePage.jsx", () => ({
   AdminAttendancePage: ({ allowReset, allowEdit }) => (
     <div data-testid="admin-attendance" data-reset={allowReset} data-edit={allowEdit} />

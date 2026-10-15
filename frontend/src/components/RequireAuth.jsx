@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useLocation } from "@tanstack/react-router";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import { SuperAdminLayout } from "./SuperAdminLayout.jsx";
 import { EmployeeLayout } from "./app/EmployeeLayout.jsx";
 import { Alert, Box, Button, CircularProgress, Typography } from "@mui/material";

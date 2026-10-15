@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Box, Typography, Button, Paper } from "@mui/material";
 import WebcamCapture from "../components/WebcamCapture.jsx";
 import FaceResultOverlay from "../components/FaceResultOverlay.jsx";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 
 export const Route = createFileRoute("/kiosk")({
   component: Kiosk,

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Sidebar } from "./Sidebar.jsx";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import { SystemAdminChatWidget } from "./SystemAdminChatWidget.jsx";
 import { NotificationBell } from "./notifications/NotificationBell.jsx";
 

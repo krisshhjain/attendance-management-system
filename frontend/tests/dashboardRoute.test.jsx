@@ -21,7 +21,7 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
 vi.mock("../src/components/RequireAuth.jsx", () => ({ RequireAuth: ({ children }) => children }));
-vi.mock("../src/lib/auth.jsx", () => ({
+vi.mock("../src/lib/useAuth.js", () => ({
   useAuth: () => ({ user: state.user, loginType: state.loginType }),
 }));
 vi.mock("../src/components/dashboard/AttendanceChart.jsx", () => ({

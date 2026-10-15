@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Box, FormControl, InputLabel, MenuItem, Select } from "@mui/material";
-import { getOrganizationScope, useOrganizationScope } from "../../lib/organizationScope.jsx";
+import { getOrganizationScope } from "../../lib/organizationScopeUtils.js";
+import { useOrganizationScope } from "../../lib/useOrganizationScope.js";
 import { sortOrganizationScopeValues } from "./organizationScopeSort.js";
 
 function uniqueValues(employees, field) {

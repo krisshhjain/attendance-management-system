@@ -4,9 +4,9 @@ import {
   filterScopedRecords,
   getOrganizationScope,
   matchesOrganizationScope,
-  OrganizationScopeProvider,
-  useOrganizationScope,
-} from "../src/lib/organizationScope.jsx";
+} from "../src/lib/organizationScopeUtils.js";
+import { OrganizationScopeProvider } from "../src/lib/organizationScope.jsx";
+import { useOrganizationScope } from "../src/lib/useOrganizationScope.js";
 
 test("resolves scope fallbacks and matches organizational field aliases", () => {
   const scope = { brId: 1, sectionId: 2, subsectionId: 3 };

@@ -18,13 +18,13 @@ import {
   Typography,
 } from "@mui/material";
 import { RequireAuth } from "../components/RequireAuth.jsx";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import {
   fetchAdminRegularizationQuotaPolicy,
   fetchAdminRegularizationRequests,
   updateAdminRegularizationQuotaPolicy,
 } from "../lib/api.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 
 export const Route = createFileRoute("/admin-regularization")({
   component: () => (

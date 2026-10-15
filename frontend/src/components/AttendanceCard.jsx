@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, getToday } from "../lib/attendance.js";
 import { getCurrentCoordinates } from "../lib/location.js";
 import { formatDuration, formatTime } from "../lib/date.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 import { StatusBadge } from "./StatusBadge.jsx";
 import { ErrorState, LoadingState } from "./States.jsx";
 import { Card, CardHeader, CardContent, Typography, Box, Button, Divider } from "@mui/material";

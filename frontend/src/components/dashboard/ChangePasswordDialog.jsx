@@ -11,7 +11,7 @@ import {
   Alert,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api";
-import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../../feedback/useFeedback.js";
 import { getErrorMessage } from "../../feedback/errorMessage.js";
 
 export function ChangePasswordDialog({ open, employee, onClose, onSuccess }) {

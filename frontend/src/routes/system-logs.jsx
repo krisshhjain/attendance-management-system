@@ -32,8 +32,8 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import DownloadIcon from "@mui/icons-material/Download";
 import { RequireAuth } from "../components/RequireAuth.jsx";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
-import { useAuth } from "../lib/auth.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
+import { useAuth } from "../lib/useAuth.js";
 import {
   deleteSystemLogs,
   downloadSystemLogs,
