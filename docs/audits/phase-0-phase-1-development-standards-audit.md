@@ -87,7 +87,7 @@ Flake8's remaining E501 lines are message, prompt, SQL, and test literals whose 
 
 ## Hosted checks and review gate
 
-At the prior PR head `e648f0e6c1eb587238f6b738becc371274a6f50b`, GitHub Actions run [38643590009](https://github.com/krisshhjain/attendance-management-system/actions/runs/38643590009) passed. A SonarQube Cloud PR comment reported **Quality Gate passed**, 0 new issues, and 84.4% coverage on new code. These are prior-head results; GitHub Actions and the actual Sonar Quality Gate must be checked again for the final pushed PR head after this report commit.
+At PR head `0980f694497afda972092122b695200c03649dc2`, GitHub Actions run [38685175105](https://github.com/krisshhjain/attendance-management-system/actions/runs/38685175105) passed all four jobs: backend checks, frontend build/tests, facial-recognition checks, and the SonarQube Cloud analysis action. The SonarQube Cloud bot's [PR comment](https://github.com/krisshhjain/attendance-management-system/pull/19#issuecomment-6184994703) independently reports **Quality Gate passed**, 0 new issues, 0 security hotspots, and 84.4% coverage on new code. This check covered implementation commit `321193cbb35250245dba14f32ea7c658f8a30131` and the report version then on the branch. This follow-up changes only the report to record the results; the resulting PR head must receive its own automated rerun before merge.
 
 ## Remaining approval and merge decision
 
