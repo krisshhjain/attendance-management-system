@@ -8,7 +8,8 @@ def required_secret(environment, name):
     value = environment.get(name, "")
     if not isinstance(value, str) or not value.strip():
         raise ImproperlyConfigured(
-            f"{name} must be configured in the environment before Django starts."
+            f"{name} must be configured in the environment before Django s"
+            f"tarts."
         )
     return value
 
@@ -25,14 +26,18 @@ def validate_production_configuration(
     secret_key="",
     face_service_token="",
 ):
-    """Reject development-only settings when explicitly running in production."""
+    (
+        'Reject development-only settings when explicitly running in '
+        'production.'
+    )
     if environment != "production":
         return
     if debug:
         raise ImproperlyConfigured("DJANGO_DEBUG must be false in production")
     if len(secret_key) < 50:
         raise ImproperlyConfigured(
-            "DJANGO_SECRET_KEY must contain at least 50 characters in production"
+            'DJANGO_SECRET_KEY must contain at least 50 characters in '
+            'production'
         )
     if not allowed_hosts or "*" in allowed_hosts:
         raise ImproperlyConfigured(
@@ -60,5 +65,6 @@ def validate_production_configuration(
         )
     if len(face_service_token.strip()) < 32:
         raise ImproperlyConfigured(
-            "FACE_SERVICE_TOKEN must contain at least 32 characters in production"
+            'FACE_SERVICE_TOKEN must contain at least 32 characters in '
+            'production'
         )

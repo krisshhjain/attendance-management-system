@@ -55,7 +55,10 @@ def _manager_log_state(user):
 
 
 def _sync_legacy_manager_section_scopes(user):
-    """Keep existing Manager CRUD compatible with the authoritative scope rows."""
+    (
+        'Keep existing Manager CRUD compatible with the authoritative scope '
+        'rows.'
+    )
     values = {
         str(value).strip().upper()
         for value in (user.hr_copilot_sections or [])

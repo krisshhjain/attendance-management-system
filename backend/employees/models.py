@@ -48,14 +48,14 @@ class Employee(models.Model):
         return self.user.email
 
     def get_effective_shift(self):
-        """
-        Get the effective shift for this employee based on employment type configuration.
-
-        Returns:
-            - Employee's assigned shift if they have one (Employee.shift)
-            - Single configured shift if exactly one exists for their employment type
-            - None otherwise (no shifts configured or multiple shifts available)
-        """
+        (
+            '\n        Get the effective shift for this employee based on '
+            'employment type configuration.\n\n        Returns:\n            '
+            "- Employee's assigned shift if they have one (Employee.shift)\n  "
+            '          - Single configured shift if exactly one exists for '
+            'their employment type\n            - None otherwise (no shifts '
+            'configured or multiple shifts available)\n        '
+        )
         # If employee has an explicitly assigned shift, use that
         if self.shift is not None:
             return self.shift

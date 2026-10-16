@@ -283,14 +283,18 @@ def main():
     logger.info("=" * 80)
     logger.info(f"Total images processed: {stats.get('total_images', 0)}")
     logger.info(
-        f"Clean single-face images: {stats.get('successful_single_face', 0)} ({stats.get('clean_rate', 0)*100:.1f}%)"
+        f"Clean single-face images: "
+        f"{stats.get('successful_single_face', 0)} ("
+        f"{stats.get('clean_rate', 0)*100:.1f}%)"
     )
     logger.info(
-        f"Multi-face images: {stats.get('multi_face_images', 0)} ({stats.get('multi_face_rate', 0)*100:.1f}%)"
+        f"Multi-face images: {stats.get('multi_face_images', 0)} ("
+        f"{stats.get('multi_face_rate', 0)*100:.1f}%)"
     )
     logger.info(f"  - Ambiguous (similar size faces): {len(ambiguous_images)}")
     logger.info(
-        f"Detection failures: {stats.get('detection_failures', 0)} ({stats.get('failure_rate', 0)*100:.1f}%)"
+        f"Detection failures: {stats.get('detection_failures', 0)} ("
+        f"{stats.get('failure_rate', 0)*100:.1f}%)"
     )
 
     # Highlight problematic identities
@@ -302,7 +306,9 @@ def main():
             rate = item["problem_rate"]
             stats = item["stats"]
             logger.info(
-                f"  {identity}: {rate*100:.1f}% failure rate ({stats['multi_face']}M + {stats['detection_failures']}F / {stats['total_images']}T)"
+                f"  {identity}: {rate*100:.1f}% failure rate ("
+                f"{stats['multi_face']}M + {stats['detection_failures']}F "
+                f"/ {stats['total_images']}T)"
             )
 
     logger.info(f"\nDetailed report saved: {report_path}")

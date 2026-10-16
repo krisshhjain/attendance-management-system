@@ -95,7 +95,8 @@ def test_compact_context():
                 measurement = measure_context_size(messages)
                 context_measurements.append(measurement)
                 print(
-                    f"Context size: {measurement['total_chars']} chars (~{measurement['total_tokens_est']} tokens)"
+                    f"Context size: {measurement['total_chars']} chars (~"
+                    f"{measurement['total_tokens_est']} tokens)"
                 )
                 print(f"  System: {measurement['system_chars']} chars")
                 print(f"  User: {measurement['user_chars']} chars")
@@ -108,7 +109,8 @@ def test_compact_context():
                 print(f"Intent extracted: {intent.get('intent', 'unknown')}")
                 print(f"Action type: {intent.get('action_type', 'unknown')}")
                 print(
-                    f"Requires approval: {intent.get('requires_approval', False)}"
+                    f"Requires approval: "
+                    f"{intent.get('requires_approval', False)}"
                 )
 
                 if intent.get("entities"):
@@ -139,7 +141,9 @@ def test_compact_context():
                     measurement = measure_context_size(messages)
                     response_measurements.append(measurement)
                     print(
-                        f"Response context size: {measurement['total_chars']} chars (~{measurement['total_tokens_est']} tokens)"
+                        f"Response context size: "
+                        f"{measurement['total_chars']} chars (~"
+                        f"{measurement['total_tokens_est']} tokens)"
                     )
                     return original_structured_output(messages, **kwargs)
 
@@ -234,7 +238,8 @@ def test_compact_context():
             print("  ✗ Some contexts exceed 8K tokens (may cause issues)")
 
     print(
-        f"\nQuery Success Rate: {successful_queries}/{len(queries)} ({successful_queries / len(queries) * 100:.1f}%)"
+        f"\nQuery Success Rate: {successful_queries}/{len(queries)} ("
+        f"{successful_queries / len(queries) * 100:.1f}%)"
     )
 
     # Show context evolution
@@ -251,7 +256,8 @@ def test_compact_context():
     print("\nContext Reduction Estimate:")
     print("  Before: Large system prompts with full examples (~2000+ chars)")
     print(
-        f"  After: Compact prompts with session context (~{avg_chars:.0f} chars average)"
+        f"  After: Compact prompts with session context (~{avg_chars:.0f} "
+        f"chars average)"
     )
     if avg_chars > 0:
         reduction_pct = max(0, (2000 - avg_chars) / 2000 * 100)

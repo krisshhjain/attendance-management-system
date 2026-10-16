@@ -28,7 +28,10 @@ class FaceLivenessError(FaceExtractionError):
     def __init__(self, status: str):
         self.status = status
         if status == "liveness_failed":
-            message = "Liveness check failed. Please use a live camera image and try again."
+            message = (
+                'Liveness check failed. Please use a live camera image and '
+                'try again.'
+            )
         else:
             self.status = "liveness_error"
             message = (
@@ -54,7 +57,10 @@ def _raise_for_recognition_error(response):
 
 
 def _to_base64_string(image_data: Union[str, bytes]) -> str:
-    """Helper to ensure image data is a base64 encoded string for JSON transmission."""
+    (
+        'Helper to ensure image data is a base64 encoded string for JSON '
+        'transmission.'
+    )
     if isinstance(image_data, str):
         # Could be 'data:image/jpeg;base64,....'
         if image_data.startswith("data:image"):
@@ -67,7 +73,10 @@ def _to_base64_string(image_data: Union[str, bytes]) -> str:
 
 
 def _recognize_payload(image_data, candidates, threshold, captured_at_ms=None):
-    """Use the sequence gate for attendance captures; retain legacy single-image callers."""
+    (
+        'Use the sequence gate for attendance captures; retain legacy '
+        'single-image callers.'
+    )
     if isinstance(image_data, (list, tuple)):
         if not 3 <= len(image_data) <= 7:
             raise FaceExtractionError(
@@ -134,10 +143,11 @@ def process_enrollment(images: List[Union[str, bytes]]) -> List[float]:
 def find_closest_match(
     query_image_data, threshold: float = 0.60, captured_at_ms=None
 ) -> Tuple[Optional[Employee], float]:
-    """
-    Finds the closest enrolled employee matching the query image using the local FR microservice.
-    Returns (Employee, distance) or (None, best_distance) if no match under threshold.
-    """
+    (
+        '\n    Finds the closest enrolled employee matching the query image '
+        'using the local FR microservice.\n    Returns (Employee, distance) '
+        'or (None, best_distance) if no match under threshold.\n    '
+    )
     profiles = FaceProfile.objects.select_related("employee").filter(
         employee__is_active=True, status="ACTIVE"
     )
@@ -192,10 +202,11 @@ def verify_employee_face(
     threshold: float = 0.60,
     captured_at_ms=None,
 ) -> Tuple[bool, float]:
-    """
-    Verifies if the face in the query image matches the specified employee (1:1 verification).
-    Returns (True, distance) if it matches, or (False, distance) if it doesn't.
-    """
+    (
+        '\n    Verifies if the face in the query image matches the specified '
+        'employee (1:1 verification).\n    Returns (True, distance) if it '
+        "matches, or (False, distance) if it doesn't.\n    "
+    )
     try:
         profile = FaceProfile.objects.get(employee=employee, status="ACTIVE")
     except FaceProfile.DoesNotExist:

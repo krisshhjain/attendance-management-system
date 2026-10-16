@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+
 # Import the flask app for testing
 from app import app
 from liveness import LivenessInputError, assess_liveness
@@ -46,7 +47,10 @@ class FRServiceTests(unittest.TestCase):
         self.app.testing = True
 
     def _create_dummy_image(self):
-        """Creates a dummy base64 white square image (note: RetinaFace will fail to find faces here, but it's for API validation)"""
+        (
+            'Creates a dummy base64 white square image (note: RetinaFace will '
+            "fail to find faces here, but it's for API validation)"
+        )
         img = Image.new("RGB", (100, 100), color="white")
         buffered = io.BytesIO()
         img.save(buffered, format="JPEG")

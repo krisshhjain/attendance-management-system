@@ -22,7 +22,8 @@ def test_write_intent_with_tracing():
     """Test the specific failing write intent with detailed tracing."""
 
     print(
-        "TESTING WRITE INTENT: Make Akshat Bansal Absent for 24th September 2026"
+        'TESTING WRITE INTENT: Make Akshat Bansal Absent for 24th '
+        'September 2026'
     )
     print("=" * 70)
 
@@ -51,20 +52,25 @@ def test_write_intent_with_tracing():
         if "local Qwen intent service is unavailable" in str(e):
             print("\nFAILURE ANALYSIS:")
             print(
-                "- Error is coming from hr_copilot/services/llm.py lines 80 or 114"
+                '- Error is coming from hr_copilot/services/llm.py lines '
+                '80 or 114'
             )
             print("- This means either:")
             print(
-                "  1. get_llm_provider() is throwing LLMProviderError (line 80)"
+                '  1. get_llm_provider() is throwing LLMProviderError '
+                '(line 80)'
             )
             print(
-                "  2. provider.structured_output() is throwing LLMProviderError (line 114)"
+                '  2. provider.structured_output() is throwing '
+                'LLMProviderError (line 114)'
             )
             print(
-                "- But our previous tests show the provider is working perfectly!"
+                '- But our previous tests show the provider is working '
+                'perfectly!'
             )
             print(
-                "- This suggests a timing/concurrency issue or context-specific failure"
+                '- This suggests a timing/concurrency issue or '
+                'context-specific failure'
             )
 
         return False
@@ -86,12 +92,24 @@ def test_provider_isolation():
             # Test the exact structured output call that's failing
             messages = [
                 {
-                    "role": "system",
-                    "content": "Extract HR semantic intent as JSON. Focus on WHAT the user wants, not backend implementation.\nIntents: attendance_lookup, attendance_update, employee_lookup, leave_lookup, leave_create, absence_lookup\nExtract: intent, employee_name, temporal_expression, target_status (for updates)\nWrite operations: 'mark as', 'set to', 'make', 'put on', 'create', 'update', 'change'\nRead operations: 'who was', 'show', 'list', 'when did', 'how many'\nStatus values: 'absent', 'present', 'incomplete'",
+                    "role":
+                    "system",
+                    "content":
+                    'Extract HR semantic intent as JSON. Focus on WHAT '
+                        'the user wants, not backend implementation.\n'
+                        'Intents: attendance_lookup, attendance_update, '
+                        'employee_lookup, leave_lookup, leave_create, '
+                        'absence_lookup\nExtract: intent, employee_name, '
+                        'temporal_expression, target_status (for updates)\n'
+                        "Write operations: 'mark as', 'set to', 'make', 'put "
+                        "on', 'create', 'update', 'change'\nRead operations: "
+                        "'who was', 'show', 'list', 'when did', 'how many'\n"
+                        "Status values: 'absent', 'present', 'incomplete'",
                 },
                 {
                     "role": "user",
-                    "content": "Make Akshat Bansal Absent for 24th September 2026",
+                    "content":
+                    "Make Akshat Bansal Absent for 24th September 2026",
                 },
             ]
 
@@ -133,5 +151,6 @@ if __name__ == "__main__":
     else:
         print("The write intent is still failing.")
         print(
-            "Need to add more detailed logging to identify the exact failure point."
+            'Need to add more detailed logging to identify the exact '
+            'failure point.'
         )

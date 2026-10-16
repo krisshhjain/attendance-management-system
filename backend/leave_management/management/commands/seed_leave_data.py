@@ -31,7 +31,8 @@ class Command(BaseCommand):
             {
                 "name": "Earned Leave",
                 "code": "EARNED",
-                "description": "Privilege/Earned leave accrued through continuous service",
+                "description":
+                "Privilege/Earned leave accrued through continuous service",
                 "is_paid": True,
                 "allow_half_day": False,
                 "min_notice_days": 2,
@@ -39,7 +40,8 @@ class Command(BaseCommand):
             {
                 "name": "Privileged Leave",
                 "code": "PRIVILEGED",
-                "description": "Special privileged leave for extended vacations or events",
+                "description":
+                "Special privileged leave for extended vacations or events",
                 "is_paid": True,
                 "allow_half_day": False,
                 "min_notice_days": 3,
@@ -47,7 +49,8 @@ class Command(BaseCommand):
             {
                 "name": "Unpaid Leave",
                 "code": "UNPAID",
-                "description": "Leave without pay when paid balances are exhausted",
+                "description":
+                "Leave without pay when paid balances are exhausted",
                 "is_paid": False,
                 "allow_half_day": True,
                 "min_notice_days": 0,
@@ -55,7 +58,8 @@ class Command(BaseCommand):
             {
                 "name": "Optional Holiday",
                 "code": "OPTIONAL_HOLIDAY",
-                "description": "Restricted/Optional holiday from company holiday list",
+                "description":
+                "Restricted/Optional holiday from company holiday list",
                 "is_paid": True,
                 "allow_half_day": False,
                 "min_notice_days": 1,
@@ -176,9 +180,10 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"  + Created Policy: {item['employee_type']} - {lt.name} ({item.get('annual_entitlement')} days)"
-                    )
-                )
+                        f"  + Created Policy: {item['employee_type']} - "
+                        f"{lt.name} ({item.get('annual_entitlement')} days"
+                        f")"
+                    ))
 
         self.stdout.write(
             self.style.SUCCESS(

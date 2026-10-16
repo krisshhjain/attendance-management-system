@@ -13,8 +13,9 @@ def is_working_day(date_obj: datetime.date) -> bool:
 
 
 def is_holiday(date_obj: datetime.date) -> bool:
-    """Return whether this date is an active named company holiday.
-
-    Weekends are weekly non-working days and are intentionally not company holidays.
-    """
+    (
+        'Return whether this date is an active named company holiday.\n\n    '
+        'Weekends are weekly non-working days and are intentionally not '
+        'company holidays.\n    '
+    )
     return is_company_holiday(date_obj)

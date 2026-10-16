@@ -96,7 +96,10 @@ class IsEmployee(BasePermission):
 
 
 class IsAdminOrAppAdmin(BasePermission):
-    """Allow Admin (is_staff) or Super Admin (is_superuser) for shift management."""
+    (
+        'Allow Admin (is_staff) or Super Admin (is_superuser) for shift '
+        'management.'
+    )
 
     def has_permission(self, request, view):
         return bool(

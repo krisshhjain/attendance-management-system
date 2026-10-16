@@ -172,9 +172,13 @@ class LeaveRegularizationIntelligence:
                     )
             return self._result(
                 metric,
-                {"start": f"{year}-01-01", "end": f"{year}-12-31"},
+                {
+                    "start": f"{year}-01-01",
+                    "end": f"{year}-12-31"
+                },
                 rows,
-                "Balance uses the application's active leave policy, approved usage, pending usage, and carry-forward rules.",
+                "Balance uses the application's active leave policy, "
+                'approved usage, pending usage, and carry-forward rules.',
             )
         if metric == "leave_policy":
             rows = []
@@ -223,7 +227,9 @@ class LeaveRegularizationIntelligence:
                 metric,
                 None,
                 rows,
-                "Policies are effective policies for the requested employee scope; type defaults are shown when no employee was specified.",
+                'Policies are effective policies for the requested '
+                'employee scope; type defaults are shown when no employee '
+                'was specified.',
             )
         start, end = _date_range(
             filters,
@@ -292,7 +298,8 @@ class LeaveRegularizationIntelligence:
                 metric,
                 _range_json(start, end),
                 rows,
-                "Leave request duration uses the stored duration calculated by the leave-management service.",
+                'Leave request duration uses the stored duration '
+                'calculated by the leave-management service.',
             )
         rq = RegularizationRequest.objects.select_related(
             "employee__user", "attendance_correction"
@@ -310,12 +317,14 @@ class LeaveRegularizationIntelligence:
             if len(matches) > 1:
                 raise CopilotError(
                     "request_ambiguous",
-                    "More than one regularization matched. Please provide the request ID.",
+                    'More than one regularization matched. Please provide '
+                    'the request ID.',
                 )
             if not matches:
                 raise CopilotError(
                     "request_not_found",
-                    "No matching regularization or attendance correction was found.",
+                    'No matching regularization or attendance correction '
+                    'was found.',
                 )
             req = matches[0]
             events = (
@@ -335,13 +344,16 @@ class LeaveRegularizationIntelligence:
                 for e in events
             ]
             row["explanation"] = (
-                "The approved regularization is linked to the corrective attendance events listed here; historical events remain auditable."
+                'The approved regularization is linked to the corrective '
+                'attendance events listed here; historical events remain '
+                'auditable.'
             )
             return self._result(
                 metric,
                 _range_json(start, end),
                 [row],
-                "Explanation is based on the regularization request, linked correction, and correction-linked events.",
+                'Explanation is based on the regularization request, '
+                'linked correction, and correction-linked events.',
             )
         requests = list(rq.order_by("attendance_date", "id"))
         if metric == "regularization_summary":
@@ -356,7 +368,8 @@ class LeaveRegularizationIntelligence:
             metric,
             _range_json(start, end),
             rows,
-            "Regularization results are read from the application's request and correction records.",
+            "Regularization results are read from the application's "
+            'request and correction records.',
         )
 
     @staticmethod

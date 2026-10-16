@@ -9,9 +9,17 @@ import pytest
 from django.utils import timezone
 
 from .services.intent_normalizer import IntentNormalizer
-from .services.pipeline import (CopilotError, analyze_question, build_sql,
-                                derive_scope, execute_query, generate_answer,
-                                plan_query, serialize_result, validate_sql)
+from .services.pipeline import (
+    CopilotError,
+    analyze_question,
+    build_sql,
+    derive_scope,
+    execute_query,
+    generate_answer,
+    plan_query,
+    serialize_result,
+    validate_sql,
+)
 
 
 @pytest.mark.parametrize(
@@ -372,8 +380,14 @@ def test_attendance_absent_status_is_distinct_from_leave_even_if_llm_disagrees(
 
 def test_explicit_leave_attendance_status_remains_leave():
     intent = IntentNormalizer().normalize_intent(
-        {"intent": "attendance_update", "entities": {}},
-        original_query="Mark Ashish Rai as on leave for 29th September because of illness",
+        {
+            "intent": "attendance_update",
+            "entities": {}
+        },
+        original_query=(
+            "Mark Ashish Rai as on leave for 29th September because of "
+            "illness"
+        ),
     )
     assert intent["entities"]["target_status"] == "LEAVE"
 
@@ -553,8 +567,16 @@ def test_legacy_builder_plan_can_render_an_attendance_summary(monkeypatch):
     plan = {
         "source": "attendance",
         "intent": "attendance_summary",
-        "filters": {"date_range": {"start": "2026-10-05", "end": "2026-10-05"}},
-        "scope": {"sections": [], "subsections": []},
+        "filters": {
+            "date_range": {
+                "start": "2026-10-05",
+                "end": "2026-10-05"
+            }
+        },
+        "scope": {
+            "sections": [],
+            "subsections": []
+        },
         "limit": 100,
     }
     sql, params = build_sql(plan)
@@ -727,12 +749,16 @@ def test_query_must_match_the_approved_template():
     "tamper",
     [
         lambda plan: plan["filters"].update(
-            {"department); DROP TABLE accounts_user; --": "x"}
-        ),
-        lambda plan: plan.update({"intent": "employee_lookup; SELECT * FROM auth_user"}),
+            {"department); DROP TABLE accounts_user; --": "x"}),
         lambda plan: plan.update(
-            {"scope": {"sections": [], "subsections": [], "unrestricted": False}}
-        ),
+            {"intent": "employee_lookup; SELECT * FROM auth_user"}),
+        lambda plan: plan.update({
+            "scope": {
+                "sections": [],
+                "subsections": [],
+                "unrestricted": False
+            }
+        }),
     ],
 )
 def test_tampered_plan_identifiers_and_sql_fragments_are_rejected(tamper):
@@ -758,7 +784,8 @@ def test_unsafe_sql_cannot_be_authorized_without_matching_fixed_plan():
         "limit": 10,
     }
     with pytest.raises(CopilotError):
-        validate_sql("SELECT id FROM employees_employee; SELECT * FROM auth_user", plan)
+        validate_sql(
+            "SELECT id FROM employees_employee; SELECT * FROM auth_user", plan)
 
 
 def test_sql_fragments_in_filter_values_remain_bound_parameters():
@@ -779,8 +806,14 @@ def test_generated_queries_keep_injection_text_out_of_sql_and_params():
     plan = {
         "source": "employee",
         "intent": "employee_count",
-        "filters": {"section": "C1? DROP TABLE accounts_user"},
-        "scope": {"sections": ["C"], "subsections": ["C1"], "unrestricted": False},
+        "filters": {
+            "section": "C1? DROP TABLE accounts_user"
+        },
+        "scope": {
+            "sections": ["C"],
+            "subsections": ["C1"],
+            "unrestricted": False
+        },
         "limit": 100,
     }
     sql, params = build_sql(plan)
@@ -886,8 +919,9 @@ def test_result_values_are_json_safe_and_answers_use_returned_counts():
         == "3 employees matched your question."
     )
     assert (
-        generate_answer({"source": "leave"}, [])
-        == "No matching HR records were found for your authorized scope and filters."
+        generate_answer({"source": "leave"}, []) ==
+        'No matching HR records were found for your authorized scope and '
+        'filters.'
     )
 
 
@@ -906,6 +940,7 @@ def test_employee_profile_answer_uses_only_returned_database_fields():
         ],
     )
     assert (
-        answer
-        == "Asha Rao is an active permanent employee in Engineering, Section C, Subsection C1."
+        answer ==
+        'Asha Rao is an active permanent employee in Engineering, Section '
+        'C, Subsection C1.'
     )

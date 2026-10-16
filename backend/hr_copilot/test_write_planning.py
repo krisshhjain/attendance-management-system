@@ -26,7 +26,10 @@ User = get_user_model()
 
 
 def test_write_action_planning():
-    """Test the specific steps that might be failing in write action planning."""
+    (
+        'Test the specific steps that might be failing in write action '
+        'planning.'
+    )
 
     print("TESTING WRITE ACTION PLANNING")
     print("=" * 40)
@@ -101,9 +104,11 @@ if __name__ == "__main__":
 
     if success:
         print(
-            "\nWrite action planning works - the issue is in views.py exception handling"
+            '\nWrite action planning works - the issue is in views.py '
+            'exception handling'
         )
     else:
         print(
-            "\nWrite action planning fails - this is why it falls through to read path"
+            '\nWrite action planning fails - this is why it falls through '
+            'to read path'
         )

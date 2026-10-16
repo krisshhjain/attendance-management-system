@@ -13,7 +13,10 @@ from .regex_safety import find_email_address, has_ordered_regex_matches
 
 
 class SemanticInterpreter:
-    """Converts natural language queries into structured HR intents with dynamic entity resolution."""
+    (
+        'Converts natural language queries into structured HR intents with '
+        'dynamic entity resolution.'
+    )
 
     def __init__(self):
         self.temporal_expressions = {
@@ -100,7 +103,8 @@ class SemanticInterpreter:
             "temporal_expression"
         ):
             relative = re.search(
-                r"\b(yesterday|today|last week|this week|this month|last month)\b",
+                '\\b(yesterday|today|last week|this week|this month|last '
+                'month)\\b',
                 question,
                 re.IGNORECASE,
             )
@@ -133,7 +137,8 @@ class SemanticInterpreter:
         ):
             raise CopilotError(
                 "outside_hr_domain",
-                "I'm the HR Copilot. I can help with authorized employee, attendance, and leave information.",
+                "I'm the HR Copilot. I can help with authorized employee, "
+                'attendance, and leave information.',
             )
 
         # Check for system access attempts
@@ -144,7 +149,8 @@ class SemanticInterpreter:
         ):
             raise CopilotError(
                 "outside_hr_domain",
-                "I'm the HR Copilot. I can help with authorized employee, attendance, and leave information.",
+                "I'm the HR Copilot. I can help with authorized employee, "
+                'attendance, and leave information.',
             )
 
         # Check for unsupported entities
@@ -200,7 +206,8 @@ class SemanticInterpreter:
 
         # Handle pronoun references to previous employee
         follow_up_reference = re.compile(
-            r"\b(?:he|she|they|them|him|her|his|their|that employee|the employee|this employee)\b",
+            '\\b(?:he|she|they|them|him|her|his|their|that employee|the '
+            'employee|this employee)\\b',
             re.IGNORECASE,
         )
         if (
@@ -213,7 +220,8 @@ class SemanticInterpreter:
 
         # Inherit temporal context for relative references
         relative_temporal = re.search(
-            r"\b(?:what about|how about)\s+(?:yesterday|today|last week|this month)\b",
+            '\\b(?:what about|how about)\\s+(?:yesterday|today|last '
+            'week|this month)\\b',
             question.lower(),
         )
         if relative_temporal and not entities.get("temporal_expression"):
@@ -296,7 +304,10 @@ class SemanticInterpreter:
             pass
 
     def _parse_natural_date(self, text: str) -> Optional[str]:
-        """Parse natural date expressions like 'March 15' or '15th March 2026'."""
+        (
+            "Parse natural date expressions like 'March 15' or '15th March "
+            "2026'."
+        )
         month_names = {
             "jan": 1,
             "january": 1,

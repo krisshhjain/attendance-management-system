@@ -56,7 +56,8 @@ def trace_write_request():
             return
 
         print(
-            f"  SUCCESS: Using user {user.username} (superuser: {user.is_superuser})"
+            f"  SUCCESS: Using user {user.username} (superuser: "
+            f"{user.is_superuser})"
         )
     except Exception as e:
         print(f"  ERROR: User lookup failed - {e}")

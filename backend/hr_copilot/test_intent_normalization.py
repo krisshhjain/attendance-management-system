@@ -28,7 +28,8 @@ def test_intent_normalization():
 
     print("=== INTENT NORMALIZATION TEST ===")
     print(
-        "Testing the fix for: 'Intent attendance_update expects source attendance but got employee'"
+        "Testing the fix for: 'Intent attendance_update expects source "
+        "attendance but got employee'"
     )
     print()
 
@@ -49,7 +50,8 @@ def test_intent_normalization():
     print("LLM Output:", json.dumps(problematic_llm_output, indent=2))
     print()
     print(
-        "X This would fail with: Intent 'attendance_update' expects source 'attendance' but got 'employee'"
+        "X This would fail with: Intent 'attendance_update' expects "
+        "source 'attendance' but got 'employee'"
     )
     print()
 
@@ -153,7 +155,8 @@ def test_intent_normalization():
     print("3. No more arbitrary source selection by LLM")
     print("4. Status normalization: 'absent' -> 'LEAVE'")
     print(
-        "5. Action type classification: write intents -> 'write' + approval required"
+        "5. Action type classification: write intents -> 'write' + "
+        'approval required'
     )
     print()
     print("Mapping rules:")

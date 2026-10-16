@@ -172,17 +172,22 @@ class REAL_QWEN_IntegrationTests(TestCase):
                 }
                 report.append(item)
                 if not item["pass"]:
-                    failures.append(
-                        {
-                            "query": query,
-                            "raw_qwen_output": result["raw_qwen_output"],
-                            "parsed_output": result["parsed_output"],
-                            "normalized_intent": actual,
-                            "expected_intent": expected_intent,
-                            "expected_metric": expected_metric,
-                            "failure_layer": "normalization_or_intent_selection",
-                        }
-                    )
+                    failures.append({
+                        "query":
+                        query,
+                        "raw_qwen_output":
+                        result["raw_qwen_output"],
+                        "parsed_output":
+                        result["parsed_output"],
+                        "normalized_intent":
+                        actual,
+                        "expected_intent":
+                        expected_intent,
+                        "expected_metric":
+                        expected_metric,
+                        "failure_layer":
+                        "normalization_or_intent_selection",
+                    })
         print("REAL_QWEN_TRACE\n" + json.dumps(report, indent=2, default=str))
         if failures:
             self.fail(

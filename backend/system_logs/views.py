@@ -405,23 +405,51 @@ class SystemLogExportView(APIView):
         with ZipFile(output, "w", ZIP_DEFLATED) as archive:
             archive.writestr(
                 "[Content_Types].xml",
-                '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+                '<?xml version="1.0" encoding="UTF-8"?><Types '
+                'xmlns="http://schemas.openxmlformats.org/package/2006/con'
+                'tent-types"><Default Extension="rels" '
+                'ContentType="application/vnd.openxmlformats-package.relat'
+                'ionships+xml"/><Default Extension="xml" '
+                'ContentType="application/xml"/><Override '
+                'PartName="/xl/workbook.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocumen'
+                't.spreadsheetml.sheet.main+xml"/><Override '
+                'PartName="/xl/worksheets/sheet1.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocumen'
+                't.spreadsheetml.worksheet+xml"/></Types>',
             )
             archive.writestr(
                 "_rels/.rels",
-                '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+                '<?xml version="1.0" encoding="UTF-8"?><Relationships '
+                'xmlns="http://schemas.openxmlformats.org/package/2006/rel'
+                'ationships"><Relationship Id="rId1" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/20'
+                '06/relationships/officeDocument" '
+                'Target="xl/workbook.xml"/></Relationships>',
             )
             archive.writestr(
                 "xl/workbook.xml",
-                '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="System Logs" sheetId="1" r:id="rId1"/></sheets></workbook>',
+                '<?xml version="1.0" encoding="UTF-8"?><workbook '
+                'xmlns="http://schemas.openxmlformats.org/spreadsheetml/20'
+                '06/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument'
+                '/2006/relationships"><sheets><sheet name="System Logs" '
+                'sheetId="1" r:id="rId1"/></sheets></workbook>',
             )
             archive.writestr(
                 "xl/_rels/workbook.xml.rels",
-                '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+                '<?xml version="1.0" encoding="UTF-8"?><Relationships '
+                'xmlns="http://schemas.openxmlformats.org/package/2006/rel'
+                'ationships"><Relationship Id="rId1" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/20'
+                '06/relationships/worksheet" '
+                'Target="worksheets/sheet1.xml"/></Relationships>',
             )
             with archive.open("xl/worksheets/sheet1.xml", "w") as sheet:
                 sheet.write(
-                    b'<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+                    b'<?xml version="1.0" encoding="UTF-8"?><worksheet '
+                    b'xmlns="http://schemas.openxmlformats.org/spreadsheet'
+                    b'ml/2006/main"><sheetData>'
                 )
                 for row_number, row in enumerate(
                     self._iter_xlsx_rows(queryset), start=1
@@ -431,14 +459,19 @@ class SystemLogExportView(APIView):
                         cell_ref = f"{_xlsx_column(column)}{row_number}"
                         safe_value = _excel_safe_string(value)
                         sheet.write(
-                            f'<c r="{cell_ref}" t="inlineStr"><is><t>{escape(safe_value)}</t></is></c>'.encode()
-                        )
+                            f'<c r="{cell_ref}" t="inlineStr"><is><t>'
+                            f'{escape(safe_value)}</t></is></c>'
+                            .encode())
                     sheet.write(b"</row>")
                 sheet.write(b"</sheetData></worksheet>")
 
         response = HttpResponse(
             output.getvalue(),
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content_type=(
+                "application/vnd.openxmlformats-"
+                "officedocument.spreadsheetml."
+                "sheet"
+            ),
         )
         response["Content-Disposition"] = (
             'attachment; filename="system-logs.xlsx"'

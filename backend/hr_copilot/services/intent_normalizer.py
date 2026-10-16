@@ -1,8 +1,6 @@
-"""Intent normalization layer for HR Copilot.
-
-This module provides deterministic mapping between LLM outputs and backend tools,
-ensuring the LLM cannot arbitrarily select backend sources or tools.
-"""
+"""Intent normalization layer for HR Copilot.\n\nThis module provides determin\
+istic mapping between LLM outputs and backend tools,\nensuring the LLM cann\
+ot arbitrarily select backend sources or tools.\n"""
 
 import re
 from datetime import date, timedelta
@@ -92,7 +90,8 @@ class IntentNormalizer:
             "attendance_count": "attendance_read_tool",
             "attendance_trend": "attendance_read_tool",
             "attendance_intelligence": "attendance_intelligence_tool",
-            "leave_regularization_intelligence": "leave_regularization_intelligence_tool",
+            "leave_regularization_intelligence":
+            "leave_regularization_intelligence_tool",
             "workforce_intelligence": "workforce_intelligence_tool",
             "attendance_force_checkout": "attendance_force_checkout_tool",
             "regularization_create": "regularization_create_tool",
@@ -327,15 +326,19 @@ class IntentNormalizer:
     def _looks_like_explicit_write(query: str) -> bool:
         return bool(
             re.match(
-                r"\s*(?:please\s+)?(?:approve|reject|deny|cancel|create|submit|file|mark|edit|change|update|assign|activate|deactivate|force|reset)\b",
+                '\\s*(?:please\\s+)?(?:approve|reject|deny|cancel|create|s'
+                'ubmit|file|mark|edit|change|update|assign|activate|deacti'
+                'vate|force|reset)\\b',
                 query or "",
                 re.IGNORECASE,
-            )
-        )
+            ))
 
     @staticmethod
     def _infer_read_intelligence(query: str):
-        """Recover existing typed metrics when a small model selects a legacy read intent."""
+        (
+            'Recover existing typed metrics when a small model selects a '
+            'legacy read intent.'
+        )
         text = (query or "").casefold()
         if re.search(r"\bnot\s+(?:yet\s+)?checked\s*[- ]?in\b", text):
             return "attendance_intelligence", {
@@ -384,8 +387,9 @@ class IntentNormalizer:
                 "intelligence_metric": "regularization_pending"
             }
         if re.search(
-            r"\bregulari[sz]ation\s+history\b|\battendance\s+(?:was\s+)?corrected\b",
-            text,
+                '\\bregulari[sz]ation\\s+history\\b|\\battendance\\s+(?:wa'
+                's\\s+)?corrected\\b',
+                text,
         ):
             return "leave_regularization_intelligence", {
                 "intelligence_metric": "regularization_history"
@@ -453,10 +457,14 @@ class IntentNormalizer:
             return {"employee_email": email}
 
         patterns = (
-            r"\bshift\s+is\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+assigned\b",
-            r"\b(?:show|find)\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+(?:'s|’s)\s+(?:current\s+)?shift\b",
-            r"\bdoes\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+work\s+in\s+which\s+shift\b",
-            r"\bwhich\s+shift\s+does\s+(?P<name>[A-Za-z][A-Za-z .'-]*?)\s+work\s+in\b",
+            '\\bshift\\s+is\\s+(?P<name>[A-Za-z][A-Za-z '
+            ".'-]*?)\\s+assigned\\b",
+            '\\b(?:show|find)\\s+(?P<name>[A-Za-z][A-Za-z '
+            ".'-]*?)\\s+(?:'s|’s)\\s+(?:current\\s+)?shift\\b",
+            '\\bdoes\\s+(?P<name>[A-Za-z][A-Za-z '
+            ".'-]*?)\\s+work\\s+in\\s+which\\s+shift\\b",
+            '\\bwhich\\s+shift\\s+does\\s+(?P<name>[A-Za-z][A-Za-z '
+            ".'-]*?)\\s+work\\s+in\\b",
         )
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -549,12 +557,17 @@ class IntentNormalizer:
     def _extract_attendance_employee_name(query: str) -> str | None:
         patterns = (
             (
-                r"\b(?:please\s+)?(?:mark|make|set|change|update|correct|add)\s+",
-                r"\s+(?:['’]s\s+)?(?:as\s+)?(?:on\s+)?(?:present|absent|leave|incomplete|attendance|check[ -]?in|check[ -]?out)\b",
+                '\\b(?:please\\s+)?(?:mark|make|set|change|update|correct|'
+                'add)\\s+',
+                "\\s+(?:['’]s\\s+)?(?:as\\s+)?(?:on\\s+)?(?:present|absent"
+                '|leave|incomplete|attendance|check[ -]?in|check[ '
+                '-]?out)\\b',
             ),
             (
-                r"\b(?:attendance|check[ -]?in|check[ -]?out)\s+(?:for|of)\s+",
-                r"\s+(?:on|for|as|to|with|today|yesterday|tomorrow)\b|[,.!?]|$",
+                '\\b(?:attendance|check[ -]?in|check[ '
+                '-]?out)\\s+(?:for|of)\\s+',
+                '\\s+(?:on|for|as|to|with|today|yesterday|tomorrow)\\b|[,.'
+                '!?]|$',
             ),
             (
                 r"\b(?:add|record)\s+attendance\s+for\s+",
@@ -626,8 +639,10 @@ class IntentNormalizer:
         }
         month_pattern = "|".join(months)
         for pattern in (
-            rf"\b(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?P<month>{month_pattern})(?:\s+(?P<year>\d{{4}}))?\b",
-            rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(?P<year>\d{{4}}))?\b",
+            rf"\b(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?P<month>"
+            rf"{month_pattern})(?:\s+(?P<year>\d{{4}}))?\b",
+            rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|"
+            rf"nd|rd|th)?(?:,?\s+(?P<year>\d{{4}}))?\b",
         ):
             match = re.search(pattern, query, re.IGNORECASE)
             if match:
@@ -645,9 +660,10 @@ class IntentNormalizer:
 
     def _infer_attendance_write(self, query: str) -> Dict[str, Any] | None:
         if not query or not re.match(
-            r"\s*(?:please\s+)?(?:mark|make|set|change|update|correct|add|record)\b",
-            query,
-            re.IGNORECASE,
+                '\\s*(?:please\\s+)?(?:mark|make|set|change|update|correct'
+                '|add|record)\\b',
+                query,
+                re.IGNORECASE,
         ):
             return None
         lower = query.casefold()
@@ -694,7 +710,8 @@ class IntentNormalizer:
         if expected_source and source != expected_source:
             raise CopilotError(
                 "intent_source_mismatch",
-                f"Intent '{intent_name}' expects source '{expected_source}' but got '{source}'",
+                f"Intent '{intent_name}' expects source '{expected_source}"
+                f"' but got '{source}'",
             )
 
         return True
