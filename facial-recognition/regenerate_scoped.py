@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
-"""\nScoped embedding regeneration script.\n\nRegenerates embeddings ONLY for \
-the 20 identities and specific 6 files per identity\nthat were used in the \
-original experiment, based on the backed-up cache files.\n"""
+"""
+Scoped face embedding regeneration utility.
+
+Regenerates embeddings strictly for the 20 reference identities and their
+associated 6 benchmark image files per identity (120 files total) defined in
+ORIGINAL_FILES:
+  - Generates 512-d ArcFace embeddings using RetinaFace detection and L2 norm.
+  - Saves embeddings using flat cache naming convention:
+    <identity>_<filename>.npy in the embeddings/train directory.
+  - Guarantees atomic filesystem writes via temporary file replacement.
+  - Handles image filename resolution with case-insensitive fallback.
+  - Outputs a structured JSON report detailing success and error breakdowns.
+"""
 
 import json
 import logging
@@ -41,10 +51,17 @@ VAL_CACHE = CACHE_DIR / "val"
 def _save_embedding_atomically(
     cache_path: Path, embedding: np.ndarray
 ) -> None:
-    (
-        'Write a valid embedding without truncating an existing cache on '
-        'failure.'
-    )
+    """Write an embedding vector to disk with atomic POSIX rename semantics.
+
+    Validates that the input vector is a non-empty, finite 1D float32 array.
+    Writes first to a temporary file in the target directory, then uses
+    os.replace() to guarantee an atomic replacement. Prevents partial or
+    truncated .npy files if process terminates during write.
+
+    Raises:
+        ValueError: If the embedding is non-finite, empty, or not
+            1-dimensional.
+    """
     vector = np.asarray(embedding, dtype=np.float32)
     if vector.ndim != 1 or vector.size == 0 or not np.isfinite(vector).all():
         raise ValueError("Face model returned an invalid embedding")
@@ -368,10 +385,16 @@ class ScopedRegenerationStats:
 
 
 def find_image_file(identity_dir: Path, base_filename: str) -> Path:
-    (
-        'Find the actual image file given the base filename (without '
-        'extension).'
-    )
+    """Locate image file matching a base filename without extension.
+
+    Tries standard image extensions (.jpg, .jpeg, .png) in order. If exact
+    matches fail, performs a case-insensitive search to accommodate
+    case sensitivity differences across operating systems (e.g. Windows/Linux).
+
+    Raises:
+        FileNotFoundError: If identity_dir does not exist or image cannot be
+            located with any supported extension.
+    """
     if not identity_dir.exists():
         raise FileNotFoundError(
             f"Identity directory not found: {identity_dir}"
@@ -399,7 +422,15 @@ def find_image_file(identity_dir: Path, base_filename: str) -> Path:
 
 
 def regenerate_scoped_embeddings():
-    """Regenerate embeddings for the exact original file list."""
+    """Regenerate ArcFace embeddings for the pinned 20-identity benchmark.
+
+    Processes exactly 20 identities with 6 specific files each (120 files).
+    Stores resulting 512-d L2-normalized embeddings in flat cache format
+    (<identity>_<filename>.npy) in embeddings/train using atomic file writes.
+
+    Returns:
+        ScopedRegenerationStats: Tracked counts of successful and failed files.
+    """
     logger.info("=" * 80)
     logger.info("SCOPED FACE EMBEDDING REGENERATION")
     logger.info(

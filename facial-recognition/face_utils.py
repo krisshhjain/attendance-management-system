@@ -56,7 +56,9 @@ def extract_primary_face_embedding(
         'shape: (512,)\n    '
     )
     try:
-        # Use enforce_detection=True to ensure proper face detection
+        # Enforce strict face detection via RetinaFace. Setting
+        # enforce_detection=True prevents DeepFace from falling back to
+        # embedding the full uncropped frame when no face is located.
         result = DeepFace.represent(
             img_path=img_path,
             model_name=model_name,
@@ -74,8 +76,7 @@ def extract_primary_face_embedding(
     num_faces = len(result)
 
     if num_faces == 1:
-        # Single face - straightforward case
-
+        # Single detected face: validate detector confidence before accepting
         confidence = result[0].get("face_confidence", 1.0)
         if confidence is not None and confidence < min_confidence:
             raise FaceExtractionError(
@@ -87,7 +88,7 @@ def extract_primary_face_embedding(
         logger.debug(f"Single face detected in {img_path}")
 
     elif num_faces > 1:
-        # Multiple faces - select the largest by bounding box area
+        # Multiple faces: select largest by bounding box area (w * h)
         logger.info(
             f"Multiple faces detected in {img_path}: {num_faces} faces"
         )
@@ -101,12 +102,14 @@ def extract_primary_face_embedding(
             face_areas.append((area, i, face_data))
             logger.debug(f"  Face {i}: area={area} (w={width}, h={height})")
 
-        # Sort by area (largest first)
+        # Sort descending by bounding box area (primary subject is largest)
         face_areas.sort(reverse=True, key=lambda x: x[0])
 
         largest_area, largest_idx, largest_face = face_areas[0]
 
-        # Check if top 2 faces are ambiguously similar in size
+        # Ambiguity safeguard: if the second largest face is within 1.5x area
+        # (second_area / largest_area >= 1 / 1.5 ≈ 0.667), neither face is
+        # dominant and automated selection is unsafe. Fail closed.
         if len(face_areas) >= 2:
             second_area = face_areas[1][0]
             if largest_area > 0 and second_area / largest_area >= (
@@ -136,13 +139,14 @@ def extract_primary_face_embedding(
         )
 
     else:
-        # Should never happen with enforce_detection=True, but be defensive
+        # Unreachable with enforce_detection=True, but retained as safeguard
         raise FaceExtractionError(
             f"Unexpected result format from DeepFace.represent() for "
             f"{img_path}"
         )
 
-    # Apply L2 normalization if requested
+    # L2-normalize vector to unit length so dot product equals
+    # cosine similarity
     if normalize:
         norm = np.linalg.norm(embedding)
         if norm > 0:
