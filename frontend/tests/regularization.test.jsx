@@ -406,6 +406,20 @@ test("rejects an oversized supporting file before submitting a correction", asyn
 });
 
 test("keeps a correction editable and shows the server reason after submission fails", async () => {
+  const RealDate = Date;
+  const fixedTimestamp = new RealDate(2026, 9, 14, 12).getTime();
+
+  class FixedDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [fixedTimestamp]));
+    }
+
+    static now() {
+      return fixedTimestamp;
+    }
+  }
+
+  vi.stubGlobal("Date", FixedDate);
   server.use(
     http.get(`${API_BASE_URL}/attendance/regularization/list/`, () => HttpResponse.json([])),
     http.get(`${API_BASE_URL}/attendance/history/`, () => HttpResponse.json([])),
