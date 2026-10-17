@@ -134,7 +134,10 @@ class CopilotPendingAction(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Action {self.action_id}: {self.action_type} for {self.user.email}"
+        return (
+            f"Action {self.action_id}: {self.action_type} for "
+            f"{self.user.email}"
+        )
 
     @property
     def is_expired(self):

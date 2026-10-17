@@ -1,12 +1,14 @@
 """Restore the reference student roster after a database checkpoint reset."""
 
+from accounts.models import User
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
-
-from accounts.models import User
 from employees.management.commands.import_reference_students import (
-    STUDENTS, email_slug, normalize_name)
+    STUDENTS,
+    email_slug,
+    normalize_name,
+)
 from employees.models import Employee
 
 

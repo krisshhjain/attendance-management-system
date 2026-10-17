@@ -1,6 +1,5 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
-
 from system_logs.services import record_event
 
 from .models import Notification
@@ -115,7 +114,10 @@ def queue_deduplicated_notification_after_commit(
     email_subject=None,
     email_body=None,
 ):
-    """Publish one idempotent notification and email after its transaction commits."""
+    (
+        'Publish one idempotent notification and email after its transaction '
+        'commits.'
+    )
 
     def publish():
         _, created = get_or_create_notification(
@@ -153,7 +155,10 @@ def queue_notification_after_commit(
     email_subject=None,
     email_body=None,
 ):
-    """Create an in-app notification and optionally enqueue its email after commit."""
+    (
+        'Create an in-app notification and optionally enqueue its email after '
+        'commit.'
+    )
 
     def publish():
         create_notification(

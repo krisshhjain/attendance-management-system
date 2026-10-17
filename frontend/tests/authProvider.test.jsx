@@ -3,7 +3,8 @@ import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { AuthProvider, useAuth } from "../src/lib/auth.jsx";
+import { AuthProvider } from "../src/lib/auth.jsx";
+import { useAuth } from "../src/lib/useAuth.js";
 import { API_BASE_URL, tokenStore } from "../src/lib/api.js";
 import { server } from "./mocks/server.js";
 

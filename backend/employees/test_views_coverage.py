@@ -1,10 +1,9 @@
 from datetime import date
 
-from django.test import TestCase
-from rest_framework.test import APIClient
-
 from accounts.models import ManagerScope, User
+from django.test import TestCase
 from employees.models import Employee
+from rest_framework.test import APIClient
 
 
 class EmployeeViewScopeCoverageTests(TestCase):
@@ -58,7 +57,9 @@ class EmployeeViewScopeCoverageTests(TestCase):
         self.out_of_scope_user.refresh_from_db()
         self.out_of_scope.refresh_from_db()
         self.assertEqual(self.out_of_scope_user.first_name, "")
-        self.assertTrue(Employee.objects.filter(pk=self.out_of_scope.pk).exists())
+        self.assertTrue(
+            Employee.objects.filter(pk=self.out_of_scope.pk).exists()
+        )
 
     def test_manager_patch_updates_in_scope_employee(self):
         response = self.client.patch(

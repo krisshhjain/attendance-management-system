@@ -1,14 +1,18 @@
 """Write action executor with human-in-the-loop approval for HR Copilot."""
 
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 from typing import Any, Dict
 
+from attendance.models import (
+    Attendance,
+    AttendanceCorrection,
+    AttendanceEvent,
+    RegularizationRequest,
+    Shift,
+)
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
-
-from attendance.models import (Attendance, AttendanceCorrection,
-                               AttendanceEvent, RegularizationRequest, Shift)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 from system_logs.services import record_event
@@ -157,10 +161,12 @@ class WriteActionExecutor:
             if not attendance_required(target_date):
                 raise CopilotError(
                     "attendance_not_required",
-                    "The approved action cannot mark an employee absent on a non-working date.",
+                    'The approved action cannot mark an employee absent '
+                    'on a non-working date.',
                 )
 
-        # Snapshot summary and source events before applying the explicit correction.
+        # Snapshot summary and source events before applying the explicit
+        # correction.
         events = list(
             AttendanceEvent.objects.filter(
                 employee_id=employee_id, timestamp__date=target_date
@@ -196,15 +202,21 @@ class WriteActionExecutor:
         if existing:
             previous_state.update(
                 {
-                    "check_in": existing.check_in.isoformat()
-                    if existing.check_in
-                    else None,
-                    "check_out": existing.check_out.isoformat()
-                    if existing.check_out
-                    else None,
-                    "working_duration": str(existing.working_duration)
-                    if existing.working_duration
-                    else None,
+                    "check_in": (
+                        existing.check_in.isoformat()
+                        if existing.check_in
+                        else None
+                    ),
+                    "check_out": (
+                        existing.check_out.isoformat()
+                        if existing.check_out
+                        else None
+                    ),
+                    "working_duration": (
+                        str(existing.working_duration)
+                        if existing.working_duration
+                        else None
+                    ),
                 }
             )
 
@@ -220,22 +232,28 @@ class WriteActionExecutor:
             },
         )
 
+        reason_text = (
+            target_data.get("reason")
+            or "HR Copilot approved attendance update"
+        )
         correction = AttendanceCorrection.objects.create(
             attendance=attendance,
             admin_user=user,
             correction_type="HR_COPILOT",
             reason=(
-                f"{target_data.get('reason') or 'HR Copilot approved attendance update'} "
-                f"(action {pending_action['action_id']})"
+                f"{reason_text} (action {pending_action['action_id']})"
             ),
             previous_data={
                 **previous_state,
-                "effective_event_mode": "REPLACE",
-                "effective_event_after_event_id": max(
+                "effective_event_mode":
+                "REPLACE",
+                "effective_event_after_event_id":
+                max(
                     (event.id for event in events),
                     default=0,
                 ),
-                "copilot_action_id": str(pending_action["action_id"]),
+                "copilot_action_id":
+                str(pending_action["action_id"]),
             },
         )
         if target_status == "PRESENT":
@@ -290,19 +308,25 @@ class WriteActionExecutor:
             attendance.status = target_status
             attendance.save(update_fields=["status", "updated_at"])
         result = {
-            "success": True,
-            "operation": "updated" if not created else "created",
-            "employee_name": target_data["employee_name"],
-            "date": target_date.isoformat(),
-            "old_status": previous_state.get("status"),
-            "status": target_status,
-            "message": f"Attendance updated successfully for {target_data['employee_name']}.",
-            "check_in": attendance.check_in.isoformat()
-            if attendance.check_in
-            else None,
-            "check_out": attendance.check_out.isoformat()
-            if attendance.check_out
-            else None,
+            "success":
+            True,
+            "operation":
+            "updated" if not created else "created",
+            "employee_name":
+            target_data["employee_name"],
+            "date":
+            target_date.isoformat(),
+            "old_status":
+            previous_state.get("status"),
+            "status":
+            target_status,
+            "message":
+            f"Attendance updated successfully for "
+                f"{target_data['employee_name']}.",
+            "check_in":
+            (attendance.check_in.isoformat() if attendance.check_in else None),
+            "check_out": (attendance.check_out.isoformat()
+                          if attendance.check_out else None),
         }
 
         return result
@@ -344,9 +368,11 @@ class WriteActionExecutor:
             reason=reason,
             status="PENDING",
         )
-        from leave_management.services import (calculate_working_days,
-                                               get_active_policy,
-                                               validate_leave_request)
+        from leave_management.services import (
+            calculate_working_days,
+            get_active_policy,
+            validate_leave_request,
+        )
 
         leave_type = LeaveType.objects.get(pk=leave_type_id)
         # Use the authoritative validator whenever a policy exists. Legacy
@@ -377,15 +403,27 @@ class WriteActionExecutor:
         leave_request.save()
 
         result = {
-            "success": True,
-            "operation": "created",
-            "employee_name": target_data["employee_name"],
-            "leave_request_id": leave_request.id,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "duration_days": duration_days,
-            "status": "PENDING",
-            "message": f"Created {duration_days}-day leave request for {target_data['employee_name']} from {start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}",
+            "success":
+            True,
+            "operation":
+            "created",
+            "employee_name":
+            target_data["employee_name"],
+            "leave_request_id":
+            leave_request.id,
+            "start_date":
+            start_date.isoformat(),
+            "end_date":
+            end_date.isoformat(),
+            "duration_days":
+            duration_days,
+            "status":
+            "PENDING",
+            "message":
+            f"Created {duration_days}-day leave request for "
+                f"{target_data['employee_name']} from "
+                f"{start_date.strftime('%B %d, %Y')} to "
+                f"{end_date.strftime('%B %d, %Y')}",
         }
 
         return result
@@ -407,13 +445,22 @@ class WriteActionExecutor:
         leave_request.refresh_from_db()
 
         result = {
-            "success": True,
-            "operation": "cancelled",
-            "employee_name": target_data["employee_name"],
-            "leave_request_id": leave_request_id,
-            "old_status": old_status,
-            "new_status": "CANCELLED",
-            "message": f"Cancelled leave request for {target_data['employee_name']} from {leave_request.start_date.strftime('%B %d, %Y')} to {leave_request.end_date.strftime('%B %d, %Y')}",
+            "success":
+            True,
+            "operation":
+            "cancelled",
+            "employee_name":
+            target_data["employee_name"],
+            "leave_request_id":
+            leave_request_id,
+            "old_status":
+            old_status,
+            "new_status":
+            "CANCELLED",
+            "message":
+            f"Cancelled leave request for {target_data['employee_name']} f"
+                f"rom {leave_request.start_date.strftime('%B %d, %Y')} to "
+                f"{leave_request.end_date.strftime('%B %d, %Y')}",
         }
 
         return result
@@ -477,13 +524,20 @@ class WriteActionExecutor:
             )
         request = RegularizationRequest.objects.create(**values)
         return {
-            "success": True,
-            "operation": "regularization_created",
-            "request_id": request.id,
-            "employee_name": target["employee_name"],
-            "attendance_date": target_date.isoformat(),
-            "status": request.status,
-            "message": f"Regularization request created for {target['employee_name']}.",
+            "success":
+            True,
+            "operation":
+            "regularization_created",
+            "request_id":
+            request.id,
+            "employee_name":
+            target["employee_name"],
+            "attendance_date":
+            target_date.isoformat(),
+            "status":
+            request.status,
+            "message":
+            f"Regularization request created for {target['employee_name']}.",
         }
 
     def _execute_regularization_review(self, pending_action, user):
@@ -527,12 +581,18 @@ class WriteActionExecutor:
         employee.shift = shift
         employee.save(update_fields=["shift"])
         return {
-            "success": True,
-            "operation": "shift_assigned",
-            "employee_name": target["employee_name"],
-            "shift_id": shift.id,
-            "shift_name": shift.name,
-            "message": f"Shift assigned successfully to {target['employee_name']}.",
+            "success":
+            True,
+            "operation":
+            "shift_assigned",
+            "employee_name":
+            target["employee_name"],
+            "shift_id":
+            shift.id,
+            "shift_name":
+            shift.name,
+            "message":
+            f"Shift assigned successfully to {target['employee_name']}.",
         }
 
     def _execute_employee_status(self, pending_action, user):
@@ -543,17 +603,27 @@ class WriteActionExecutor:
         employee.is_active = bool(target["is_active"])
         employee.save(update_fields=["is_active"])
         return {
-            "success": True,
-            "operation": "activated" if employee.is_active else "deactivated",
-            "employee_name": target["employee_name"],
-            "is_active": employee.is_active,
-            "message": f"Employee {'activated' if employee.is_active else 'deactivated'} successfully.",
+            "success":
+            True,
+            "operation":
+            "activated" if employee.is_active else "deactivated",
+            "employee_name":
+            target["employee_name"],
+            "is_active":
+            employee.is_active,
+            "message":
+            f"Employee "
+                f"{'activated' if employee.is_active else 'deactivated'} succe"
+                f"ssfully.",
         }
 
     def _execute_leave_review(
         self, pending_action: Dict[str, Any], user
     ) -> Dict[str, Any]:
-        """Use the leave app's existing review services and attendance updates."""
+        (
+            "Use the leave app's existing review services and attendance "
+            'updates.'
+        )
         target_data = pending_action["target_data"]
         proposed_changes = pending_action["proposed_changes"]
         try:
@@ -573,8 +643,10 @@ class WriteActionExecutor:
                 "This leave request is no longer pending review",
             )
 
-        from leave_management.services import (approve_leave_request,
-                                               deny_leave_request)
+        from leave_management.services import (
+            approve_leave_request,
+            deny_leave_request,
+        )
 
         try:
             if pending_action["action_type"] == "leave_approve":
@@ -592,19 +664,30 @@ class WriteActionExecutor:
         except Exception as error:
             raise CopilotError(
                 "leave_review_failed",
-                "The leave request could not be reviewed. It may have changed since the approval preview.",
+                'The leave request could not be reviewed. It may have '
+                'changed since the approval preview.',
             ) from error
 
         status = reviewed.status
         return {
-            "success": True,
-            "operation": status.lower(),
-            "employee_name": target_data["employee_name"],
-            "leave_request_id": reviewed.id,
-            "start_date": reviewed.start_date.isoformat(),
-            "end_date": reviewed.end_date.isoformat(),
-            "status": status,
-            "message": f"{status.title()} {target_data['employee_name']}'s leave request from {reviewed.start_date:%B %d, %Y} to {reviewed.end_date:%B %d, %Y}.",
+            "success":
+            True,
+            "operation":
+            status.lower(),
+            "employee_name":
+            target_data["employee_name"],
+            "leave_request_id":
+            reviewed.id,
+            "start_date":
+            reviewed.start_date.isoformat(),
+            "end_date":
+            reviewed.end_date.isoformat(),
+            "status":
+            status,
+            "message":
+            f"{status.title()} {target_data['employee_name']}'s leave requ"
+                f"est from {reviewed.start_date:%B %d, %Y} to "
+                f"{reviewed.end_date:%B %d, %Y}.",
         }
 
     def _revalidate_authorization(self, pending_action: Dict[str, Any], user):
@@ -613,7 +696,6 @@ class WriteActionExecutor:
 
         # Get fresh scope
         current_scope = derive_scope(user)
-        stored_scope = pending_action.get("authorization_scope", {})
 
         # Basic authorization checks
         if not current_scope.get("unrestricted", False):
@@ -651,7 +733,10 @@ class WriteActionExecutor:
 
 
 class PendingActionManager:
-    """Persist approval actions so they survive restarts and multiple workers."""
+    (
+        'Persist approval actions so they survive restarts and multiple '
+        'workers.'
+    )
 
     def store_pending_action(
         self, session_id: str, pending_action: Dict[str, Any]
@@ -709,7 +794,10 @@ class PendingActionManager:
     def get_pending_action(
         self, session_id: str, action_id: str, user_id: int
     ):
-        """Retrieve only an action owned by this user and current copilot session."""
+        (
+            'Retrieve only an action owned by this user and current copilot '
+            'session.'
+        )
         try:
             action = CopilotPendingAction.objects.get(
                 action_id=action_id,
@@ -898,7 +986,10 @@ class PendingActionManager:
         }
 
     def get_user_actions(self, user_id: int, conversation_id=None):
-        """List active actions while retaining each action's exact session identity."""
+        (
+            "List active actions while retaining each action's exact session "
+            'identity.'
+        )
         actions = CopilotPendingAction.objects.filter(
             user_id=user_id,
             status__in=["PENDING", "AWAITING_INFORMATION"],

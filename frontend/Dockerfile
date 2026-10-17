@@ -12,13 +12,15 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Serve with Nginx
-FROM nginx:alpine@sha256:b3c656d55d7ad751196f21b7fd2e8d4da9cb430e32f646adcf92441b72f82b14
+FROM nginx:alpine@sha256:0e5caf3555a79db2f1624c61fb1e585c4298a26384fea83f3e5108e451c1eb2c
 
 # Copy the build output to Nginx's html directory
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Overwrite the default Nginx config with ours
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+RUN apk upgrade --no-cache
 
 RUN sed -i -e '/^user /d' \
     -e 's#pid        /run/nginx.pid;#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \
@@ -27,5 +29,8 @@ RUN sed -i -e '/^user /d' \
 USER nginx
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
 
 CMD ["nginx", "-g", "daemon off;"]

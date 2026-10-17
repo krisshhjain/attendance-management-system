@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import { Box, Typography, TextField, Button, InputAdornment } from "@mui/material";
 
 const INK = "#12141F";

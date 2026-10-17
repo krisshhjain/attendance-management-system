@@ -16,13 +16,13 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => (options) => options }));
 vi.mock("../src/components/RequireAuth.jsx", () => ({ RequireAuth: ({ children }) => children }));
-vi.mock("../src/lib/auth.jsx", () => ({
+vi.mock("../src/lib/useAuth.js", () => ({
   useAuth: () => ({ loginType: state.loginType, user: state.user }),
 }));
-vi.mock("../src/lib/organizationScope.jsx", () => ({
+vi.mock("../src/lib/useOrganizationScope.js", () => ({
   useOrganizationScope: () => ({ selectedScope: state.selectedScope }),
 }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({
+vi.mock("../src/feedback/useFeedback.js", () => ({
   useFeedback: () => ({ success: state.success, notifyError: state.notifyError }),
 }));
 

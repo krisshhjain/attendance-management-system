@@ -1,14 +1,8 @@
-"""
-HR COPILOT WORKING FLOW DOCUMENTATION
-=====================================
-
-This document explains the complete working flow of the HR Copilot system,
-from natural language input to verified HR data response.
-
-ARCHITECTURE OVERVIEW:
-User Query → Semantic Interpretation → Backend Validation → Database Query → Natural Response
-
-"""
+"""\nHR COPILOT WORKING FLOW DOCUMENTATION\n==================================\
+===\n\nThis document explains the complete working flow of the HR Copilot s\
+ystem,\nfrom natural language input to verified HR data response.\n\nARCHIT\
+ECTURE OVERVIEW:\nUser Query → Semantic Interpretation → Backend Validation\
+ → Database Query → Natural Response\n\n"""
 
 import os
 
@@ -34,9 +28,8 @@ def demonstrate_hr_copilot_flow():
     print("🌐 STEP 1: FRONTEND TO BACKEND")
     print("   React UI → POST /api/hr-copilot/query/")
     print("   Headers: Authorization Bearer token")
-    print(
-        "   Body: {'message': 'When did Akshat Awasthi last took leave', 'conversation_id': 'abc123'}"
-    )
+    print("   Body: {'message': 'When did Akshat Awasthi last took leave', "
+          "'conversation_id': 'abc123'}")
     print()
 
     # STEP 2: Django View Processing
@@ -74,9 +67,8 @@ def demonstrate_hr_copilot_flow():
     print(
         "   → Qwen3-8B processes: 'Extract HR intent from: When did Akshat...'"
     )
-    print(
-        "   → Returns: {intent: 'leave_lookup', source: 'leave', entities: {employee_name: 'Akshat Awasthi'}}"
-    )
+    print("   → Returns: {intent: 'leave_lookup', source: 'leave', "
+          "entities: {employee_name: 'Akshat Awasthi'}}")
     print()
 
     # STEP 5: Entity Resolution & Validation
@@ -87,9 +79,8 @@ def demonstrate_hr_copilot_flow():
     print(
         "   → Check for ambiguous matches (multiple employees with same name)"
     )
-    print(
-        "   → Apply temporal defaults (use latest available data if no date specified)"
-    )
+    print('   → Apply temporal defaults (use latest available data if no '
+          'date specified)')
     print("   → Validate entities against database constraints")
 
     from hr_copilot.services.employee_resolver import employee_resolver
@@ -206,9 +197,8 @@ def demonstrate_hr_copilot_flow():
     print("📊 STEP 11: AUDIT & CONTEXT SAVING")
     print("   → Save query audit with execution details")
     print("   → Update conversation context for follow-ups")
-    print(
-        "   → Store current employee/section for 'What about yesterday?' queries"
-    )
+    print("   → Store current employee/section for 'What about yesterday?' "
+          'queries')
     print()
 
     # STEP 12: API Response

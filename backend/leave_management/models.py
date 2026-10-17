@@ -59,12 +59,18 @@ class LeavePolicy(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["employee_type", "leave_type", "effective_from"],
-                name="unique_policy_per_employee_type_leave_type_effective_from",
+                name=(
+                    "unique_policy_per_employee_type_leave_type_"
+                    "effective_from"
+                ),
             )
         ]
 
     def __str__(self):
-        return f"{self.employee_type} - {self.leave_type.name} (from {self.effective_from})"
+        return (
+            f"{self.employee_type} - {self.leave_type.name} (from "
+            f"{self.effective_from})"
+        )
 
 
 class LeaveRequest(models.Model):
@@ -129,4 +135,7 @@ class LeaveRequest(models.Model):
         ordering = ["-submitted_at"]
 
     def __str__(self):
-        return f"{self.employee.user.email} - {self.leave_type.code} ({self.start_date} to {self.end_date}) [{self.status}]"
+        return (
+            f"{self.employee.user.email} - {self.leave_type.code} ("
+            f"{self.start_date} to {self.end_date}) [{self.status}]"
+        )

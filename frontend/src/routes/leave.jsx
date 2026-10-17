@@ -52,9 +52,10 @@ import {
   cancelLeaveRequest,
   estimateLeaveDuration,
 } from "../lib/api.js";
-import { useAuth } from "../lib/auth.jsx";
-import { filterScopedRecords, useOrganizationScope } from "../lib/organizationScope.jsx";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useAuth } from "../lib/useAuth.js";
+import { filterScopedRecords } from "../lib/organizationScopeUtils.js";
+import { useOrganizationScope } from "../lib/useOrganizationScope.js";
+import { useFeedback } from "../feedback/useFeedback.js";
 import { getErrorMessage } from "../feedback/errorMessage.js";
 
 export const Route = createFileRoute("/leave")({

@@ -7,7 +7,7 @@ import { AddEmployeeDialog } from "../src/components/dashboard/AddEmployeeDialog
 import { server } from "./mocks/server.js";
 
 const feedback = vi.hoisted(() => ({ success: vi.fn() }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({ useFeedback: () => feedback }));
+vi.mock("../src/feedback/useFeedback.js", () => ({ useFeedback: () => feedback }));
 
 beforeEach(() => vi.clearAllMocks());
 

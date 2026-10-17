@@ -6,9 +6,8 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('attendance', '0003_attendance_check_in_accuracy_and_more'),
-        ('attendance', '0003_attendanceauditlog'),
+        ("attendance", "0003_attendance_check_in_accuracy_and_more"),
+        ("attendance", "0003_attendanceauditlog"),
     ]
 
-    operations = [
-    ]
+    operations = []

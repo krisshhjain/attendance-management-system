@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 
 from django.db.models import Q
-
 from employees.models import Employee
 
 
@@ -17,7 +16,10 @@ class EmployeeResolution:
 
 
 class EmployeeResolver:
-    """Resolve only real employee records; never trust an LLM-provided identity."""
+    (
+        'Resolve only real employee records; never trust an LLM-provided '
+        'identity.'
+    )
 
     def resolve_employee(
         self, *, user=None, name=None, email=None, employee_id=None
@@ -56,8 +58,9 @@ class EmployeeResolver:
                 )
 
         if user:
-            from accounts.scope_service import \
-                filter_employees_by_manager_scope
+            from accounts.scope_service import (
+                filter_employees_by_manager_scope,
+            )
 
             matches = filter_employees_by_manager_scope(user, matches)
         matching_ids = list(matches.values_list("id", flat=True)[:2])

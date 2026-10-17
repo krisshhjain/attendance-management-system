@@ -9,7 +9,7 @@ import { server } from "./mocks/server.js";
 const state = vi.hoisted(() => ({ success: vi.fn(), notifyError: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => (options) => options }));
 vi.mock("../src/components/RequireAuth.jsx", () => ({ RequireAuth: ({ children }) => children }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({
+vi.mock("../src/feedback/useFeedback.js", () => ({
   useFeedback: () => ({ success: state.success, notifyError: state.notifyError }),
 }));
 

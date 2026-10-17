@@ -4,29 +4,120 @@ from datetime import timedelta
 from unittest.mock import Mock, patch
 
 import requests
+from accounts.models import ManagerScope
+from attendance.face_service import (
+    FaceExtractionError,
+    FaceLivenessError,
+    _recognize_payload,
+    find_closest_match,
+    process_enrollment,
+)
+from attendance.geofence import (
+    GEOFENCE_RADIUS_METERS,
+    WORKPLACE_LATITUDE,
+    WORKPLACE_LONGITUDE,
+    calculate_haversine_distance,
+)
+from attendance.models import (
+    Attendance,
+    AttendanceCorrection,
+    AttendanceEvent,
+    OfficeLocation,
+    RegularizationQuotaPolicy,
+    RegularizationRequest,
+    Shift,
+    attendance_day_end,
+    calculate_working_duration,
+    get_effective_attendance_events,
+)
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from employees.models import Employee, FaceProfile
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from accounts.models import ManagerScope
-from attendance.face_service import (FaceExtractionError, FaceLivenessError,
-                                     find_closest_match, process_enrollment)
-from attendance.geofence import (GEOFENCE_RADIUS_METERS, MAX_ACCURACY_METERS,
-                                 WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE,
-                                 calculate_haversine_distance)
-from attendance.models import (Attendance, AttendanceCorrection,
-                               AttendanceEvent, OfficeLocation,
-                               RegularizationRequest, Shift,
-                               RegularizationQuotaPolicy, attendance_day_end,
-                               calculate_working_duration,
-                               get_effective_attendance_events)
-from employees.models import Employee, FaceProfile
-
 User = get_user_model()
 ATTENDANCE_TEST_WORKDAY = date(2026, 10, 12)  # Monday
+
+
+class FaceServiceTimeoutUnitTests(SimpleTestCase):
+    @override_settings(
+        FACE_SERVICE_URL="http://face.test",
+        FACE_SERVICE_TOKEN="face-service-test-token",
+    )
+    @patch("attendance.face_service.requests.post")
+    def test_single_image_request_has_exact_url_payload_headers_and_timeout(
+        self, mock_post
+    ):
+        mock_post.return_value = Mock()
+
+        _recognize_payload("image-data", [{"id": 7, "template": [0.5]}], 0.61)
+
+        mock_post.assert_called_once_with(
+            "http://face.test/recognize",
+            json={
+                "image": "image-data",
+                "candidates": [{"id": 7, "template": [0.5]}],
+                "threshold": 0.61,
+            },
+            headers={"Authorization": "Bearer face-service-test-token"},
+            timeout=60,
+        )
+
+    @override_settings(
+        FACE_SERVICE_URL="http://face.test",
+        FACE_SERVICE_TOKEN="face-service-test-token",
+    )
+    @patch("attendance.face_service.requests.post")
+    def test_sequence_request_has_exact_url_payload_headers_and_timeout(
+        self, mock_post
+    ):
+        mock_post.return_value = Mock()
+        frames = ["one", "two", "three"]
+        timestamps = [0, 300, 600]
+
+        _recognize_payload(
+            frames,
+            [{"id": 7, "template": [0.5]}],
+            0.62,
+            captured_at_ms=timestamps,
+        )
+
+        mock_post.assert_called_once_with(
+            "http://face.test/recognize-sequence",
+            json={
+                "frames": frames,
+                "captured_at_ms": timestamps,
+                "candidates": [{"id": 7, "template": [0.5]}],
+                "threshold": 0.62,
+            },
+            headers={"Authorization": "Bearer face-service-test-token"},
+            timeout=90,
+        )
+
+    @override_settings(
+        FACE_SERVICE_URL="http://face.test",
+        FACE_SERVICE_TOKEN="face-service-test-token",
+    )
+    @patch("attendance.face_service.requests.post")
+    def test_enrollment_request_has_exact_url_payload_headers_and_timeout(
+        self, mock_post
+    ):
+        mock_post.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={"template": [0.1] * 512}),
+        )
+
+        process_enrollment(["image-1", "image-2", "image-3"])
+
+        mock_post.assert_called_once_with(
+            "http://face.test/enroll",
+            json={"images": ["image-1", "image-2", "image-3"]},
+            headers={"Authorization": "Bearer face-service-test-token"},
+            timeout=90,
+        )
 
 
 def camera_sequence_payload(**extra):
@@ -430,26 +521,34 @@ class RegularizationWorkflowTests(APITestCase):
             response = self.client.post(
                 "/api/attendance/regularization/",
                 {
-                    "period_type": "WEEK",
+                    "period_type":
+                    "WEEK",
                     "days": [
                         {
-                            "attendance_date": self.attendance_date.isoformat(),
-                            "request_type": "INCORRECT_ATTENDANCE",
-                            "requested_check_in": (
-                                self.check_in + timedelta(minutes=10)
-                            ).isoformat(),
-                            "requested_check_out": self.check_out.isoformat(),
-                            "reason": "Correct first day.",
+                            "attendance_date":
+                            self.attendance_date.isoformat(),
+                            "request_type":
+                            "INCORRECT_ATTENDANCE",
+                            "requested_check_in":
+                            (self.check_in +
+                             timedelta(minutes=10)).isoformat(),
+                            "requested_check_out":
+                            self.check_out.isoformat(),
+                            "reason":
+                            "Correct first day.",
                         },
                         {
-                            "attendance_date": second_date.isoformat(),
-                            "request_type": "FORGOT_CHECK_OUT",
-                            "requested_check_out": timezone.make_aware(
-                                datetime.combine(
-                                    second_date, datetime_time(17, 0)
-                                )
-                            ).isoformat(),
-                            "reason": "Forgot to check out.",
+                            "attendance_date":
+                            second_date.isoformat(),
+                            "request_type":
+                            "FORGOT_CHECK_OUT",
+                            "requested_check_out":
+                            timezone.make_aware(
+                                datetime.combine(second_date,
+                                                 datetime_time(
+                                                     17, 0))).isoformat(),
+                            "reason":
+                            "Forgot to check out.",
                         },
                     ],
                 },
@@ -817,7 +916,8 @@ class RegularizationWorkflowTests(APITestCase):
         # Anchor to a Thursday
         mock_localdate.return_value = date(2026, 10, 8)  # Thursday
         # The shared fixture creates a request to exercise quota behavior in
-        # other tests. Start with an empty quota state for this eligibility test.
+        # other tests. Start with an empty quota state for this eligibility
+        # test.
         RegularizationRequest.objects.filter(employee=self.employee).delete()
         self.client.force_authenticate(user=self.employee_user)
         # Monday is 2026-10-05
@@ -843,7 +943,8 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertEqual(quota.data["weekly_used"], 0)
         self.assertEqual(quota.data["monthly_used"], 0)
 
-        # Attempt to submit current Monday (2026-10-05) -> allowed even if > 48 hours
+        # Attempt to submit current Monday (2026-10-05) -> allowed even if > 48
+        # hours
         # First ensure employee was joined before that date
         self.employee.date_joined = date(2026, 1, 1)
         self.employee.save()
@@ -918,12 +1019,15 @@ class RegularizationWorkflowTests(APITestCase):
         )
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn(
-            "multi-day requests are only allowed for dates in the current calendar week",
+            'multi-day requests are only allowed for dates in the current '
+            'calendar week',
             str(res.data),
         )
 
     @patch("attendance.views.is_working_day", return_value=True)
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 14)
+    )
     def test_grouped_regularization_rejects_duplicate_dates_before_writing(
         self, _mock_localdate, _mock_working_day
     ):
@@ -942,7 +1046,9 @@ class RegularizationWorkflowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["error"], "A date can only be included once.")
+        self.assertEqual(
+            response.data["error"], "A date can only be included once."
+        )
         self.assertEqual(
             RegularizationRequest.objects.filter(
                 employee=self.employee, period_type="WEEK"
@@ -960,7 +1066,9 @@ class RegularizationWorkflowTests(APITestCase):
         },
     )
     @patch("attendance.views.is_working_day", return_value=True)
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 14)
+    )
     def test_grouped_request_rejects_date_in_an_existing_pending_request(
         self, _mock_localdate, _mock_working_day, mock_quota
     ):
@@ -997,7 +1105,9 @@ class RegularizationWorkflowTests(APITestCase):
             "A pending request already includes one or more selected dates.",
         )
         self.assertTrue(
-            RegularizationRequest.objects.filter(pk=pending.pk, status="PENDING").exists()
+            RegularizationRequest.objects.filter(
+                pk=pending.pk, status="PENDING"
+            ).exists()
         )
         self.assertFalse(
             RegularizationRequest.objects.filter(
@@ -1007,7 +1117,9 @@ class RegularizationWorkflowTests(APITestCase):
         mock_quota.assert_called_once()
 
     @patch("attendance.views.is_working_day", return_value=True)
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 14)
+    )
     def test_grouped_regularization_rejects_checkout_before_checkin(
         self, _mock_localdate, _mock_working_day
     ):
@@ -1030,7 +1142,9 @@ class RegularizationWorkflowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("check-out must be after check-in", response.data["error"])
+        self.assertIn(
+            "check-out must be after check-in", response.data["error"]
+        )
         self.assertEqual(
             RegularizationRequest.objects.filter(
                 employee=self.employee, period_type="WEEK"
@@ -1038,7 +1152,9 @@ class RegularizationWorkflowTests(APITestCase):
             0,
         )
 
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 14)
+    )
     def test_grouped_regularization_requires_a_period_and_day_list(
         self, _mock_localdate
     ):
@@ -1054,7 +1170,9 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertIn("Choose a period", response.data["error"])
 
     @patch("attendance.views.is_working_day", return_value=True)
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 14)
+    )
     def test_grouped_regularization_requires_type_and_reason(
         self, _mock_localdate, _mock_working_day
     ):
@@ -1070,10 +1188,14 @@ class RegularizationWorkflowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("request type and reason are required", response.data["error"])
+        self.assertIn(
+            "request type and reason are required", response.data["error"]
+        )
 
     @patch("attendance.views.is_working_day", return_value=True)
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 14)
+    )
     def test_grouped_regularization_requires_at_least_one_corrected_time(
         self, _mock_localdate, _mock_working_day
     ):
@@ -1095,7 +1217,9 @@ class RegularizationWorkflowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("at least one corrected time is required", response.data["error"])
+        self.assertIn(
+            "at least one corrected time is required", response.data["error"]
+        )
 
     @patch(
         "attendance.views.regularization_quota_usage",
@@ -1107,7 +1231,9 @@ class RegularizationWorkflowTests(APITestCase):
         },
     )
     @patch("attendance.views.is_working_day", return_value=True)
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 14)
+    )
     def test_grouped_regularization_returns_weekly_quota_details(
         self, _mock_localdate, _mock_working_day, mock_quota
     ):
@@ -1137,7 +1263,9 @@ class RegularizationWorkflowTests(APITestCase):
 
     @patch("attendance.views.regularization_quota_usage")
     @patch("attendance.views.is_working_day", return_value=True)
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 1))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 1)
+    )
     def test_grouped_month_request_cannot_cross_calendar_month(
         self, _mock_localdate, _mock_working_day, mock_quota
     ):
@@ -1176,7 +1304,9 @@ class RegularizationWorkflowTests(APITestCase):
         mock_quota.assert_not_called()
 
     @patch("attendance.views.is_working_day", return_value=True)
-    @patch("attendance.views.timezone.localdate", return_value=date(2026, 10, 14))
+    @patch(
+        "attendance.views.timezone.localdate", return_value=date(2026, 10, 14)
+    )
     def test_grouped_regularization_rejects_naive_time_on_another_date(
         self, _mock_localdate, _mock_working_day
     ):
@@ -1199,7 +1329,9 @@ class RegularizationWorkflowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("check-in must fall on that date", response.data["error"])
+        self.assertIn(
+            "check-in must fall on that date", response.data["error"]
+        )
 
     @patch("django.utils.timezone.now")
     @patch("django.utils.timezone.localdate")
@@ -1224,8 +1356,10 @@ class RegularizationWorkflowTests(APITestCase):
         )
 
         self.client.force_authenticate(user=self.admin_user)
-        # Assuming admin can approve and requested_check_in / requested_check_out are handled or we pass them in approve
-        # Actually approve requires valid times, let's provide approved_check_in and approved_check_out
+        # Assuming admin can approve and requested_check_in /
+        # requested_check_out are handled or we pass them in approve
+        # Actually approve requires valid times, let's provide
+        # approved_check_in and approved_check_out
         res = self.client.post(
             f"/api/attendance/admin/regularization/{req.id}/approve/",
             {
@@ -1268,8 +1402,10 @@ class RegularizationWorkflowTests(APITestCase):
         response = self.client.post(
             f"/api/attendance/admin/regularization/{self.request.id}/approve/",
             {
-                "check_in": f"{self.attendance_date.isoformat()}T17:00:00+05:30",
-                "check_out": f"{self.attendance_date.isoformat()}T09:00:00+05:30",
+                "check_in":
+                f"{self.attendance_date.isoformat()}T17:00:00+05:30",
+                "check_out":
+                f"{self.attendance_date.isoformat()}T09:00:00+05:30",
             },
             format="json",
         )
@@ -1342,14 +1478,16 @@ class AttendanceGeofenceTests(APITestCase):
             "accuracy": 15.0,
         }
 
-        # Point ~22km north of workplace — guaranteed outside any sane geofence radius
+        # Point ~22km north of workplace — guaranteed outside any sane geofence
+        # radius
         self.outside_location = {
             "latitude": WORKPLACE_LATITUDE + 0.2,
             "longitude": WORKPLACE_LONGITUDE,
             "accuracy": 10.0,
         }
 
-        # Poor accuracy — exceeds MAX_ACCURACY_METERS (500m in env, 200m in code default)
+        # Poor accuracy — exceeds MAX_ACCURACY_METERS (500m in env, 200m in
+        # code default)
         self.low_accuracy_location = {
             "latitude": WORKPLACE_LATITUDE,
             "longitude": WORKPLACE_LONGITUDE,
@@ -1414,7 +1552,8 @@ class AttendanceGeofenceTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
             response.data["error"],
-            "Your location accuracy is too low. Please enable precise location and try again.",
+            'Your location accuracy is too low. Please enable precise '
+            'location and try again.',
         )
 
     def test_check_in_rejected_missing_coordinates(self):
@@ -1662,7 +1801,8 @@ class FaceServiceIntegrationTests(TestCase):
     def test_malformed_response(self, mock_post):
         mock_response = Mock()
         mock_response.status_code = 500
-        # Simulating a response where json() fails or returns missing keys handled by .get()
+        # Simulating a response where json() fails or returns missing keys
+        # handled by .get()
         mock_response.json.return_value = {"error": "Internal server error"}
         mock_post.return_value = mock_response
 
@@ -1953,7 +2093,8 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 403)
-        # verify_employee_face does 1:1 check — an unrecognised face returns the same mismatch message
+        # verify_employee_face does 1:1 check — an unrecognised face returns
+        # the same mismatch message
         self.assertIn(
             "does not match your authenticated account", response.data["error"]
         )
@@ -1961,9 +2102,8 @@ class WebsiteFacialCheckInViewTests(APITestCase):
     @patch("attendance.face_service.requests.post")
     def test_facial_check_in_duplicate(self, mock_post):
         # Create a check-in for today
-        from django.utils import timezone
-
         from attendance.models import Attendance
+        from django.utils import timezone
 
         Attendance.objects.create(
             employee=self.employee,
@@ -1994,7 +2134,6 @@ class WebsiteFacialCheckInViewTests(APITestCase):
     @patch("attendance.face_service.requests.post")
     def test_facial_check_in_on_leave(self, mock_post):
         from django.utils import timezone
-
         from leave_management.models import LeaveRequest, LeaveType
 
         today = timezone.localdate()
@@ -2031,7 +2170,8 @@ class WebsiteFacialCheckInViewTests(APITestCase):
 
     @patch("attendance.face_service.requests.post")
     def test_facial_check_in_rejected_outside_geofence(self, mock_post):
-        # Use a point ~22km away — guaranteed to exceed any reasonable geofence radius
+        # Use a point ~22km away — guaranteed to exceed any reasonable geofence
+        # radius
         outside_location = {
             "latitude": WORKPLACE_LATITUDE + 0.2,
             "longitude": WORKPLACE_LONGITUDE,
@@ -2140,9 +2280,8 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_success(self, mock_post):
         import datetime
 
-        from django.utils import timezone
-
         from attendance.models import Attendance
+        from django.utils import timezone
 
         # Check in 6 minutes ago
         check_in_time = timezone.now() - datetime.timedelta(minutes=6)
@@ -2197,7 +2336,10 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
 
     @patch("attendance.views.verify_employee_face")
     def test_facial_immediate_checkout_allowed(self, mock_verify):
-        """Immediate facial check-out after check-in is now allowed (no cooldown)."""
+        (
+            'Immediate facial check-out after check-in is now allowed (no '
+            'cooldown).'
+        )
         # Pre-create check-in with event
         past_time = timezone.now() - timedelta(minutes=2)
         AttendanceEvent.objects.create(
@@ -2229,9 +2371,8 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_duplicate(self, mock_post):
         import datetime
 
-        from django.utils import timezone
-
         from attendance.models import Attendance
+        from django.utils import timezone
 
         check_in_time = timezone.now() - datetime.timedelta(minutes=10)
         check_out_time = timezone.now() - datetime.timedelta(minutes=2)
@@ -2266,9 +2407,8 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_mismatch(self, mock_post):
         import datetime
 
-        from django.utils import timezone
-
         from attendance.models import Attendance
+        from django.utils import timezone
 
         user2 = User.objects.create_user(
             email="other2@example.com", password="password123"
@@ -2388,7 +2528,7 @@ class KioskLivenessAttendanceTests(APITestCase):
         return response
 
     @patch("attendance.face_service.requests.post")
-    def test_spoof_and_liveness_error_block_both_kiosk_actions_even_with_client_claim(
+    def test_spoof_and_liveness_errors_block_kiosk_actions_with_client_claim(
         self, mock_post
     ):
         today = timezone.localdate()
@@ -2501,41 +2641,33 @@ class KioskLivenessAttendanceTests(APITestCase):
 
 
 class MyTeamViewTests(APITestCase):
-    """
-    Full coverage of GET /api/attendance/my-team/
-
-    Scenarios tested
-    ----------------
-    Authentication
-      - Unauthenticated request is rejected (401)
-      - Non-employee user (no employee profile) is rejected
-    Team filtering
-      - Same employment_type + section are included
-      - Same employment_type but different section is excluded
-      - Different employment_type but same section is excluded
-      - Inactive employees are excluded
-      - Subsection does NOT restrict results (A1 sees A2, A3, …)
-    Status classification
-      - CHECKED_IN: has a today check_in
-      - CHECKED_IN: already checked OUT today is still CHECKED_IN (not YET_TO_CHECK_IN)
-      - YET_TO_CHECK_IN: no attendance record today, not on leave
-      - ON_LEAVE: has an APPROVED LeaveRequest covering today
-      - Pending leave does NOT count as ON_LEAVE
-      - Rejected/Cancelled leave does NOT count as ON_LEAVE
-    Edge cases
-      - Empty section → returns note, empty members list
-      - Empty employment_type → returns note, empty members list
-      - No team members → total_members = 0
-      - Everyone checked in → yet_to_check_in_count = 0, on_leave_count = 0
-      - Everyone on leave → on_leave_count = total_members
-    Security
-      - Response does NOT expose face_template / biometric fields
-      - Response does NOT expose password / sensitive user fields
-      - Employee cannot inject section/employment_type via query params
-    Counts
-      - checked_in_count, yet_to_check_in_count, on_leave_count are accurate
-      - leave_type label is present in ON_LEAVE member data
-    """
+    (
+        '\n    Full coverage of GET /api/attendance/my-team/\n\n    Scenarios '
+        'tested\n    ----------------\n    Authentication\n      - '
+        'Unauthenticated request is rejected (401)\n      - Non-employee user '
+        '(no employee profile) is rejected\n    Team filtering\n      - Same '
+        'employment_type + section are included\n      - Same employment_type '
+        'but different section is excluded\n      - Different employment_type '
+        'but same section is excluded\n      - Inactive employees are '
+        'excluded\n      - Subsection does NOT restrict results (A1 sees A2, '
+        'A3, …)\n    Status classification\n      - CHECKED_IN: has a today '
+        'check_in\n      - CHECKED_IN: already checked OUT today is still '
+        'CHECKED_IN (not YET_TO_CHECK_IN)\n      - YET_TO_CHECK_IN: no '
+        'attendance record today, not on leave\n      - ON_LEAVE: has an '
+        'APPROVED LeaveRequest covering today\n      - Pending leave does NOT '
+        'count as ON_LEAVE\n      - Rejected/Cancelled leave does NOT count '
+        'as ON_LEAVE\n    Edge cases\n      - Empty section → returns note, '
+        'empty members list\n      - Empty employment_type → returns note, '
+        'empty members list\n      - No team members → total_members = 0\n    '
+        '  - Everyone checked in → yet_to_check_in_count = 0, on_leave_count '
+        '= 0\n      - Everyone on leave → on_leave_count = total_members\n    '
+        'Security\n      - Response does NOT expose face_template / biometric '
+        'fields\n      - Response does NOT expose password / sensitive user '
+        'fields\n      - Employee cannot inject section/employment_type via '
+        'query params\n    Counts\n      - checked_in_count, '
+        'yet_to_check_in_count, on_leave_count are accurate\n      - '
+        'leave_type label is present in ON_LEAVE member data\n    '
+    )
 
     URL = "/api/attendance/my-team/"
 
@@ -2590,7 +2722,7 @@ class MyTeamViewTests(APITestCase):
             subsection="A1",
         )
         # Use a fixed weekday for tests to avoid weekend issues
-        from datetime import date, timedelta
+        from datetime import timedelta
 
         today = timezone.localdate()
         # If today is weekend (Sat=5, Sun=6), use next Monday
@@ -2633,7 +2765,10 @@ class MyTeamViewTests(APITestCase):
     # ------------------------------------------------------------------
 
     def test_same_type_and_section_are_included(self):
-        """Teammates with identical employment_type + section appear in results."""
+        (
+            'Teammates with identical employment_type + section appear in '
+            'results.'
+        )
         _, teammate = self._make_user_and_employee(
             "teammate@example.com",
             employment_type="INTERN",
@@ -2662,7 +2797,10 @@ class MyTeamViewTests(APITestCase):
         self.assertNotIn(other.id, ids)
 
     def test_different_employment_type_is_excluded(self):
-        """A PERMANENT employee in section A must not appear in INTERN section A's team."""
+        (
+            'A PERMANENT employee in section A must not appear in INTERN '
+            "section A's team."
+        )
         _, other = self._make_user_and_employee(
             "permanent@example.com",
             employment_type="PERMANENT",
@@ -2758,7 +2896,10 @@ class MyTeamViewTests(APITestCase):
         self.assertIsNotNone(me_data["check_out_time"])
 
     def test_yet_to_check_in_classification(self):
-        """Employee with no attendance record and no leave → YET_TO_CHECK_IN."""
+        (
+            'Employee with no attendance record and no leave → '
+            'YET_TO_CHECK_IN.'
+        )
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.URL)
         self.assertEqual(response.status_code, 200)
@@ -2914,7 +3055,10 @@ class MyTeamViewTests(APITestCase):
         self.assertIn("note", response.data)
 
     def test_no_team_members_returns_empty_list(self):
-        """Single employee in a unique type+section: only themselves, no errors."""
+        (
+            'Single employee in a unique type+section: only themselves, no '
+            'errors.'
+        )
         self.me.employment_type = "CONTRACT"
         self.me.section = "UNIQUE"
         self.me.save()
@@ -2926,7 +3070,10 @@ class MyTeamViewTests(APITestCase):
         self.assertEqual(response.data["members"][0]["id"], self.me.id)
 
     def test_everyone_checked_in(self):
-        """All members checked in → yet_to_check_in_count=0, on_leave_count=0."""
+        (
+            'All members checked in → yet_to_check_in_count=0, '
+            'on_leave_count=0.'
+        )
         _, t1 = self._make_user_and_employee(
             "t1b@example.com",
             employment_type="INTERN",
@@ -2969,7 +3116,10 @@ class MyTeamViewTests(APITestCase):
     # ------------------------------------------------------------------
 
     def test_face_biometric_fields_not_exposed(self):
-        """face_template or any biometric field must never appear in the response."""
+        (
+            'face_template or any biometric field must never appear in the '
+            'response.'
+        )
         from employees.models import FaceProfile
 
         FaceProfile.objects.create(
@@ -3035,7 +3185,10 @@ class MyTeamViewTests(APITestCase):
             self.assertIn(key, response.data)
 
     def test_member_fields_are_correct(self):
-        """Each member dict contains id, name, department, subsection, status, check_in_time, check_out_time."""
+        (
+            'Each member dict contains id, name, department, subsection, '
+            'status, check_in_time, check_out_time.'
+        )
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.URL)
         self.assertEqual(response.status_code, 200)
@@ -3065,7 +3218,10 @@ class MyTeamViewTests(APITestCase):
         self.assertEqual(me_data["leave_type"], "Casual Leave")
 
     def test_team_metadata_in_response(self):
-        """team_employment_type and team_section in response match the authenticated employee."""
+        (
+            'team_employment_type and team_section in response match the '
+            'authenticated employee.'
+        )
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.URL)
         self.assertEqual(response.status_code, 200)
@@ -3076,6 +3232,7 @@ class MyTeamViewTests(APITestCase):
 # ---------------------------------------------------------------------------
 # Model/Schema Tests (Phase 1)
 # ---------------------------------------------------------------------------
+
 
 class ShiftModelTests(TestCase):
     """Tests for the Shift model."""
@@ -3136,7 +3293,8 @@ class ShiftModelTests(TestCase):
             end_time=datetime_time(16, 0),
         )
         codes = list(Shift.objects.values_list("code", flat=True))
-        # MORN (from setUp) comes before AAA alphabetically? No, AAA < MORN < ZZZ
+        # MORN (from setUp) comes before AAA alphabetically? No, AAA < MORN <
+        # ZZZ
         self.assertEqual(codes, ["AAA", "MORN", "ZZZ"])
 
 
@@ -3287,12 +3445,14 @@ class AttendanceDailySummaryConstraintTests(TestCase):
             Attendance.objects.create(employee=self.employee, date=self.today)
 
     def test_attendance_allows_multiple_events_but_one_summary(self):
-        """Multiple AttendanceEvents can exist while Attendance remains one row."""
-        # Create summary row
-        attendance = Attendance.objects.create(
-            employee=self.employee, date=self.today
+        (
+            'Multiple AttendanceEvents can exist while Attendance remains one '
+            'row.'
         )
-        # Create multiple events — should not conflict with Attendance constraint
+        # Create summary row
+        Attendance.objects.create(employee=self.employee, date=self.today)
+        # Create multiple events — should not conflict with Attendance
+        # constraint
         today = self.today
         base_time = timezone.make_aware(
             timezone.datetime.combine(today, timezone.datetime.min.time())
@@ -3331,6 +3491,7 @@ class AttendanceDailySummaryConstraintTests(TestCase):
 # ---------------------------------------------------------------------------
 # Event-Based Attendance Behavior Tests (Phase 2)
 # ---------------------------------------------------------------------------
+
 
 class EventBasedAttendanceTests(APITestCase):
     """Tests for event-based attendance check-in/check-out behavior."""
@@ -3388,7 +3549,10 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(events.first().source, "MOBILE")
 
     def test_first_checkout_creates_event(self):
-        """First check-out creates AttendanceEvent and sets status to PRESENT."""
+        (
+            'First check-out creates AttendanceEvent and sets status to '
+            'PRESENT.'
+        )
         # Pre-create attendance with check_in
         past_time = timezone.now() - timedelta(minutes=10)
         Attendance.objects.create(
@@ -3647,7 +3811,10 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertIn("Already checked out today", response.data["error"])
 
     def test_shift_end_does_not_finalize_attendance(self):
-        """Attendance is not finalized at shift end - events continue to accumulate."""
+        (
+            'Attendance is not finalized at shift end - events continue to '
+            'accumulate.'
+        )
         # This test verifies the design principle - no auto-finalization
         # Create events manually to avoid cooldown issues
         base_time = timezone.make_aware(
@@ -3858,10 +4025,6 @@ class EventBasedAttendanceTests(APITestCase):
 
     def test_three_intervals_duration(self):
         """Three intervals sum independently and exclude both breaks."""
-        now = timezone.make_aware(
-            datetime.combine(timezone.localdate(), datetime_time(12, 0)),
-            timezone.get_current_timezone(),
-        )
         today_start = timezone.make_aware(
             timezone.datetime.combine(
                 timezone.localdate(), timezone.datetime.min.time()
@@ -4077,7 +4240,10 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertIsNotNone(today_attendance.check_out)
 
     def test_open_interval_after_checkout_includes_only_current_interval(self):
-        """A current check-in adds to completed intervals without counting the break."""
+        (
+            'A current check-in adds to completed intervals without counting '
+            'the break.'
+        )
         today = timezone.localdate()
         start = timezone.make_aware(
             timezone.datetime.combine(today, timezone.datetime.min.time())
@@ -4107,7 +4273,10 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(duration, timedelta(hours=5))
 
     def test_events_from_another_date_are_not_connected(self):
-        """Working duration is calculated only from events on the attendance date."""
+        (
+            'Working duration is calculated only from events on the '
+            'attendance date.'
+        )
         today = timezone.localdate()
         today_start = timezone.make_aware(
             timezone.datetime.combine(today, timezone.datetime.min.time())
@@ -4175,6 +4344,7 @@ class EventBasedAttendanceTests(APITestCase):
 # ---------------------------------------------------------------------------
 # Shift Assignment Tests (Phase 3)
 # ---------------------------------------------------------------------------
+
 
 class AdminForceCheckoutTests(APITestCase):
     def setUp(self):
@@ -4316,8 +4486,12 @@ class AttendanceAdminScopeAndLocationTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.data["error"], "You do not have access to this employee.")
-        self.assertFalse(AttendanceEvent.objects.filter(employee=target).exists())
+        self.assertEqual(
+            response.data["error"], "You do not have access to this employee."
+        )
+        self.assertFalse(
+            AttendanceEvent.objects.filter(employee=target).exists()
+        )
 
     def test_authenticated_employee_cannot_mutate_office_locations(self):
         user = User.objects.create_user(email="location-employee@example.test")
@@ -4467,12 +4641,12 @@ class ShiftAssignmentTests(APITestCase):
 
     # Concurrent self-assignment test
     def test_concurrent_self_assignment_race_condition(self):
-        """Two concurrent self-assignment requests cannot overwrite shift.
-        
-        Uses a single test client with manual transaction isolation to simulate
-        concurrent requests. The view uses select_for_update() to prevent races.
-        """
-        import time
+        (
+            'Two concurrent self-assignment requests cannot overwrite shift.\n'
+            '\n        Uses a single test client with manual transaction '
+            'isolation to simulate\n        concurrent requests. The view '
+            'uses select_for_update() to prevent races.\n        '
+        )
 
         from django.db import transaction
 
@@ -4665,8 +4839,6 @@ class ShiftAdherenceTests(APITestCase):
     def setUp(self):
         from datetime import time
 
-        from django.utils import timezone
-
         self.user = User.objects.create_user(
             email="adherence@example.com",
             password="password123",
@@ -4748,7 +4920,8 @@ class ShiftAdherenceTests(APITestCase):
         from django.utils import timezone
 
         today = ATTENDANCE_TEST_WORKDAY
-        # Create check-in at 9:04 AM (4 min after 9 AM shift start, within grace)
+        # Create check-in at 9:04 AM (4 min after 9 AM shift start, within
+        # grace)
         check_in_time = timezone.make_aware(
             datetime.combine(today, time(9, 4))
         )
@@ -4802,7 +4975,8 @@ class ShiftAdherenceTests(APITestCase):
         from django.utils import timezone
 
         today = ATTENDANCE_TEST_WORKDAY
-        # Create check-in at 9:06 AM (6 min after 9 AM shift start, beyond grace)
+        # Create check-in at 9:06 AM (6 min after 9 AM shift start, beyond
+        # grace)
         check_in_time = timezone.make_aware(
             datetime.combine(today, time(9, 6))
         )
@@ -4909,7 +5083,7 @@ class WeekendAttendanceTests(APITestCase):
     """Tests for weekend attendance behavior."""
 
     def setUp(self):
-        from datetime import datetime, time
+        from datetime import time
 
         self.user = User.objects.create_user(
             email="weekend@example.com",
@@ -5135,13 +5309,16 @@ class WeekendAttendanceTests(APITestCase):
         self.assertIsNotNone(response.data["check_in"])
 
     def test_weekend_without_attendance_not_treated_as_absence(self):
-        """Weekend without attendance should not be marked as YET_TO_CHECK_IN."""
+        (
+            'Weekend without attendance should not be marked as '
+            'YET_TO_CHECK_IN.'
+        )
         # Create another employee for team context
         other_user = User.objects.create_user(
             email="other@example.com",
             password="password123",
         )
-        other_employee = Employee.objects.create(
+        Employee.objects.create(
             user=other_user,
             department="Engineering",
             employment_type="PERMANENT",
@@ -5161,7 +5338,8 @@ class WeekendAttendanceTests(APITestCase):
             members = response.data["members"]
             weekend_members = [m for m in members if m["status"] == "WEEKEND"]
 
-            # Both employees should show WEEKEND status (no attendance on Saturday)
+            # Both employees should show WEEKEND status (no attendance on
+            # Saturday)
             self.assertEqual(len(weekend_members), 2)
             self.assertEqual(response.data["yet_to_check_in_count"], 0)
 
@@ -5227,7 +5405,10 @@ class WeekendAttendanceTests(APITestCase):
     def test_weekend_with_attendance_shows_checked_in_in_team(
         self, mock_localdate, mock_now
     ):
-        """Weekend attendance with check-in shows CHECKED_IN status in team view."""
+        (
+            'Weekend attendance with check-in shows CHECKED_IN status in team '
+            'view.'
+        )
         saturday = self._get_next_saturday()
         mock_localdate.return_value = saturday
 
@@ -5403,7 +5584,10 @@ class AdminShiftAssignmentTests(APITestCase):
         self.assertIsNone(employee_data["shift"])
 
     def test_shift_assignment_preserves_historical_events(self):
-        """Changing employee shift doesn't affect historical AttendanceEvents."""
+        (
+            "Changing employee shift doesn't affect historical "
+            'AttendanceEvents.'
+        )
         from django.utils import timezone as tz
 
         # Create some historical events with original shift
@@ -5786,7 +5970,7 @@ class AdminResetAttendanceHistoryTests(APITestCase):
             [check_in_time, check_out_time],
         )
 
-    def test_repeated_resets_preserve_events_and_only_latest_reset_is_effective(
+    def test_repeated_resets_preserve_events_and_latest_reset_is_effective(
         self,
     ):
         self.assertEqual(self.reset_attendance().status_code, 200)
@@ -5882,6 +6066,7 @@ class AdminResetAttendanceHistoryTests(APITestCase):
             AttendanceEvent.objects.filter(employee=self.employee).count(), 2
         )
 
+
 class AttendanceShiftConfigurationValidationTests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -5893,23 +6078,37 @@ class AttendanceShiftConfigurationValidationTests(APITestCase):
         self.client.force_authenticate(self.admin)
 
     def test_bulk_assignment_requires_target_filter(self):
-        response = self.client.post(reverse("admin-bulk-assign-shift"), {}, format="json")
+        response = self.client.post(
+            reverse("admin-bulk-assign-shift"), {}, format="json"
+        )
         self.assertEqual(response.status_code, 400)
         self.assertIn("at least one target filter", response.data["error"])
-        self.assertEqual(Employee.objects.filter(shift__isnull=False).count(), 0)
+        self.assertEqual(
+            Employee.objects.filter(shift__isnull=False).count(), 0
+        )
 
     def test_shift_configuration_rejects_missing_name_and_malformed_time(self):
         base = reverse("admin-shift-configure")
         missing_name = self.client.post(
             base,
-            {"employment_type": "PERMANENT", "shifts": [{"name": "", "start_time": "09:00", "end_time": "17:00"}]},
+            {
+                "employment_type": "PERMANENT",
+                "shifts": [
+                    {"name": "", "start_time": "09:00", "end_time": "17:00"}
+                ],
+            },
             format="json",
         )
         self.assertEqual(missing_name.status_code, 400)
         self.assertIn("name is required", missing_name.data["error"])
         bad_time = self.client.post(
             base,
-            {"employment_type": "CONTRACT", "shifts": [{"name": "Night", "start_time": "bad", "end_time": "17:00"}]},
+            {
+                "employment_type": "CONTRACT",
+                "shifts": [
+                    {"name": "Night", "start_time": "bad", "end_time": "17:00"}
+                ],
+            },
             format="json",
         )
         self.assertEqual(bad_time.status_code, 400)
@@ -5918,12 +6117,26 @@ class AttendanceShiftConfigurationValidationTests(APITestCase):
 
     def test_shift_configuration_rejects_duplicate_active_code(self):
         Shift.objects.create(
-            name="Existing", code="DUPL", start_time=datetime_time(9, 0),
-            end_time=datetime_time(17, 0), employment_type="CONTRACT", is_active=True,
+            name="Existing",
+            code="DUPL",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+            employment_type="CONTRACT",
+            is_active=True,
         )
         response = self.client.post(
             reverse("admin-shift-configure"),
-            {"employment_type": "PERMANENT", "shifts": [{"name": "Replacement", "code": "dupl", "start_time": "09:00", "end_time": "17:00"}]},
+            {
+                "employment_type": "PERMANENT",
+                "shifts": [
+                    {
+                        "name": "Replacement",
+                        "code": "dupl",
+                        "start_time": "09:00",
+                        "end_time": "17:00",
+                    }
+                ],
+            },
             format="json",
         )
         self.assertEqual(response.status_code, 400)
@@ -5932,19 +6145,29 @@ class AttendanceShiftConfigurationValidationTests(APITestCase):
 
     def test_shift_configuration_lists_legacy_shifts_separately(self):
         Shift.objects.create(
-            name="Legacy", code="LEG", start_time=datetime_time(8, 0),
-            end_time=datetime_time(16, 0), employment_type="", is_active=True,
+            name="Legacy",
+            code="LEG",
+            start_time=datetime_time(8, 0),
+            end_time=datetime_time(16, 0),
+            employment_type="",
+            is_active=True,
         )
         response = self.client.get(reverse("admin-shift-configure"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["configuration"]["UNASSIGNED"][0]["code"], "LEG")
+        self.assertEqual(
+            response.data["configuration"]["UNASSIGNED"][0]["code"], "LEG"
+        )
 
-    def test_employee_without_configured_shift_gets_configuration_guidance(self):
+    def test_employee_without_configured_shift_gets_configuration_guidance(
+        self,
+    ):
         user = User.objects.create_user(
             email="shift-config.employee@example.test", password="password123"
         )
         employee = Employee.objects.create(
-            user=user, department="Engineering", employment_type="PERMANENT",
+            user=user,
+            department="Engineering",
+            employment_type="PERMANENT",
             date_joined=date(2026, 1, 1),
         )
         self.client.force_authenticate(user)
@@ -5953,6 +6176,7 @@ class AttendanceShiftConfigurationValidationTests(APITestCase):
         self.assertIsNone(response.data["shift"])
         self.assertTrue(response.data["requires_configuration"])
         self.assertIsNone(employee.get_effective_shift())
+
 
 class AttendanceAdminValidationCoverageTests(APITestCase):
     def setUp(self):
@@ -5975,7 +6199,9 @@ class AttendanceAdminValidationCoverageTests(APITestCase):
 
     def test_reset_rejects_missing_reason_before_lookup(self):
         response = self.client.post(
-            "/api/admin/attendance/reset/", {"employee": self.employee_user.email}, format="json"
+            "/api/admin/attendance/reset/",
+            {"employee": self.employee_user.email},
+            format="json",
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("required", response.data["error"])
@@ -5983,7 +6209,10 @@ class AttendanceAdminValidationCoverageTests(APITestCase):
     def test_reset_reports_missing_today_record(self):
         response = self.client.post(
             "/api/admin/attendance/reset/",
-            {"employee": self.employee_user.email, "reason": "Device correction"},
+            {
+                "employee": self.employee_user.email,
+                "reason": "Device correction",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, 404)
@@ -5996,14 +6225,21 @@ class AttendanceAdminValidationCoverageTests(APITestCase):
         self.assertIn("required", missing.data["error"])
         invalid_date = self.client.post(
             path,
-            {"employee": self.employee_user.email, "date": "14/10/2026", "reason": "Correction", "status": "PRESENT"},
+            {
+                "employee": self.employee_user.email,
+                "date": "14/10/2026",
+                "reason": "Correction",
+                "status": "PRESENT",
+            },
             format="json",
         )
         self.assertEqual(invalid_date.status_code, 400)
         self.assertIn("YYYY-MM-DD", invalid_date.data["error"])
 
     def test_force_checkout_requires_a_target_selector(self):
-        response = self.client.post("/api/admin/force-checkout/", {}, format="json")
+        response = self.client.post(
+            "/api/admin/force-checkout/", {}, format="json"
+        )
         self.assertEqual(response.status_code, 400)
         self.assertIn("Must provide", response.data["error"])
 
@@ -6011,24 +6247,41 @@ class AttendanceAdminValidationCoverageTests(APITestCase):
         self.client.force_authenticate(self.employee_user)
         response = self.client.post(
             "/api/attendance/regularization/",
-            {"attendance_date": (timezone.localdate() + timedelta(days=1)).isoformat(), "request_type": "FORGOT_CHECK_IN", "reason": "Missed check-in", "requested_check_in": "2026-10-15T09:00:00+05:30"},
+            {
+                "attendance_date": (
+                    timezone.localdate() + timedelta(days=1)
+                ).isoformat(),
+                "request_type": "FORGOT_CHECK_IN",
+                "reason": "Missed check-in",
+                "requested_check_in": "2026-10-15T09:00:00+05:30",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("cannot be in the future", response.data["error"])
 
-    def test_regularization_requires_the_requested_time_for_each_request_type(self):
+    def test_regularization_requires_the_requested_time_for_each_request_type(
+        self,
+    ):
         self.client.force_authenticate(self.employee_user)
         today = timezone.localdate().isoformat()
         for request_type, expected in (
             ("FORGOT_CHECK_IN", "requested check-in time is required"),
             ("FORGOT_CHECK_OUT", "requested check-out time is required"),
-            ("INCORRECT_ATTENDANCE", "At least one requested check-in or check-out time is required"),
+            (
+                "INCORRECT_ATTENDANCE",
+                'At least one requested check-in or check-out time is '
+                'required',
+            ),
         ):
             with self.subTest(request_type=request_type):
                 response = self.client.post(
                     "/api/attendance/regularization/",
-                    {"attendance_date": today, "request_type": request_type, "reason": "Correct attendance"},
+                    {
+                        "attendance_date": today,
+                        "request_type": request_type,
+                        "reason": "Correct attendance",
+                    },
                     format="json",
                 )
                 self.assertEqual(response.status_code, 400)
@@ -6036,12 +6289,20 @@ class AttendanceAdminValidationCoverageTests(APITestCase):
 
     def test_admin_all_shifts_serializes_legacy_shift_fields(self):
         Shift.objects.create(
-            name="Legacy all shift", code="LEGACY-ALL", start_time=datetime_time(8, 30),
-            end_time=datetime_time(16, 30), employment_type="", is_active=True,
+            name="Legacy all shift",
+            code="LEGACY-ALL",
+            start_time=datetime_time(8, 30),
+            end_time=datetime_time(16, 30),
+            employment_type="",
+            is_active=True,
         )
         self.client.force_authenticate(self.admin)
         response = self.client.get("/api/attendance/admin/shift/all/")
         self.assertEqual(response.status_code, 200)
-        legacy = next(item for item in response.data["shifts"] if item["code"] == "LEGACY-ALL")
+        legacy = next(
+            item
+            for item in response.data["shifts"]
+            if item["code"] == "LEGACY-ALL"
+        )
         self.assertEqual(legacy["employment_type"], None)
         self.assertEqual(legacy["start_time"], "08:30")

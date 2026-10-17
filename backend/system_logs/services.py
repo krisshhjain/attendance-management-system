@@ -14,8 +14,10 @@ MAX_ITEMS = 50
 MAX_STRING_LENGTH = 2048
 
 _SENSITIVE_KEY_PATTERN = re.compile(
-    r"(?:password|passwd|passphrase|token|secret|api[_-]?key|authorization|cookie|"
-    r"csrf|refresh|access[_-]?token|private[_-]?key|face|biometric|embedding|template)",
+    '(?:password|passwd|passphrase|token|secret|api[_-]?key|authorization|'
+    'cookie|'
+    'csrf|refresh|access[_-]?token|private[_-]?key|face|biometric|embeddin'
+    'g|template)',
     re.IGNORECASE,
 )
 _SECRET_VALUE_PATTERNS = (

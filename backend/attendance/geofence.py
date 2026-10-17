@@ -39,12 +39,12 @@ def calculate_haversine_distance(
 
 
 def validate_attendance_geofence(latitude, longitude, accuracy):
-    """
-    Validates device coordinates against dynamically configured workplace office locations.
-
-    Returns:
-        (is_valid: bool, error_message: str | None, distance: float | None, parsed_coords: tuple | None)
-    """
+    (
+        '\n    Validates device coordinates against dynamically configured '
+        'workplace office locations.\n\n    Returns:\n        (is_valid: '
+        'bool, error_message: str | None, distance: float | None, '
+        'parsed_coords: tuple | None)\n    '
+    )
     if latitude is None or longitude is None:
         return (
             False,
@@ -68,7 +68,8 @@ def validate_attendance_geofence(latitude, longitude, accuracy):
     if acc > MAX_ACCURACY_METERS:
         return (
             False,
-            "Your location accuracy is too low. Please enable precise location and try again.",
+            'Your location accuracy is too low. Please enable precise '
+            'location and try again.',
             None,
             (lat, lon, acc),
         )
@@ -90,7 +91,8 @@ def validate_attendance_geofence(latitude, longitude, accuracy):
             )
             if dist <= loc.radius_meters:
                 print(
-                    f"[GEOFENCE DEBUG] Matched Office: {loc.name}, Distance: {dist:.1f}m <= Radius: {loc.radius_meters}m"
+                    f"[GEOFENCE DEBUG] Matched Office: {loc.name}, Distanc"
+                    f"e: {dist:.1f}m <= Radius: {loc.radius_meters}m"
                 )
                 return True, None, dist, (lat, lon, acc)
             if dist < best_distance:
@@ -98,11 +100,15 @@ def validate_attendance_geofence(latitude, longitude, accuracy):
                 nearest_location = loc
 
         print(
-            f"[GEOFENCE DEBUG] Outside all offices. Nearest: {nearest_location.name} ({best_distance:.1f}m)"
+            f"[GEOFENCE DEBUG] Outside all offices. Nearest: "
+            f"{nearest_location.name} ({best_distance:.1f}m)"
         )
         return (
             False,
-            f"You are outside the allowed attendance area. Nearest location: {nearest_location.name} ({best_distance:.1f}m away, allowed: {nearest_location.radius_meters}m). Please move closer to the workplace and try again.",
+            f"You are outside the allowed attendance area. Nearest locatio"
+            f"n: {nearest_location.name} ({best_distance:.1f}m away, allow"
+            f"ed: {nearest_location.radius_meters}m). Please move closer t"
+            f"o the workplace and try again.",
             best_distance,
             (lat, lon, acc),
         )
@@ -112,12 +118,16 @@ def validate_attendance_geofence(latitude, longitude, accuracy):
             lat, lon, WORKPLACE_LATITUDE, WORKPLACE_LONGITUDE
         )
         print(
-            f"[GEOFENCE DEBUG] Fallback Distance: {distance}m, Radius: {GEOFENCE_RADIUS_METERS}m, Pass: {distance <= GEOFENCE_RADIUS_METERS}"
+            f"[GEOFENCE DEBUG] Fallback Distance: {distance}m, Radius: "
+            f"{GEOFENCE_RADIUS_METERS}m, Pass: "
+            f"{distance <= GEOFENCE_RADIUS_METERS}"
         )
         if distance > GEOFENCE_RADIUS_METERS:
             return (
                 False,
-                f"You are outside the allowed attendance area. Distance: {distance:.1f}m, Allowed: {GEOFENCE_RADIUS_METERS}m. Please move closer to the workplace and try again.",
+                f"You are outside the allowed attendance area. Distance: "
+                f"{distance:.1f}m, Allowed: {GEOFENCE_RADIUS_METERS}m. Ple"
+                f"ase move closer to the workplace and try again.",
                 distance,
                 (lat, lon, acc),
             )

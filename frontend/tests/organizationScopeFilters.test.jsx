@@ -2,7 +2,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { OrganizationScopeFilters } from "../src/components/dashboard/OrganizationScopeFilters.jsx";
-import { OrganizationScopeProvider, useOrganizationScope } from "../src/lib/organizationScope.jsx";
+import { OrganizationScopeProvider } from "../src/lib/organizationScope.jsx";
+import { useOrganizationScope } from "../src/lib/useOrganizationScope.js";
 
 function ScopeDisplay() {
   const { selectedScope } = useOrganizationScope();

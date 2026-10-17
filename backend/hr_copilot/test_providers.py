@@ -4,7 +4,6 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-
 from hr_copilot.services import providers
 
 
@@ -92,7 +91,9 @@ def test_structured_output_rejects_malformed_or_non_object_model_output(
     )
     provider = providers.LocalOllamaQwenProvider()
 
-    with pytest.raises(providers.LLMProviderError, match="invalid structured output"):
+    with pytest.raises(
+        providers.LLMProviderError, match="invalid structured output"
+    ):
         provider.structured_output([{"role": "user", "content": "question"}])
 
 
@@ -117,9 +118,7 @@ def test_local_provider_rejects_redirects_to_other_hosts():
         def log_message(self, *_args):
             pass
 
-    destination = ThreadingHTTPServer(
-        ("127.0.0.1", 0), DestinationHandler
-    )
+    destination = ThreadingHTTPServer(("127.0.0.1", 0), DestinationHandler)
     destination_thread = threading.Thread(
         target=destination.serve_forever, daemon=True
     )

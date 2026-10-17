@@ -10,20 +10,26 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-from django.contrib.auth import get_user_model
-
-from hr_copilot.services.write_actions import write_action_planner
-from hr_copilot.services.write_executor import pending_action_manager
+from django.contrib.auth import get_user_model  # noqa: E402
+from hr_copilot.services.write_actions import (  # noqa: E402
+    write_action_planner,
+)
+from hr_copilot.services.write_executor import (  # noqa: E402
+    pending_action_manager,
+)
 
 User = get_user_model()
 
 
 def test_write_action_planning():
-    """Test the specific steps that might be failing in write action planning."""
+    (
+        'Test the specific steps that might be failing in write action '
+        'planning.'
+    )
 
     print("TESTING WRITE ACTION PLANNING")
     print("=" * 40)
@@ -98,9 +104,11 @@ if __name__ == "__main__":
 
     if success:
         print(
-            "\nWrite action planning works - the issue is in views.py exception handling"
+            '\nWrite action planning works - the issue is in views.py '
+            'exception handling'
         )
     else:
         print(
-            "\nWrite action planning fails - this is why it falls through to read path"
+            '\nWrite action planning fails - this is why it falls through '
+            'to read path'
         )

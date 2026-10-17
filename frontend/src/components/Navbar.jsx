@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import { AppBar, Toolbar, Typography, Button, Box, Avatar } from "@mui/material";
 
 export function Navbar() {

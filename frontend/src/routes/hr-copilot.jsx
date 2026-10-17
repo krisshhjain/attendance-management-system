@@ -18,10 +18,10 @@ import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { ChatInput } from "../components/hr-copilot/ChatInput.jsx";
 import { ChatMessages } from "../components/hr-copilot/ChatMessages.jsx";
-import { useAuth } from "../lib/auth.jsx";
-import { useOrganizationScope } from "../lib/organizationScope.jsx";
+import { useAuth } from "../lib/useAuth.js";
+import { useOrganizationScope } from "../lib/useOrganizationScope.js";
 import { fetchConversation, respondToAction, sendMessage } from "../services/hrCopilotService.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 import { createClientId } from "../lib/clientId.js";
 
 const suggestions = [

@@ -8,7 +8,7 @@ def get_embedding(image_path):
         model_name="ArcFace",
         detector_backend="retinaface",
         normalize=False,
-        dtype=float
+        dtype=float,
     )
 
 

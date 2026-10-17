@@ -30,7 +30,7 @@ import {
 } from "../../lib/attendance.js";
 import { formatDuration, formatTime } from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
-import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../../feedback/useFeedback.js";
 
 const EMPTY_RECORDS = [];
 

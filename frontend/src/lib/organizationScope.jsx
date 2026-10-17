@@ -1,50 +1,26 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { OrganizationScopeContext } from "./organizationScopeContext.js";
 
-const OrganizationScopeContext = createContext(null);
-
-export function getOrganizationScope(user) {
-  return user?.organizational_scope || user?.scope || { assignedBRs: [] };
-}
-
-export function matchesOrganizationScope(record, selectedScope) {
-  if (!record || !selectedScope) return true;
-  const matches = (keys, selectedId) =>
-    !selectedId || keys.some((key) => record[key] === selectedId);
-
-  return (
-    matches(
-      ["brId", "br_id", "branchId", "branch_id", "businessRegionId", "business_region_id"],
-      selectedScope.brId,
-    ) &&
-    matches(["sectionId", "section_id", "section", "sec", "SEC"], selectedScope.sectionId) &&
-    matches(
-      ["subsectionId", "subsection_id", "subsection", "sub", "SUB"],
-      selectedScope.subsectionId,
-    )
-  );
-}
-
-export function filterScopedRecords(records, selectedScope) {
-  if (!Array.isArray(records) || !selectedScope) return records;
-  return records.filter((record) => matchesOrganizationScope(record, selectedScope));
-}
-
+/**
+ * OrganizationScopeProvider — shared scope filter state for admin views.
+ *
+ * Provides a selected scope ({ brId, sectionId, subsectionId }) and a setter
+ * to all descendant components. Admin list views read this context to filter
+ * records to the scope the admin has selected in the scope picker UI.
+ *
+ * All three IDs default to null, meaning "no filter applied" (show all records).
+ * useMemo is used so consumers only re-render when the selectedScope object
+ * reference changes, not on every parent re-render.
+ */
 export function OrganizationScopeProvider({ children }) {
   const [selectedScope, setSelectedScope] = useState({
-    brId: null,
-    sectionId: null,
-    subsectionId: null,
+    brId: null, // Business Region ID filter
+    sectionId: null, // Section ID filter
+    subsectionId: null, // Sub-section ID filter
   });
   const value = useMemo(() => ({ selectedScope, setSelectedScope }), [selectedScope]);
 
   return (
     <OrganizationScopeContext.Provider value={value}>{children}</OrganizationScopeContext.Provider>
   );
-}
-
-export function useOrganizationScope() {
-  const context = useContext(OrganizationScopeContext);
-  if (!context)
-    throw new Error("useOrganizationScope must be used within OrganizationScopeProvider");
-  return context;
 }

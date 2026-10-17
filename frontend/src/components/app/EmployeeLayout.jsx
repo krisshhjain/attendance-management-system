@@ -11,7 +11,7 @@ import {
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { EmployeeSidebar } from "./EmployeeSidebar.jsx";
-import { useAuth } from "../../lib/auth.jsx";
+import { useAuth } from "../../lib/useAuth.js";
 import { NotificationBell } from "../notifications/NotificationBell.jsx";
 
 const DRAWER_WIDTH = 240;

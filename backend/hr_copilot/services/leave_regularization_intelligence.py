@@ -1,18 +1,20 @@
 """Typed, read-only leave and regularization tools for HR Copilot."""
 
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
-from django.db.models import Q
+from attendance.models import (
+    AttendanceEvent,
+    RegularizationRequest,
+)
 from django.utils import timezone
-
-from attendance.models import (AttendanceCorrection, AttendanceEvent,
-                               RegularizationRequest)
 from employees.models import Employee
-from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
-from leave_management.services import (calculate_employee_leave_balances,
-                                       get_active_policy)
+from leave_management.models import LeaveRequest, LeaveType
+from leave_management.services import (
+    calculate_employee_leave_balances,
+    get_active_policy,
+)
 
 from .pipeline import CopilotError
 
@@ -66,8 +68,9 @@ class LeaveRegularizationIntelligence:
             is_active=True, user__is_active=True
         )
         if user:
-            from accounts.scope_service import \
-                filter_employees_by_manager_scope
+            from accounts.scope_service import (
+                filter_employees_by_manager_scope,
+            )
 
             qs = filter_employees_by_manager_scope(user, qs)
         if employee_id:
@@ -108,18 +111,26 @@ class LeaveRegularizationIntelligence:
             "attendance_date": req.attendance_date.isoformat(),
             "request_type": req.request_type,
             "status": req.status,
-            "requested_check_in": req.requested_check_in.isoformat()
-            if req.requested_check_in
-            else None,
-            "requested_check_out": req.requested_check_out.isoformat()
-            if req.requested_check_out
-            else None,
-            "approved_check_in": req.approved_check_in.isoformat()
-            if req.approved_check_in
-            else None,
-            "approved_check_out": req.approved_check_out.isoformat()
-            if req.approved_check_out
-            else None,
+            "requested_check_in": (
+                req.requested_check_in.isoformat()
+                if req.requested_check_in
+                else None
+            ),
+            "requested_check_out": (
+                req.requested_check_out.isoformat()
+                if req.requested_check_out
+                else None
+            ),
+            "approved_check_in": (
+                req.approved_check_in.isoformat()
+                if req.approved_check_in
+                else None
+            ),
+            "approved_check_out": (
+                req.approved_check_out.isoformat()
+                if req.approved_check_out
+                else None
+            ),
             "reason": req.reason,
             "rejection_reason": req.rejection_reason,
             "attendance_correction_id": req.attendance_correction_id,
@@ -161,9 +172,13 @@ class LeaveRegularizationIntelligence:
                     )
             return self._result(
                 metric,
-                {"start": f"{year}-01-01", "end": f"{year}-12-31"},
+                {
+                    "start": f"{year}-01-01",
+                    "end": f"{year}-12-31"
+                },
                 rows,
-                "Balance uses the application's active leave policy, approved usage, pending usage, and carry-forward rules.",
+                "Balance uses the application's active leave policy, "
+                'approved usage, pending usage, and carry-forward rules.',
             )
         if metric == "leave_policy":
             rows = []
@@ -183,30 +198,38 @@ class LeaveRegularizationIntelligence:
                             "code": leave_type.code,
                             "description": leave_type.description,
                             "is_paid": leave_type.is_paid,
-                            "allow_half_day": policy.allow_half_day
-                            if policy
-                            else leave_type.allow_half_day,
-                            "requires_document": policy.requires_document
-                            if policy
-                            else leave_type.requires_document,
-                            "min_notice_days": policy.min_notice_days
-                            if policy
-                            else leave_type.min_notice_days,
-                            "employee_type": employee.employment_type
-                            if employee
-                            else None,
-                            "annual_entitlement": float(
-                                policy.annual_entitlement
-                            )
-                            if policy
-                            else None,
+                            "allow_half_day": (
+                                policy.allow_half_day
+                                if policy
+                                else leave_type.allow_half_day
+                            ),
+                            "requires_document": (
+                                policy.requires_document
+                                if policy
+                                else leave_type.requires_document
+                            ),
+                            "min_notice_days": (
+                                policy.min_notice_days
+                                if policy
+                                else leave_type.min_notice_days
+                            ),
+                            "employee_type": (
+                                employee.employment_type if employee else None
+                            ),
+                            "annual_entitlement": (
+                                float(policy.annual_entitlement)
+                                if policy
+                                else None
+                            ),
                         }
                     )
             return self._result(
                 metric,
                 None,
                 rows,
-                "Policies are effective policies for the requested employee scope; type defaults are shown when no employee was specified.",
+                'Policies are effective policies for the requested '
+                'employee scope; type defaults are shown when no employee '
+                'was specified.',
             )
         start, end = _date_range(
             filters,
@@ -275,7 +298,8 @@ class LeaveRegularizationIntelligence:
                 metric,
                 _range_json(start, end),
                 rows,
-                "Leave request duration uses the stored duration calculated by the leave-management service.",
+                'Leave request duration uses the stored duration '
+                'calculated by the leave-management service.',
             )
         rq = RegularizationRequest.objects.select_related(
             "employee__user", "attendance_correction"
@@ -293,12 +317,14 @@ class LeaveRegularizationIntelligence:
             if len(matches) > 1:
                 raise CopilotError(
                     "request_ambiguous",
-                    "More than one regularization matched. Please provide the request ID.",
+                    'More than one regularization matched. Please provide '
+                    'the request ID.',
                 )
             if not matches:
                 raise CopilotError(
                     "request_not_found",
-                    "No matching regularization or attendance correction was found.",
+                    'No matching regularization or attendance correction '
+                    'was found.',
                 )
             req = matches[0]
             events = (
@@ -318,13 +344,16 @@ class LeaveRegularizationIntelligence:
                 for e in events
             ]
             row["explanation"] = (
-                "The approved regularization is linked to the corrective attendance events listed here; historical events remain auditable."
+                'The approved regularization is linked to the corrective '
+                'attendance events listed here; historical events remain '
+                'auditable.'
             )
             return self._result(
                 metric,
                 _range_json(start, end),
                 [row],
-                "Explanation is based on the regularization request, linked correction, and correction-linked events.",
+                'Explanation is based on the regularization request, '
+                'linked correction, and correction-linked events.',
             )
         requests = list(rq.order_by("attendance_date", "id"))
         if metric == "regularization_summary":
@@ -339,7 +368,8 @@ class LeaveRegularizationIntelligence:
             metric,
             _range_json(start, end),
             rows,
-            "Regularization results are read from the application's request and correction records.",
+            "Regularization results are read from the application's "
+            'request and correction records.',
         )
 
     @staticmethod

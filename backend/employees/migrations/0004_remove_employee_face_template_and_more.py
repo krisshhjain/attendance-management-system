@@ -8,30 +8,70 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('employees', '0003_employee_face_template_employee_has_face_enrolled_and_more'),
+        (
+            "employees",
+            "0003_employee_face_template_employee_has_face_enrolled_and_more",
+        ),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='employee',
-            name='face_template',
+            model_name="employee",
+            name="face_template",
         ),
         migrations.RemoveField(
-            model_name='employee',
-            name='has_face_enrolled',
+            model_name="employee",
+            name="has_face_enrolled",
         ),
         migrations.CreateModel(
-            name='FaceProfile',
+            name="FaceProfile",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('face_template', django.contrib.postgres.fields.ArrayField(base_field=models.FloatField(), size=512)),
-                ('model_name', models.CharField(default='ArcFace', max_length=50)),
-                ('detector_backend', models.CharField(default='retinaface', max_length=50)),
-                ('version', models.CharField(default='1.0', max_length=20)),
-                ('status', models.CharField(choices=[('ACTIVE', 'Active'), ('INACTIVE', 'Inactive'), ('FAILED', 'Failed')], default='ACTIVE', max_length=20)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('employee', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='face_profile', to='employees.employee')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "face_template",
+                    django.contrib.postgres.fields.ArrayField(
+                        base_field=models.FloatField(), size=512
+                    ),
+                ),
+                (
+                    "model_name",
+                    models.CharField(default="ArcFace", max_length=50),
+                ),
+                (
+                    "detector_backend",
+                    models.CharField(default="retinaface", max_length=50),
+                ),
+                ("version", models.CharField(default="1.0", max_length=20)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("ACTIVE", "Active"),
+                            ("INACTIVE", "Inactive"),
+                            ("FAILED", "Failed"),
+                        ],
+                        default="ACTIVE",
+                        max_length=20,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "employee",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="face_profile",
+                        to="employees.employee",
+                    ),
+                ),
             ],
         ),
     ]

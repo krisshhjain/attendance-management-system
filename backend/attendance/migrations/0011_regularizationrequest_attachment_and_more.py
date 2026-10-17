@@ -7,7 +7,10 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("attendance", "0010_regularizationrequest_approved_check_in_and_more"),
+        (
+            "attendance",
+            "0010_regularizationrequest_approved_check_in_and_more",
+        ),
     ]
 
     operations = [
@@ -60,12 +63,30 @@ class Migration(migrations.Migration):
                         max_length=30,
                     ),
                 ),
-                ("existing_check_in", models.DateTimeField(blank=True, null=True)),
-                ("existing_check_out", models.DateTimeField(blank=True, null=True)),
-                ("requested_check_in", models.DateTimeField(blank=True, null=True)),
-                ("requested_check_out", models.DateTimeField(blank=True, null=True)),
-                ("approved_check_in", models.DateTimeField(blank=True, null=True)),
-                ("approved_check_out", models.DateTimeField(blank=True, null=True)),
+                (
+                    "existing_check_in",
+                    models.DateTimeField(blank=True, null=True),
+                ),
+                (
+                    "existing_check_out",
+                    models.DateTimeField(blank=True, null=True),
+                ),
+                (
+                    "requested_check_in",
+                    models.DateTimeField(blank=True, null=True),
+                ),
+                (
+                    "requested_check_out",
+                    models.DateTimeField(blank=True, null=True),
+                ),
+                (
+                    "approved_check_in",
+                    models.DateTimeField(blank=True, null=True),
+                ),
+                (
+                    "approved_check_out",
+                    models.DateTimeField(blank=True, null=True),
+                ),
                 ("reason", models.TextField()),
                 ("description", models.TextField(blank=True, default="")),
                 (

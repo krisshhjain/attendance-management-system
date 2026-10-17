@@ -15,7 +15,7 @@ vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => (options) => o
 vi.mock("../src/components/RequireAuth.jsx", () => ({
   RequireAuth: ({ children }) => children,
 }));
-vi.mock("../src/lib/auth.jsx", () => ({ useAuth: () => authState }));
+vi.mock("../src/lib/useAuth.js", () => ({ useAuth: () => authState }));
 vi.mock("../src/lib/api.js", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, uploadFile: (...args) => uploadState.upload(...args) };

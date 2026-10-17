@@ -3,16 +3,19 @@ from datetime import time as datetime_time
 from datetime import timedelta
 from unittest.mock import patch
 
+from accounts.models import ManagerScope
+from attendance.models import Attendance, AttendanceEvent, Shift
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-
-from accounts.models import ManagerScope
-from attendance.models import Attendance, AttendanceEvent, Shift
 from employees.models import Employee
 from holidays.models import Holiday
 from hr_copilot.services.attendance_intelligence import attendance_intelligence
-from hr_copilot.services.pipeline import CopilotError, analyze_question, build_sql
+from hr_copilot.services.pipeline import (
+    CopilotError,
+    analyze_question,
+    build_sql,
+)
 
 
 class AttendanceIntelligenceTests(TestCase):
@@ -156,7 +159,9 @@ class AttendanceIntelligenceTests(TestCase):
             "without a following check-out", result["rows"][0]["explanation"]
         )
 
-    def test_incomplete_explanation_reports_closed_attendance_without_repair(self):
+    def test_incomplete_explanation_reports_closed_attendance_without_repair(
+        self,
+    ):
         self.event(self.employee, self.today, 9, "CHECK_IN")
         self.event(self.employee, self.today, 17, "CHECK_OUT")
         self.recompute(self.employee, self.today)
@@ -175,7 +180,10 @@ class AttendanceIntelligenceTests(TestCase):
     def test_working_hours_requires_an_accessible_target_employee(self):
         with self.assertRaises(CopilotError) as missing:
             attendance_intelligence.working_hours(
-                user=self.admin, scope=self.scope, start=self.today, end=self.today
+                user=self.admin,
+                scope=self.scope,
+                start=self.today,
+                end=self.today,
             )
         self.assertEqual(missing.exception.code, "employee_required")
 
@@ -207,7 +215,7 @@ class AttendanceIntelligenceTests(TestCase):
         self.assertIn("current", comparison["date_range"])
         self.assertIn("delta", comparison["rows"][0])
 
-    def test_company_holiday_is_not_missing_late_or_absent_and_is_named_in_summary(
+    def test_company_holiday_is_named_and_not_missing_late_or_absent(
         self,
     ):
         holiday_date = date(2026, 10, 5)

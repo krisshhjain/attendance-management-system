@@ -3,7 +3,7 @@ import { Dialog, DialogTitle, DialogContent, Box, Typography } from "@mui/materi
 import WebcamCapture from "../WebcamCapture.jsx";
 import { apiRequest } from "../../lib/api.js";
 import { getErrorMessage } from "../../feedback/errorMessage.js";
-import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../../feedback/useFeedback.js";
 import FaceResultOverlay from "../FaceResultOverlay.jsx";
 
 export function FaceCheckInModal({ open, onClose, onSuccess }) {

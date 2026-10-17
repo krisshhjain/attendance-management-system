@@ -9,11 +9,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-from hr_copilot.services.llm import generate_natural_answer
+from hr_copilot.services.llm import generate_natural_answer  # noqa: E402
 
 
 def test_response_generation_fallback():
@@ -102,7 +102,8 @@ def test_response_generation_fallback():
     if success_count == len(test_cases):
         print("SUCCESS: Response generation fallback is working!")
         print(
-            "Both READ and WRITE operations should now work without Qwen response dependency"
+            'Both READ and WRITE operations should now work without Qwen '
+            'response dependency'
         )
     else:
         print("Some tests failed - may need additional fallback logic")

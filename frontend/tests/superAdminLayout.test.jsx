@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => state.navigate,
 }));
-vi.mock("../src/lib/auth.jsx", () => ({
+vi.mock("../src/lib/useAuth.js", () => ({
   useAuth: () => ({ user: state.user, loginType: state.loginType, logout: state.logout }),
 }));
 vi.mock("../src/components/Sidebar.jsx", () => ({

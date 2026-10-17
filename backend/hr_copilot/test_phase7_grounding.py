@@ -1,5 +1,4 @@
 from django.test import SimpleTestCase
-
 from hr_copilot.services.llm import generate_natural_answer
 from hr_copilot.services.response_schema import safe_error_message
 

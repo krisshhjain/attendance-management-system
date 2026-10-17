@@ -20,7 +20,7 @@ import {
   fetchAdminRegularizationRequest,
   rejectRegularizationRequest,
 } from "../lib/api.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 
 export const Route = createFileRoute("/administration/regularization/$id")({
   component: () => (

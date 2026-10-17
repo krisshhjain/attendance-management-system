@@ -8,28 +8,50 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('attendance', '0003_attendanceauditlog'),
+        ("attendance", "0003_attendanceauditlog"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='attendanceauditlog',
+            name="attendanceauditlog",
             options={},
         ),
         migrations.CreateModel(
-            name='AttendanceCorrection',
+            name="AttendanceCorrection",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField(auto_now_add=True)),
-                ('correction_type', models.CharField(max_length=50)),
-                ('reason', models.TextField()),
-                ('previous_data', models.JSONField(default=dict)),
-                ('admin_user', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
-                ('attendance', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='corrections', to='attendance.attendance')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField(auto_now_add=True)),
+                ("correction_type", models.CharField(max_length=50)),
+                ("reason", models.TextField()),
+                ("previous_data", models.JSONField(default=dict)),
+                (
+                    "admin_user",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "attendance",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="corrections",
+                        to="attendance.attendance",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-timestamp'],
+                "ordering": ["-timestamp"],
             },
         ),
     ]

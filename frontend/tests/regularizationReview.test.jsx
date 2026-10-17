@@ -22,7 +22,7 @@ vi.mock("../src/lib/api.js", () => ({
   approveRegularizationRequest: state.approve,
   rejectRegularizationRequest: state.reject,
 }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({
+vi.mock("../src/feedback/useFeedback.js", () => ({
   useFeedback: () => ({ success: state.success, notifyError: state.notifyError }),
 }));
 

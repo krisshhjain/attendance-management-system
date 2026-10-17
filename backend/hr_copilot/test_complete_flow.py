@@ -11,14 +11,13 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-import django
+import django  # noqa: E402
 
 django.setup()
 
-from django.contrib.auth import get_user_model
-from django.test import RequestFactory
-
-from hr_copilot.views import HRCopilotQueryView
+from django.contrib.auth import get_user_model  # noqa: E402
+from django.test import RequestFactory  # noqa: E402
+from hr_copilot.views import HRCopilotQueryView  # noqa: E402
 
 User = get_user_model()
 
@@ -94,18 +93,28 @@ def test_complete_write_flow():
                 print(f"  Action ID: {action_id}")
                 print(f"  Description: {pending_action.get('description')}")
                 print(
-                    f"  Employee: {pending_action.get('target_data', {}).get('employee_name')}"
+                    "  Employee: {}".format(
+                        pending_action.get("target_data", {}).get(
+                            "employee_name"
+                        )
+                    )
                 )
                 print(
-                    f"  Date: {pending_action.get('target_data', {}).get('date')}"
+                    f"  Date: "
+                    f"{pending_action.get('target_data', {}).get('date')}"
                 )
                 print(
-                    f"  Status: {pending_action.get('target_data', {}).get('target_status')}"
+                    "  Status: {}".format(
+                        pending_action.get("target_data", {}).get(
+                            "target_status"
+                        )
+                    )
                 )
 
             else:
                 print(
-                    f"Unexpected query status: {response.data.get('query_status')}"
+                    f"Unexpected query status: "
+                    f"{response.data.get('query_status')}"
                 )
 
         else:
@@ -178,5 +187,6 @@ if __name__ == "__main__":
     print("✅ Approval card should display correctly")
     print("✅ No premature database writes")
     print(
-        "\nThe user should now see an approval card instead of generic failure."
+        '\nThe user should now see an approval card instead of generic '
+        'failure.'
     )

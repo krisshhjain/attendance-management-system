@@ -6,7 +6,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { ChatInput } from "./hr-copilot/ChatInput.jsx";
 import { ChatMessage } from "./hr-copilot/ChatMessage.jsx";
-import { useOrganizationScope } from "../lib/organizationScope.jsx";
+import { useOrganizationScope } from "../lib/useOrganizationScope.js";
 import { createClientId } from "../lib/clientId.js";
 
 export function SystemAdminChatWidget() {

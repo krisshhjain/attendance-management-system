@@ -19,7 +19,7 @@ import AutorenewOutlinedIcon from "@mui/icons-material/AutorenewOutlined";
 import PersonOutlineOutlinedIcon from "@mui/icons-material/PersonOutlineOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import ExitToAppOutlinedIcon from "@mui/icons-material/ExitToAppOutlined";
-import { useAuth } from "../../lib/auth.jsx";
+import { useAuth } from "../../lib/useAuth.js";
 
 const DRAWER_WIDTH = 248;
 

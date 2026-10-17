@@ -1,11 +1,10 @@
 import re
 import unicodedata
 
+from accounts.models import User
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
-
-from accounts.models import User
 from employees.models import Employee
 
 STUDENTS = [
@@ -106,7 +105,10 @@ def email_slug(name):
 
 
 class Command(BaseCommand):
-    help = "Add missing reference students without changing existing employee records."
+    help = (
+        'Add missing reference students without changing existing employee '
+        'records.'
+    )
 
     def handle(self, *args, **options):
         supplied = len(STUDENTS)

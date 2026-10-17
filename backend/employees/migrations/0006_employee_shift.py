@@ -7,14 +7,20 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('attendance', '0007_shift_attendanceevent'),
-        ('employees', '0005_merge_app_access_and_face_profile'),
+        ("attendance", "0007_shift_attendanceevent"),
+        ("employees", "0005_merge_app_access_and_face_profile"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='employee',
-            name='shift',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='employees', to='attendance.shift'),
+            model_name="employee",
+            name="shift",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="employees",
+                to="attendance.shift",
+            ),
         ),
     ]

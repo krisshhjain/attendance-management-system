@@ -6,7 +6,7 @@ import { SystemAdminChatWidget } from "../src/components/SystemAdminChatWidget.j
 const state = vi.hoisted(() => ({ navigate: vi.fn(), messages: [] }));
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => state.navigate }));
-vi.mock("../src/lib/organizationScope.jsx", () => ({
+vi.mock("../src/lib/useOrganizationScope.js", () => ({
   useOrganizationScope: () => ({ selectedScope: { brId: 17, sectionId: 4, subsectionId: 2 } }),
 }));
 vi.mock("../src/components/hr-copilot/ChatMessage.jsx", () => ({

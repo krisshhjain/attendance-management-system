@@ -16,7 +16,7 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import { StatCard } from "../components/dashboard/StatCard.jsx";
 import { AttendanceChart } from "../components/dashboard/AttendanceChart.jsx";
 import { WeeklyTrendChart } from "../components/dashboard/WeeklyTrendChart.jsx";
@@ -30,7 +30,8 @@ import PersonOffOutlinedIcon from "@mui/icons-material/PersonOffOutlined";
 import BusinessCenterOutlinedIcon from "@mui/icons-material/BusinessCenterOutlined";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import { OrganizationScopeFilters } from "../components/dashboard/OrganizationScopeFilters.jsx";
-import { filterScopedRecords, useOrganizationScope } from "../lib/organizationScope.jsx";
+import { filterScopedRecords } from "../lib/organizationScopeUtils.js";
+import { useOrganizationScope } from "../lib/useOrganizationScope.js";
 
 function SuperAdminDashboard() {
   const { user, loginType } = useAuth();

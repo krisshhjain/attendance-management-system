@@ -2,13 +2,14 @@ import json
 from types import SimpleNamespace
 
 import pytest
-
-from accounts.models import ManagerScope
 from hr_copilot.services import llm
-from hr_copilot.services.conversation import apply_context, save_context
-from hr_copilot.services.pipeline import (CopilotError, analyze_question,
-                                          build_sql, derive_scope, plan_query,
-                                          validate_sql)
+from hr_copilot.services.conversation import apply_context
+from hr_copilot.services.pipeline import (
+    CopilotError,
+    derive_scope,
+    plan_query,
+    validate_sql,
+)
 
 
 class FakeProvider:
@@ -59,7 +60,10 @@ def test_2_empty_result_truthful_no_record_response(monkeypatch):
 
 
 def test_3_employee_profile_result_natural_response(monkeypatch):
-    answer = "Asha Rao is an active permanent employee in Engineering, Section C, Subsection C1."
+    answer = (
+        'Asha Rao is an active permanent employee in Engineering, Section C, '
+        'Subsection C1.'
+    )
     use_provider(monkeypatch, answer)
     data = [
         {

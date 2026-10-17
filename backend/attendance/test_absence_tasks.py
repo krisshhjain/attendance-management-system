@@ -1,13 +1,12 @@
 from datetime import date, datetime, time
 from unittest.mock import patch
 
-from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
-from django.utils import timezone
-
 from accounts.models import ManagerScope
 from attendance.models import Attendance
 from attendance.tasks import check_consecutive_absences
+from django.contrib.auth import get_user_model
+from django.test import TestCase, override_settings
+from django.utils import timezone
 from employees.models import Employee
 from holidays.models import Holiday
 from leave_management.models import LeaveRequest, LeaveType
@@ -101,7 +100,8 @@ class ConsecutiveAbsenceTaskTests(TestCase):
         )
 
     def test_friday_and_monday_absence_alerts(self):
-        # Evaluation on Tuesday selects Monday and Friday as the two required days.
+        # Evaluation on Tuesday selects Monday and Friday as the two required
+        # days.
         self.run_task(date(2026, 9, 29))
 
         self.assertTrue(

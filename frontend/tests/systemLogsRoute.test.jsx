@@ -35,8 +35,8 @@ vi.mock("@tanstack/react-router", () => ({
   }),
 }));
 vi.mock("../src/components/RequireAuth.jsx", () => ({ RequireAuth: ({ children }) => children }));
-vi.mock("../src/lib/auth.jsx", () => ({ useAuth: () => ({ user: state.user }) }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({
+vi.mock("../src/lib/useAuth.js", () => ({ useAuth: () => ({ user: state.user }) }));
+vi.mock("../src/feedback/useFeedback.js", () => ({
   useFeedback: () => ({ success: state.success, notifyError: state.notifyError }),
 }));
 

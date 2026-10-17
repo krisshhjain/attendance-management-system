@@ -104,5 +104,5 @@ def find_ordered_capture(
         for start in starts:
             end_index = bisect_left(end_positions, start.end())
             if end_index < len(ends):
-                return line[start.end(): ends[end_index].start()]
+                return line[start.end():ends[end_index].start()]
     return None

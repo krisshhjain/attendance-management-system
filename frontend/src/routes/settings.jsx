@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { RequireAuth } from "../components/RequireAuth.jsx";
 import { apiRequest } from "../lib/api.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 import {
   Box,
   Typography,

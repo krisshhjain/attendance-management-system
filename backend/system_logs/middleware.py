@@ -1,10 +1,8 @@
 import uuid
 
-from .services import record_event
-
 
 class RequestContextMiddleware:
-    """Attach a request ID and record meaningful API security responses."""
+    """Attach a request ID to each response."""
 
     REQUEST_ID_HEADER = "HTTP_X_REQUEST_ID"
     RESPONSE_ID_HEADER = "X-Request-ID"
@@ -15,8 +13,6 @@ class RequestContextMiddleware:
     def __call__(self, request):
         request.request_id = self._request_id(request)
         response = self.get_response(request)
-
-        pass
 
         response[self.RESPONSE_ID_HEADER] = request.request_id
         return response

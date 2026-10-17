@@ -27,7 +27,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import KeyIcon from "@mui/icons-material/Key";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "../lib/api.js";
-import { useFeedback } from "../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../feedback/useFeedback.js";
 
 const AVAILABLE_SECTIONS = ["A", "B", "C", "D", "E"];
 const AVAILABLE_SUBSECTIONS = ["A1", "A2", "B1", "B2", "C1", "C2", "C3", "D1", "D2", "E1"];

@@ -2,7 +2,6 @@ import logging
 
 from celery import shared_task
 from django.core.mail import send_mail
-
 from system_logs.services import record_event
 
 logger = logging.getLogger(__name__)
@@ -12,7 +11,10 @@ logger = logging.getLogger(__name__)
     bind=True, max_retries=3, name="notifications.send_notification_email"
 )
 def send_notification_email(self, recipient_list, subject, body):
-    """Send notification email asynchronously with bounded transient retries."""
+    (
+        'Send notification email asynchronously with bounded transient '
+        'retries.'
+    )
     task_id = getattr(self.request, "id", "")
     task_metadata = {
         "task_name": self.name,
@@ -134,7 +136,8 @@ def send_notification_email(self, recipient_list, subject, body):
             },
         )
         logger.warning(
-            "Notification email failed; retrying in %s seconds (attempt %s/%s): %s",
+            'Notification email failed; retrying in %s seconds (attempt '
+            '%s/%s): %s',
             countdown,
             self.request.retries + 1,
             self.max_retries,

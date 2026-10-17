@@ -1,7 +1,11 @@
 from django.urls import path
 
-from .views import (AdminAttendanceView, AdminEditAttendanceView,
-                    AdminForceCheckoutView, AdminResetAttendanceView)
+from .views import (
+    AdminAttendanceView,
+    AdminEditAttendanceView,
+    AdminForceCheckoutView,
+    AdminResetAttendanceView,
+)
 
 urlpatterns = [
     path(

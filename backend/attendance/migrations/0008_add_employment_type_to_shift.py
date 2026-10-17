@@ -6,22 +6,29 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('attendance', '0007_shift_attendanceevent'),
+        ("attendance", "0007_shift_attendanceevent"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='shift',
-            name='employment_type',
+            model_name="shift",
+            name="employment_type",
             field=models.CharField(
                 blank=True,
-                choices=[('PERMANENT', 'Permanent'), ('CONTRACT', 'Contract'), ('INTERN', 'Intern')],
-                default='',
+                choices=[
+                    ("PERMANENT", "Permanent"),
+                    ("CONTRACT", "Contract"),
+                    ("INTERN", "Intern"),
+                ],
+                default="",
                 max_length=20,
             ),
         ),
         migrations.AddIndex(
-            model_name='shift',
-            index=models.Index(fields=['employment_type', 'is_active'], name='attendance_s_employm_idx'),
+            model_name="shift",
+            index=models.Index(
+                fields=["employment_type", "is_active"],
+                name="attendance_s_employm_idx",
+            ),
         ),
     ]

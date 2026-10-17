@@ -1,9 +1,8 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { FeedbackToastHost } from "./FeedbackToastHost.jsx";
 import { createNotification, enqueueNotification, removeNotification } from "./feedbackState.js";
 import { getErrorMessage } from "./errorMessage.js";
-
-const FeedbackContext = createContext(null);
+import { FeedbackContext } from "./feedbackContext.js";
 
 export function FeedbackProvider({ children }) {
   const [notifications, setNotifications] = useState([]);
@@ -54,10 +53,4 @@ export function FeedbackProvider({ children }) {
       <FeedbackToastHost notifications={notifications} onClose={close} />
     </FeedbackContext.Provider>
   );
-}
-
-export function useFeedback() {
-  const context = useContext(FeedbackContext);
-  if (!context) throw new Error("useFeedback must be used within a FeedbackProvider");
-  return context;
 }

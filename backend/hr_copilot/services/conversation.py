@@ -1,4 +1,5 @@
-"""Structured, authorization-safe context for HR Copilot follow-up questions."""
+"""Structured, authorization-safe context for HR Copilot follow-up questi\
+ons."""
 
 import json
 import re
@@ -12,7 +13,8 @@ from ..models import CopilotConversationContext
 from .regex_safety import find_email_address
 
 FOLLOW_UP_REFERENCE = re.compile(
-    r"\b(?:he|she|they|them|his|her|their|that employee|the employee|that request|that leave|it)\b",
+    '\\b(?:he|she|they|them|his|her|their|that employee|the employee|that '
+    'request|that leave|it)\\b',
     re.IGNORECASE,
 )
 
@@ -31,7 +33,10 @@ def load_context(user, conversation_id):
 
 
 def append_message(user, conversation_id, role, content, metadata=None):
-    """Persist a chat turn server-side so route changes and reloads can restore it."""
+    (
+        'Persist a chat turn server-side so route changes and reloads can '
+        'restore it.'
+    )
     if not conversation_id:
         return
     with transaction.atomic():
@@ -138,29 +143,21 @@ def apply_context(question, intent, context):
         ):
             entities["employee_id"] = current_employee_id
             entities.pop("employee_name", None)
-    if (
-        current_employee_id
-        and not any(
+    if (current_employee_id and not any(
             entities.get(key)
-            for key in ("employee_id", "employee_name", "employee_email")
-        )
-        and (
-            FOLLOW_UP_REFERENCE.search(question)
-            or (
-                context.get("last_intent")
-                and not re.search(
-                    r"\b(?:who|which employees|all employees|everyone|department|section|subsection)\b",
-                    question,
-                    re.IGNORECASE,
-                )
-                and re.search(
-                    r"\b(?:attendance|worked|hours|incomplete|check.?in|check.?out|leave|regulari[sz]|balance|details?)\b",
-                    question,
-                    re.IGNORECASE,
-                )
-            )
-        )
-    ):
+            for key in ("employee_id", "employee_name", "employee_email")) and
+        (FOLLOW_UP_REFERENCE.search(question) or
+         (context.get("last_intent") and not re.search(
+             '\\b(?:who|which employees|all '
+             'employees|everyone|department|section|subsection)\\b',
+             question,
+             re.IGNORECASE,
+         ) and re.search(
+             '\\b(?:attendance|worked|hours|incomplete|check.?in|check.?ou'
+             't|leave|regulari[sz]|balance|details?)\\b',
+             question,
+             re.IGNORECASE,
+         )))):
         entities["employee_id"] = current_employee_id
 
     if (
@@ -175,9 +172,10 @@ def apply_context(question, intent, context):
         entities["request_id"] = context["current_request_id"]
 
     if not entities.get("temporal_expression") and re.search(
-        r"\b(?:what about|how about)\s+(?:yesterday|today|last week|this month)\b",
-        question,
-        re.IGNORECASE,
+            '\\b(?:what about|how about)\\s+(?:yesterday|today|last '
+            'week|this month)\\b',
+            question,
+            re.IGNORECASE,
     ):
         match = re.search(
             r"\b(yesterday|today|last week|this month)\b",

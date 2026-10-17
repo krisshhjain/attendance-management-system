@@ -30,11 +30,15 @@ def action_response(
     pending_action=None,
 ):
     payload = {
-        "response_type": "action_success"
-        if status == "executed"
-        else "action_preview"
-        if status in {"pending_approval", "awaiting_information"}
-        else "action_failure",
+        "response_type": (
+            "action_success"
+            if status == "executed"
+            else (
+                "action_preview"
+                if status in {"pending_approval", "awaiting_information"}
+                else "action_failure"
+            )
+        ),
         "answer": answer,
         "intent": intent,
         "query_status": status,
@@ -52,9 +56,15 @@ def action_response(
 def safe_error_message(code, fallback):
     """Prevent provider/implementation details from reaching the browser."""
     return {
-        "llm_unavailable": "I couldn't interpret that request right now. Please try again.",
-        "invalid_intent": "I couldn't determine a safe HR action from that request.",
-        "normalization_failed": "I couldn't determine a safe HR action from that request.",
-        "ungrounded_llm_response": "I couldn't verify that answer from the HR records.",
-        "query_failed": "I couldn't complete that HR query. Please try a more specific question.",
+        "llm_unavailable":
+        "I couldn't interpret that request right now. Please try again.",
+        "invalid_intent":
+        "I couldn't determine a safe HR action from that request.",
+        "normalization_failed":
+        "I couldn't determine a safe HR action from that request.",
+        "ungrounded_llm_response":
+        "I couldn't verify that answer from the HR records.",
+        "query_failed":
+        "I couldn't complete that HR query. Please try a more specific "
+            'question.',
     }.get(code, fallback)

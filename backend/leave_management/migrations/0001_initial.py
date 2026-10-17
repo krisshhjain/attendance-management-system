@@ -10,7 +10,10 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ("employees", "0002_employee_must_change_password_employee_section_and_more"),
+        (
+            "employees",
+            "0002_employee_must_change_password_employee_section_and_more",
+        ),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -70,7 +73,10 @@ class Migration(migrations.Migration):
                         max_length=20,
                     ),
                 ),
-                ("duration_days", models.DecimalField(decimal_places=1, max_digits=5)),
+                (
+                    "duration_days",
+                    models.DecimalField(decimal_places=1, max_digits=5),
+                ),
                 ("reason", models.TextField()),
                 ("attachment", models.TextField(blank=True, default="")),
                 (
@@ -156,12 +162,16 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "annual_entitlement",
-                    models.DecimalField(decimal_places=1, default=0.0, max_digits=5),
+                    models.DecimalField(
+                        decimal_places=1, default=0.0, max_digits=5
+                    ),
                 ),
                 ("allow_carry_forward", models.BooleanField(default=False)),
                 (
                     "max_carry_forward",
-                    models.DecimalField(decimal_places=1, default=0.0, max_digits=5),
+                    models.DecimalField(
+                        decimal_places=1, default=0.0, max_digits=5
+                    ),
                 ),
                 ("unused_expires", models.BooleanField(default=True)),
                 ("max_consecutive_days", models.IntegerField(default=10)),
@@ -183,10 +193,18 @@ class Migration(migrations.Migration):
                 ),
             ],
             options={
-                "ordering": ["-effective_from", "employee_type", "leave_type__name"],
+                "ordering": [
+                    "-effective_from",
+                    "employee_type",
+                    "leave_type__name",
+                ],
                 "constraints": [
                     models.UniqueConstraint(
-                        fields=("employee_type", "leave_type", "effective_from"),
+                        fields=(
+                            "employee_type",
+                            "leave_type",
+                            "effective_from",
+                        ),
                         name="unique_policy_per_employee_type_leave_type_effective_from",
                     )
                 ],

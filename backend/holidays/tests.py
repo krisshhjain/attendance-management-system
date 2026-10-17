@@ -3,21 +3,30 @@ from datetime import time as datetime_time
 from datetime import timezone as datetime_timezone
 from unittest.mock import patch
 
+from attendance.models import (
+    Attendance,
+    AttendanceEvent,
+    RegularizationRequest,
+    Shift,
+)
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
-from rest_framework.test import APITestCase
-
-from attendance.models import (Attendance, AttendanceEvent,
-                               RegularizationRequest, Shift)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
-from leave_management.services import (approve_leave_request,
-                                       calculate_working_days)
+from leave_management.services import (
+    approve_leave_request,
+    calculate_working_days,
+)
+from rest_framework.test import APITestCase
 
 from .models import Holiday
-from .services import (attendance_required, is_company_holiday, is_weekend,
-                       is_working_day)
+from .services import (
+    attendance_required,
+    is_company_holiday,
+    is_weekend,
+    is_working_day,
+)
 
 User = get_user_model()
 
@@ -280,7 +289,7 @@ class HolidayAttendanceIntegrationTests(APITestCase):
         self.assertEqual(response.data[0]["status"], "ABSENT")
         self.assertTrue(response.data[0]["attendance_required"])
 
-    def test_historical_absent_record_is_presented_as_holiday_in_history_and_dashboard(
+    def test_historical_holiday_shows_absence_in_history_and_dashboard(
         self,
     ):
         Holiday.objects.create(date=self.holiday_date, name="Company Day")
@@ -388,7 +397,7 @@ class HolidayAttendanceIntegrationTests(APITestCase):
             inactive_response.status_code, 201, inactive_response.data
         )
 
-    def test_pending_regularization_cannot_be_approved_after_date_becomes_holiday(
+    def test_regularization_cannot_be_approved_after_date_becomes_holiday(
         self,
     ):
         self.client.force_authenticate(self.employee_user)
@@ -449,7 +458,7 @@ class HolidayAttendanceIntegrationTests(APITestCase):
             RegularizationRequest.objects.get(pk=request_id).status, "PENDING"
         )
 
-    def test_employee_can_voluntarily_check_in_on_holiday_even_if_stale_absent_exists(
+    def test_employee_can_check_in_on_holiday_with_stale_absence(
         self,
     ):
         Holiday.objects.create(date=self.holiday_date, name="Company Day")

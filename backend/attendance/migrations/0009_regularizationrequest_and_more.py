@@ -39,10 +39,22 @@ class Migration(migrations.Migration):
                         max_length=30,
                     ),
                 ),
-                ("existing_check_in", models.DateTimeField(blank=True, null=True)),
-                ("existing_check_out", models.DateTimeField(blank=True, null=True)),
-                ("requested_check_in", models.DateTimeField(blank=True, null=True)),
-                ("requested_check_out", models.DateTimeField(blank=True, null=True)),
+                (
+                    "existing_check_in",
+                    models.DateTimeField(blank=True, null=True),
+                ),
+                (
+                    "existing_check_out",
+                    models.DateTimeField(blank=True, null=True),
+                ),
+                (
+                    "requested_check_in",
+                    models.DateTimeField(blank=True, null=True),
+                ),
+                (
+                    "requested_check_out",
+                    models.DateTimeField(blank=True, null=True),
+                ),
                 ("reason", models.TextField()),
                 ("description", models.TextField(blank=True, default="")),
                 (
@@ -105,19 +117,22 @@ class Migration(migrations.Migration):
         migrations.AddIndex(
             model_name="regularizationrequest",
             index=models.Index(
-                fields=["employee", "status"], name="attendance__employe_1ca243_idx"
+                fields=["employee", "status"],
+                name="attendance__employe_1ca243_idx",
             ),
         ),
         migrations.AddIndex(
             model_name="regularizationrequest",
             index=models.Index(
-                fields=["status", "created_at"], name="attendance__status_caf8cb_idx"
+                fields=["status", "created_at"],
+                name="attendance__status_caf8cb_idx",
             ),
         ),
         migrations.AddIndex(
             model_name="regularizationrequest",
             index=models.Index(
-                fields=["attendance_date"], name="attendance__attenda_23d5ff_idx"
+                fields=["attendance_date"],
+                name="attendance__attenda_23d5ff_idx",
             ),
         ),
         migrations.AddIndex(

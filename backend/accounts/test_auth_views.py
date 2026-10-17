@@ -1,6 +1,5 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
-
 from system_logs.models import SystemLog
 
 from .models import User
@@ -11,20 +10,20 @@ class SystemAdminLoginViewTests(TestCase):
         self.client = APIClient()
         self.manager = User.objects.create_user(
             email="quality-manager@example.test",
-            password="Correct-pass-123",
+            password="test-password",
             is_system_admin=True,
         )
         self.employee = User.objects.create_user(
             email="quality-employee@example.test",
-            password="Correct-pass-123",
+            password="test-password",
         )
         self.superuser = User.objects.create_superuser(
             email="quality-root@example.test",
-            password="Correct-pass-123",
+            password="test-password",
             is_system_admin=True,
         )
 
-    def login(self, user, password="Correct-pass-123"):
+    def login(self, user, password="test-password"):
         return self.client.post(
             "/api/auth/systemadmin-login/",
             {"email": user.email, "password": password},
@@ -80,4 +79,4 @@ class SystemAdminLoginViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("incorrect", str(response.data["current_password"]))
         self.manager.refresh_from_db()
-        self.assertTrue(self.manager.check_password("Correct-pass-123"))
+        self.assertTrue(self.manager.check_password("test-password"))

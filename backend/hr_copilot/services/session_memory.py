@@ -1,12 +1,9 @@
 """Bounded session memory for HR Copilot to reduce LLM context size."""
 
-import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from django.core.cache import cache
-from django.utils import timezone
 
 
 @dataclass

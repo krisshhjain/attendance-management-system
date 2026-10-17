@@ -7,23 +7,28 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('employees', '0002_employee_must_change_password_employee_section_and_more'),
+        (
+            "employees",
+            "0002_employee_must_change_password_employee_section_and_more",
+        ),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='employee',
-            name='face_template',
-            field=django.contrib.postgres.fields.ArrayField(base_field=models.FloatField(), blank=True, null=True, size=512),
+            model_name="employee",
+            name="face_template",
+            field=django.contrib.postgres.fields.ArrayField(
+                base_field=models.FloatField(), blank=True, null=True, size=512
+            ),
         ),
         migrations.AddField(
-            model_name='employee',
-            name='has_face_enrolled',
+            model_name="employee",
+            name="has_face_enrolled",
             field=models.BooleanField(default=False),
         ),
         migrations.AlterField(
-            model_name='employee',
-            name='must_change_password',
+            model_name="employee",
+            name="must_change_password",
             field=models.BooleanField(default=True),
         ),
     ]

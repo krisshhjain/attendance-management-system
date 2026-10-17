@@ -1,29 +1,36 @@
 from accounts.models import ManagerScope
 
-"""Phase 8: reproducible end-to-end coverage of the existing Copilot contract."""
+"""Phase 8: reproducible end-to-end coverage of the existing Copilot cont\
+ract."""
 
-from datetime import date, time, timedelta
+from datetime import time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from attendance.models import (
+    RegularizationRequest,
+    Shift,
+)
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-from rest_framework.test import APIRequestFactory, force_authenticate
-
-from attendance.models import (Attendance, AttendanceEvent,
-                               RegularizationRequest, Shift)
 from employees.models import Employee
 from hr_copilot import views
 from hr_copilot.services.intent_normalizer import IntentNormalizer
 from hr_copilot.services.llm import generate_natural_answer
-from hr_copilot.services.pipeline import (CopilotError, analyze_question,
-                                          plan_query)
+from hr_copilot.services.pipeline import (
+    CopilotError,
+    analyze_question,
+    plan_query,
+)
 from hr_copilot.services.response_schema import safe_error_message
 from hr_copilot.services.write_actions import write_action_planner
-from hr_copilot.services.write_executor import (pending_action_manager,
-                                                write_action_executor)
-from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
+from hr_copilot.services.write_executor import (
+    pending_action_manager,
+    write_action_executor,
+)
+from leave_management.models import LeavePolicy, LeaveType
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 
 class Phase8ComprehensiveTests(TestCase):
@@ -147,8 +154,10 @@ class Phase8ComprehensiveTests(TestCase):
         for question, expected_intent, expected_tool, entities in matrix:
             with self.subTest(question=question):
                 with patch(
-                    "hr_copilot.services.semantic_interpreter.get_structured_intent",
-                    return_value=self.raw_intent(expected_intent, entities),
+                    'hr_copilot.services.semantic_interpreter.get_stru'
+                    'ctured_intent',
+                        return_value=self.raw_intent(expected_intent,
+                                                     entities),
                 ):
                     intent = analyze_question(question)
                 self.assertEqual(intent["intent"], expected_intent)
@@ -188,15 +197,16 @@ class Phase8ComprehensiveTests(TestCase):
         )
         force_authenticate(request, user=self.admin)
         with (
-            patch(
-                "hr_copilot.services.semantic_interpreter.get_structured_intent",
-                return_value=raw,
-            ),
-            patch.object(
-                views.hr_tools,
-                "execute_attendance_intelligence",
-                return_value=tool_result,
-            ) as tool,
+                patch(
+                    'hr_copilot.services.semantic_interpreter.get_structur'
+                    'ed_intent',
+                    return_value=raw,
+                ),
+                patch.object(
+                    views.hr_tools,
+                    "execute_attendance_intelligence",
+                    return_value=tool_result,
+                ) as tool,
         ):
             response = views.HRCopilotQueryView.as_view()(request)
         self.assertEqual(response.status_code, 200)
@@ -308,8 +318,9 @@ class Phase8ComprehensiveTests(TestCase):
                 status="REJECTED",
             )
         with self.assertRaises(CopilotError) as error:
-            from hr_copilot.services.leave_regularization_intelligence import \
-                leave_regularization_intelligence
+            from hr_copilot.services.leave_regularization_intelligence import (
+                leave_regularization_intelligence,
+            )
 
             leave_regularization_intelligence.execute(
                 metric="attendance_correction_explanation",

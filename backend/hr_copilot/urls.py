@@ -1,8 +1,12 @@
 from django.urls import path
 
-from .views import (HRCopilotActionApprovalView, HRCopilotConversationView,
-                    HRCopilotHealthView, HRCopilotPendingActionsView,
-                    HRCopilotQueryView)
+from .views import (
+    HRCopilotActionApprovalView,
+    HRCopilotConversationView,
+    HRCopilotHealthView,
+    HRCopilotPendingActionsView,
+    HRCopilotQueryView,
+)
 
 urlpatterns = [
     path("health/", HRCopilotHealthView.as_view(), name="hr-copilot-health"),

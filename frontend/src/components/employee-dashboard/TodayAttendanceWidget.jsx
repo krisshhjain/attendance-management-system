@@ -12,7 +12,7 @@ import CameraAltOutlinedIcon from "@mui/icons-material/CameraAltOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMyShift } from "../../lib/api.js";
-import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { useFeedback } from "../../feedback/useFeedback.js";
 
 export function TodayAttendanceWidget({ data, loading, loadError, reloadData }) {
   const navigate = useNavigate();

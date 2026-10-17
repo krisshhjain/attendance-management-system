@@ -2,12 +2,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from accounts.models import ManagerScope
+from attendance.models import RegularizationRequest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-
-from accounts.models import ManagerScope
-from attendance.models import RegularizationRequest
 from employees.models import Employee
 from hr_copilot.services.leave_regularization_intelligence import (
     _date_range,

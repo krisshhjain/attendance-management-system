@@ -37,8 +37,9 @@ import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import { TextField, MenuItem, Select, FormControl, InputAdornment } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import PeopleIcon from "@mui/icons-material/People";
-import { filterScopedRecords, useOrganizationScope } from "../../lib/organizationScope.jsx";
-import { useFeedback } from "../../feedback/FeedbackProvider.jsx";
+import { filterScopedRecords } from "../../lib/organizationScopeUtils.js";
+import { useOrganizationScope } from "../../lib/useOrganizationScope.js";
+import { useFeedback } from "../../feedback/useFeedback.js";
 
 export function EmployeeTable({ scope }) {
   const { selectedScope } = useOrganizationScope();

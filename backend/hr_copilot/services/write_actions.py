@@ -2,13 +2,15 @@
 
 import uuid
 from datetime import datetime, time, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from django.db import transaction
+from attendance.models import (
+    Attendance,
+    AttendanceEvent,
+    RegularizationRequest,
+    Shift,
+)
 from django.utils import timezone
-
-from attendance.models import (Attendance, AttendanceEvent,
-                               RegularizationRequest, Shift)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 
@@ -148,7 +150,8 @@ class WriteActionPlanner:
         if not target_status and intent["intent"] != "attendance_reset":
             raise CopilotError(
                 "missing_status",
-                "Target attendance status is required. Please specify 'present', 'absent', or 'incomplete'.",
+                'Target attendance status is required. Please specify '
+                "'present', 'absent', or 'incomplete'.",
             )
 
         if not scope.get("unrestricted"):
@@ -191,14 +194,17 @@ class WriteActionPlanner:
             )
 
         if target_status == "ABSENT":
-            from holidays.services import (attendance_required,
-                                           get_day_classification)
+            from holidays.services import (
+                attendance_required,
+                get_day_classification,
+            )
 
             if not attendance_required(target_date):
                 day = get_day_classification(target_date)
                 raise CopilotError(
                     "attendance_not_required",
-                    f"Cannot mark an employee absent on a {day['day_type'].lower()} date.",
+                    f"Cannot mark an employee absent on a "
+                    f"{day['day_type'].lower()} date.",
                 )
 
         # Get current state
@@ -208,20 +214,26 @@ class WriteActionPlanner:
 
         current_state = {
             "exists": current_attendance is not None,
-            "current_status": current_attendance.status
-            if current_attendance
-            else None,
+            "current_status": (
+                current_attendance.status if current_attendance else None
+            ),
             "employee_id": employee_resolution["employee_id"],
             "date": target_date.isoformat(),
-            "check_in": current_attendance.check_in.isoformat()
-            if current_attendance and current_attendance.check_in
-            else None,
-            "check_out": current_attendance.check_out.isoformat()
-            if current_attendance and current_attendance.check_out
-            else None,
-            "working_duration": str(current_attendance.working_duration)
-            if current_attendance and current_attendance.working_duration
-            else None,
+            "check_in": (
+                current_attendance.check_in.isoformat()
+                if current_attendance and current_attendance.check_in
+                else None
+            ),
+            "check_out": (
+                current_attendance.check_out.isoformat()
+                if current_attendance and current_attendance.check_out
+                else None
+            ),
+            "working_duration": (
+                str(current_attendance.working_duration)
+                if current_attendance and current_attendance.working_duration
+                else None
+            ),
             "events": [
                 {
                     "id": event.id,
@@ -263,23 +275,31 @@ class WriteActionPlanner:
                     "Check-out must be later than check-in.",
                 )
         reason = (entities.get("reason") or "").strip()
-        original = (intent.get("original_query") or "").casefold()
         if target_status == "LEAVE" and not reason:
             missing.append("reason")
         if missing and "employee_name" in entities:
             missing.remove("employee_name")
         employee_label = employee_resolution["employee_name"]
         date_label = f"{target_date.day} {target_date.strftime('%B')}"
-        timing_question = f"Sure. What check-in and check-out times should I use for {employee_label} on {date_label}?"
+        timing_question = (
+            f"Sure. What check-in and check-out times should I use for "
+            f"{employee_label} on {date_label}?"
+        )
 
         # Create pending action
         pending_action = {
-            "action_id": str(uuid.uuid4()),
-            "session_id": session_id,
-            "user_id": user.id,
-            "action_type": "attendance_update",
-            "intent": intent["intent"],
-            "source": intent["source"],
+            "action_id":
+            str(uuid.uuid4()),
+            "session_id":
+            session_id,
+            "user_id":
+            user.id,
+            "action_type":
+            "attendance_update",
+            "intent":
+            intent["intent"],
+            "source":
+            intent["source"],
             "target_data": {
                 "employee_id": employee_resolution["employee_id"],
                 "employee_name": employee_resolution["employee_name"],
@@ -296,28 +316,34 @@ class WriteActionPlanner:
                 "check_out_time": check_out,
                 "reason": reason,
             },
-            "current_state": current_state,
-            "validated": not missing,
-            "status": "AWAITING_INFORMATION" if missing else "PENDING",
-            "validation_errors": missing or None,
-            "authorization_scope": scope,
-            "requires_confirmation": True,
-            "description": timing_question
-            if set(missing) == {"check_in_time", "check_out_time"}
-            else (
-                f"Change {employee_resolution['employee_name']}'s attendance on {target_date.strftime('%B %d, %Y')} to {target_status}"
-                if not missing
-                else self._missing_question(
-                    employee_resolution["employee_name"], missing
-                )
-            ),
-            "expires_at": timezone.now() + timedelta(minutes=10),
+            "current_state":
+            current_state,
+            "validated":
+            not missing,
+            "status":
+            "AWAITING_INFORMATION" if missing else "PENDING",
+            "validation_errors":
+            missing or None,
+            "authorization_scope":
+            scope,
+            "requires_confirmation":
+            True,
+            "description":
+            (timing_question
+             if set(missing) == {"check_in_time", "check_out_time"} else
+             (f"Change {employee_resolution['employee_name']}'s attendance "
+              f"on {target_date.strftime('%B %d, %Y')} to {target_status}"
+              if not missing else self._missing_question(
+                  employee_resolution["employee_name"], missing))),
+            "expires_at":
+            timezone.now() + timedelta(minutes=10),
         }
 
         # Add warning if this changes existing data
         if current_attendance and current_attendance.status != target_status:
             pending_action["warning_message"] = (
-                f"This will change existing status from {current_attendance.status} to {target_status}"
+                f"This will change existing status from "
+                f"{current_attendance.status} to {target_status}"
             )
 
         return pending_action
@@ -332,7 +358,8 @@ class WriteActionPlanner:
         if pending_action["current_state"]["exists"]:
             raise CopilotError(
                 "attendance_exists",
-                f"Attendance record already exists for {pending_action['target_data']['date']}",
+                f"Attendance record already exists for "
+                f"{pending_action['target_data']['date']}",
             )
         pending_action["action_type"] = "attendance_create"
         pending_action["proposed_changes"]["operation"] = "create"
@@ -376,12 +403,18 @@ class WriteActionPlanner:
         missing = ["reason"] if not reason else []
 
         pending_action = {
-            "action_id": str(uuid.uuid4()),
-            "session_id": session_id,
-            "user_id": user.id,
-            "action_type": "leave_create",
-            "intent": intent["intent"],
-            "source": intent["source"],
+            "action_id":
+            str(uuid.uuid4()),
+            "session_id":
+            session_id,
+            "user_id":
+            user.id,
+            "action_type":
+            "leave_create",
+            "intent":
+            intent["intent"],
+            "source":
+            intent["source"],
             "target_data": {
                 "employee_id": employee_resolution["employee_id"],
                 "employee_name": employee_resolution["employee_name"],
@@ -392,20 +425,36 @@ class WriteActionPlanner:
                 "reason": reason,
             },
             "proposed_changes": {
-                "operation": "create",
-                "leave_type": leave_type.name,
-                "duration": f"{duration_days} day{'s' if duration_days != 1 else ''}",
+                "operation":
+                "create",
+                "leave_type":
+                leave_type.name,
+                "duration":
+                f"{duration_days} day{'s' if duration_days != 1 else ''}",
             },
-            "current_state": {"exists": False},
-            "validated": not missing,
-            "status": "AWAITING_INFORMATION" if missing else "PENDING",
-            "validation_errors": missing or None,
-            "authorization_scope": scope,
-            "requires_confirmation": True,
-            "description": f"Please provide the reason for {employee_resolution['employee_name']}'s leave."
-            if missing
-            else f"Create {duration_days}-day leave request for {employee_resolution['employee_name']} starting {start_date.strftime('%B %d, %Y')}: {reason}",
-            "expires_at": timezone.now() + timedelta(minutes=10),
+            "current_state": {
+                "exists": False
+            },
+            "validated":
+            not missing,
+            "status":
+            "AWAITING_INFORMATION" if missing else "PENDING",
+            "validation_errors":
+            missing or None,
+            "authorization_scope":
+            scope,
+            "requires_confirmation":
+            True,
+            "description":
+            (f"Please provide the reason for "
+             f"{employee_resolution['employee_name']}'s leave."
+             if missing else
+             f"Create {duration_days}-day leave request for "
+             f"{employee_resolution['employee_name']} starting "
+             f"{start_date.strftime('%B %d, %Y')}: {reason}"
+             ),
+            "expires_at":
+            timezone.now() + timedelta(minutes=10),
         }
 
         return pending_action
@@ -416,7 +465,8 @@ class WriteActionPlanner:
         """Plan a leave cancellation action."""
         entities = intent.get("entities", {})
 
-        # If no specific employee mentioned, assume user wants to cancel their own leave
+        # If no specific employee mentioned, assume user wants to cancel their
+        # own leave
         if not any(
             entities.get(key)
             for key in ("employee_name", "employee_email", "employee_id")
@@ -450,13 +500,15 @@ class WriteActionPlanner:
         if not recent_leaves.exists():
             raise CopilotError(
                 "no_leave_requests",
-                f"No pending or approved leave requests found for {employee_name}",
+                f"No pending or approved leave requests found for "
+                f"{employee_name}",
             )
 
         if not entities.get("request_id") and recent_leaves.count() > 1:
             raise CopilotError(
                 "leave_request_ambiguous",
-                "More than one leave request matched. Specify the request ID or dates.",
+                'More than one leave request matched. Specify the request '
+                'ID or dates.',
             )
         leave_request = recent_leaves.first()
 
@@ -486,8 +538,13 @@ class WriteActionPlanner:
             "validated": True,
             "authorization_scope": scope,
             "requires_confirmation": True,
-            "description": f"Cancel {employee_name}'s leave request from {leave_request.start_date.strftime('%B %d, %Y')} to {leave_request.end_date.strftime('%B %d, %Y')}",
-            "warning_message": "This action cannot be undone. The leave request will be permanently cancelled.",
+            "description":
+            f"Cancel {employee_name}'s leave request from "
+                f"{leave_request.start_date.strftime('%B %d, %Y')} to "
+                f"{leave_request.end_date.strftime('%B %d, %Y')}",
+            "warning_message":
+            'This action cannot be undone. The leave request will be '
+                'permanently cancelled.',
             "expires_at": timezone.now() + timedelta(minutes=10),
         }
 
@@ -496,7 +553,10 @@ class WriteActionPlanner:
     def _plan_leave_review(
         self, intent: Dict[str, Any], user, scope: Dict, session_id: str
     ) -> Dict[str, Any]:
-        """Prepare one explicitly targeted pending leave for approval or denial."""
+        (
+            'Prepare one explicitly targeted pending leave for approval or '
+            'denial.'
+        )
         entities = intent.get("entities", {})
         if not any(
             entities.get(key)
@@ -534,12 +594,14 @@ class WriteActionPlanner:
         if not matches:
             raise CopilotError(
                 "leave_request_not_found",
-                f"No pending leave request was found for {employee['employee_name']} with those dates.",
+                f"No pending leave request was found for "
+                f"{employee['employee_name']} with those dates.",
             )
         if len(matches) != 1:
             raise CopilotError(
                 "leave_request_ambiguous",
-                "More than one pending leave request matched. Specify the requested leave dates.",
+                'More than one pending leave request matched. Specify the '
+                'requested leave dates.',
             )
 
         leave_request = matches[0]
@@ -554,12 +616,18 @@ class WriteActionPlanner:
             )
 
         return {
-            "action_id": str(uuid.uuid4()),
-            "session_id": session_id,
-            "user_id": user.id,
-            "action_type": intent["intent"],
-            "intent": intent["intent"],
-            "source": intent.get("source", "leave"),
+            "action_id":
+            str(uuid.uuid4()),
+            "session_id":
+            session_id,
+            "user_id":
+            user.id,
+            "action_type":
+            intent["intent"],
+            "intent":
+            intent["intent"],
+            "source":
+            intent.get("source", "leave"),
             "target_data": {
                 "employee_id": employee["employee_id"],
                 "employee_name": employee["employee_name"],
@@ -576,14 +644,23 @@ class WriteActionPlanner:
                 "end_date": leave_request.end_date.isoformat(),
                 "duration_days": float(leave_request.duration_days),
             },
-            "validated": True,
-            "authorization_scope": scope,
-            "requires_confirmation": True,
-            "description": f"{target_status.title()} {employee['employee_name']}'s {leave_request.leave_type.name} leave from {leave_request.start_date:%B %d, %Y} to {leave_request.end_date:%B %d, %Y}",
-            "warning_message": "This review also updates attendance records for the requested leave dates."
-            if target_status == "APPROVED"
-            else None,
-            "expires_at": timezone.now() + timedelta(minutes=10),
+            "validated":
+            True,
+            "authorization_scope":
+            scope,
+            "requires_confirmation":
+            True,
+            "description":
+            f"{target_status.title()} {employee['employee_name']}'s "
+                f"{leave_request.leave_type.name} leave from "
+                f"{leave_request.start_date:%B %d, %Y} to "
+                f"{leave_request.end_date:%B %d, %Y}",
+            "warning_message":
+            ('This review also updates attendance records for the '
+             'requested leave dates.'
+             if target_status == "APPROVED" else None),
+            "expires_at":
+            timezone.now() + timedelta(minutes=10),
         }
 
     def _base_pending(
@@ -653,9 +730,11 @@ class WriteActionPlanner:
                 "status": attendance.status if attendance else None,
                 "last_event": events[-1].timestamp.isoformat(),
             },
-            f"Force check-out for {employee['employee_name']} on {target_date:%B %d, %Y} at the current time.",
+            f"Force check-out for {employee['employee_name']} on "
+            f"{target_date:%B %d, %Y} at the current time.",
             scope,
-            warning="This creates an ADMIN checkout event and recomputes attendance.",
+            warning='This creates an ADMIN checkout event and recomputes '
+            'attendance.',
         )
 
     def _plan_regularization_create(self, intent, user, scope, session_id):
@@ -710,9 +789,17 @@ class WriteActionPlanner:
             session_id,
             "regularization_create",
             target,
-            {"operation": "create", "request_type": request_type},
-            {"attendance_exists": bool(existing), "status": "PENDING"},
-            f"Submit a {request_type.replace('_', ' ').title()} regularization request for {employee['employee_name']} on {target_date:%B %d, %Y}.",
+            {
+                "operation": "create",
+                "request_type": request_type
+            },
+            {
+                "attendance_exists": bool(existing),
+                "status": "PENDING"
+            },
+            f"Submit a {request_type.replace('_', ' ').title()} regulariza"
+            f"tion request for {employee['employee_name']} on "
+            f"{target_date:%B %d, %Y}.",
             scope,
             missing=missing,
         )
@@ -748,13 +835,15 @@ class WriteActionPlanner:
         if len(matches) > 1:
             raise CopilotError(
                 "regularization_ambiguous",
-                "More than one pending regularization matched. Specify the request ID or date.",
+                'More than one pending regularization matched. Specify '
+                'the request ID or date.',
             )
         req = matches[0]
         if req.days.exists():
             raise CopilotError(
                 "unsupported_grouped_regularization",
-                "Grouped regularization requests must be reviewed in the regularization screen.",
+                'Grouped regularization requests must be reviewed in the '
+                'regularization screen.',
             )
         self._resolve_target_employee(
             {"employee_id": req.employee_id}, user, scope
@@ -771,22 +860,34 @@ class WriteActionPlanner:
             session_id,
             intent["intent"],
             {
-                "request_id": req.id,
-                "employee_id": req.employee_id,
-                "employee_name": req.employee.user.get_full_name().strip()
+                "request_id":
+                req.id,
+                "employee_id":
+                req.employee_id,
+                "employee_name":
+                req.employee.user.get_full_name().strip()
                 or req.employee.user.email,
             },
             {
-                "status": "REJECTED"
-                if intent["intent"] == "regularization_reject"
-                else "APPROVED",
-                "reason": reason,
+                "status": ("REJECTED" if intent["intent"]
+                           == "regularization_reject" else "APPROVED"),
+                "reason":
+                reason,
             },
             {
                 "status": req.status,
                 "attendance_date": req.attendance_date.isoformat(),
             },
-            f"{'Reject' if intent['intent'] == 'regularization_reject' else 'Approve'} regularization request #{req.id} for {req.employee.user.get_full_name().strip() or req.employee.user.email}.",
+            "{} regularization request #{} for {}.".format(
+                "Reject"
+                if intent["intent"] == "regularization_reject"
+                else "Approve",
+                req.id,
+                (
+                    req.employee.user.get_full_name().strip()
+                    or req.employee.user.email
+                ),
+            ),
             scope,
             missing=missing,
         )
@@ -827,12 +928,16 @@ class WriteActionPlanner:
                 "shift_id": shift.id,
                 "shift_name": shift.name,
             },
-            {"shift_id": shift.id, "shift_name": shift.name},
+            {
+                "shift_id": shift.id,
+                "shift_name": shift.name
+            },
             {
                 "shift_id": target.shift_id,
                 "shift_name": target.shift.name if target.shift else None,
             },
-            f"Assign {shift.name} ({shift.code}) to {employee['employee_name']}.",
+            f"Assign {shift.name} ({shift.code}) to "
+            f"{employee['employee_name']}.",
             scope,
         )
 
@@ -842,7 +947,8 @@ class WriteActionPlanner:
         if "is_active" not in entities:
             raise CopilotError(
                 "status_required",
-                "Specify whether the employee should be activated or deactivated.",
+                'Specify whether the employee should be activated or '
+                'deactivated.',
             )
         target = Employee.objects.get(pk=employee["employee_id"])
         desired = bool(entities["is_active"])
@@ -858,9 +964,11 @@ class WriteActionPlanner:
             },
             {"is_active": desired},
             {"is_active": target.is_active},
-            f"{'Activate' if desired else 'Deactivate'} employee {employee['employee_name']}.",
+            f"{'Activate' if desired else 'Deactivate'} employee "
+            f"{employee['employee_name']}.",
             scope,
-            warning="Deactivating an employee removes their active employee access.",
+            warning='Deactivating an employee removes their active employee '
+            'access.',
         )
 
     def _resolve_target_employee(
@@ -906,7 +1014,8 @@ class WriteActionPlanner:
                     "employee_required", "Employee name or email is required"
                 ) from error
 
-        # Verify every resolution path, including interpreter-resolved IDs, is scoped.
+        # Verify every resolution path, including interpreter-resolved IDs, is
+        # scoped.
         if not scope["unrestricted"]:
             from accounts.scope_service import employee_in_manager_scope
 
@@ -918,8 +1027,10 @@ class WriteActionPlanner:
                 )
 
         return {
-            "employee_id": employee.id,
-            "employee_name": f"{employee.user.first_name} {employee.user.last_name}",
+            "employee_id":
+            employee.id,
+            "employee_name":
+            f"{employee.user.first_name} {employee.user.last_name}",
         }
 
     @staticmethod
@@ -942,18 +1053,30 @@ class WriteActionPlanner:
     @staticmethod
     def _missing_question(employee_name, missing):
         if {"check_in_time", "check_out_time"}.issubset(missing):
-            return f"Sure. What check-in and check-out times should I use for {employee_name}?"
+            return (
+                f"Sure. What check-in and check-out times should I use for "
+                f"{employee_name}?"
+            )
         if "check_in_time" in missing:
             return f"What check-in time should I use for {employee_name}?"
         if "check_out_time" in missing:
             return f"What check-out time should I use for {employee_name}?"
         if "employee_name" in missing:
-            return "Which employee should I update? Please provide their name or work email."
+            return (
+                'Which employee should I update? Please provide their name or '
+                'work email.'
+            )
         if "employee_email" in missing:
-            return "Several employees match that name. Which work email should I use?"
+            return (
+                'Several employees match that name. Which work email should I '
+                'use?'
+            )
         if "reason" in missing:
             return f"Please provide the reason for {employee_name}'s leave."
-        return f"What check-in and check-out times should I use for {employee_name}?"
+        return (
+            f"What check-in and check-out times should I use for "
+            f"{employee_name}?"
+        )
 
     def _plan_missing_employee(self, intent, user, scope, session_id):
         entities = intent.get("entities", {})
@@ -974,9 +1097,7 @@ class WriteActionPlanner:
             target_status = (
                 "ABSENT"
                 if "absent" in original
-                else "LEAVE"
-                if "leave" in original
-                else "PRESENT"
+                else "LEAVE" if "leave" in original else "PRESENT"
             )
         target_status = {
             "ABSENT": "ABSENT",
@@ -1015,9 +1136,11 @@ class WriteActionPlanner:
             "action_id": str(uuid.uuid4()),
             "session_id": session_id,
             "user_id": user.id,
-            "action_type": "leave_create"
-            if intent_name == "leave_create"
-            else "attendance_update",
+            "action_type": (
+                "leave_create"
+                if intent_name == "leave_create"
+                else "attendance_update"
+            ),
             "intent": intent_name,
             "source": intent.get("source", "attendance"),
             "target_data": target_data,
@@ -1052,7 +1175,10 @@ class WriteActionPlanner:
                 details += f"; reason: {reason}"
         elif status == "ABSENT":
             details += "; check-in cleared; check-out cleared"
-        return f"Confirm attendance for {employee_name} on {target_date:%B %d, %Y}. {details}."
+        return (
+            f"Confirm attendance for {employee_name} on "
+            f"{target_date:%B %d, %Y}. {details}."
+        )
 
     def _resolve_target_date(self, entities: Dict) -> datetime.date:
         """Resolve the target date for the action."""

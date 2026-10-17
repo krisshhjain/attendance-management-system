@@ -8,7 +8,7 @@ import { server } from "./mocks/server.js";
 
 const feedback = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => (options) => options }));
-vi.mock("../src/feedback/FeedbackProvider.jsx", () => ({ useFeedback: () => feedback }));
+vi.mock("../src/feedback/useFeedback.js", () => ({ useFeedback: () => feedback }));
 vi.mock("../src/components/WebcamCapture.jsx", () => ({
   default: ({ onCapture, onCancel, isLoading }) => (
     <div>

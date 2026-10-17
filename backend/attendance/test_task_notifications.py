@@ -4,11 +4,14 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-
 from employees.models import Employee
 from notifications.models import Notification
 
-from .models import AttendanceEvent, RegularizationRequest, RegularizationRequestDay
+from .models import (
+    AttendanceEvent,
+    RegularizationRequest,
+    RegularizationRequestDay,
+)
 from .tasks import create_attendance_notification
 
 
@@ -25,10 +28,14 @@ class AttendanceEventNotificationTaskTests(TestCase):
         )
 
     def test_missing_event_returns_without_creating_notification(self):
-        self.assertEqual(create_attendance_notification.run(-1), "event_not_found")
+        self.assertEqual(
+            create_attendance_notification.run(-1), "event_not_found"
+        )
         self.assertEqual(Notification.objects.count(), 0)
 
-    def test_approved_regularization_admin_event_is_not_duplicated_as_attendance(self):
+    def test_admin_event_not_duplicated_as_attendance_for_regularization(
+        self,
+    ):
         target = timezone.localdate()
         timestamp = timezone.make_aware(datetime.combine(target, time(9)))
         with patch("attendance.signals.create_attendance_notification.delay"):
@@ -84,7 +91,9 @@ class AttendanceEventNotificationTaskTests(TestCase):
             "regularization_correction_skipped",
         )
         self.assertFalse(
-            Notification.objects.filter(attendance_event=grouped_event).exists()
+            Notification.objects.filter(
+                attendance_event=grouped_event
+            ).exists()
         )
 
     def test_regular_attendance_event_notification_is_idempotent(self):
@@ -97,7 +106,9 @@ class AttendanceEventNotificationTaskTests(TestCase):
                 source="API",
             )
 
-        self.assertEqual(create_attendance_notification.run(event.pk), "created")
+        self.assertEqual(
+            create_attendance_notification.run(event.pk), "created"
+        )
         self.assertEqual(
             create_attendance_notification.run(event.pk), "already_exists"
         )
