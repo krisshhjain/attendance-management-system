@@ -1,3 +1,14 @@
+/**
+ * main.jsx — Application entry point.
+ *
+ * Bootstrap order:
+ *   1. A single router instance is created (includes a QueryClient in its context).
+ *   2. The global MUI theme is built here; component-level style overrides live
+ *      in the `components` block so they stay co-located with palette/typography.
+ *   3. The provider tree is: ThemeProvider → CssBaseline → FeedbackProvider →
+ *      RouterProvider. FeedbackProvider must wrap RouterProvider so that toast/
+ *      snackbar feedback is available to any route component.
+ */
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
@@ -6,16 +17,31 @@ import CssBaseline from "@mui/material/CssBaseline";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { FeedbackProvider } from "./feedback/FeedbackProvider.jsx";
 
+// A single router instance is created here and passed directly to RouterProvider.
+// getRouter() also constructs a QueryClient that is injected into the TanStack
+// Router context so route loaders can share the same cache.
 const router = getRouter();
 
+/**
+ * Global MUI theme for the application.
+ *
+ * All palette values are Tailwind Slate / Indigo tokens hardcoded as hex so the
+ * design remains deterministic regardless of Tailwind configuration. The palette
+ * here is for the main application shell; note that __root.jsx also creates a
+ * theme for internal provider wrapping — the two are intentionally independent.
+ */
 const theme = createTheme({
   palette: {
+    // Primary: Indigo-600 / Indigo-400 / Indigo-800 — brand colour used for
+    // interactive elements, active nav indicators, and focused input borders.
     primary: { main: "#4f46e5", light: "#818cf8", dark: "#3730a3", contrastText: "#ffffff" },
     secondary: { main: "#64748b", contrastText: "#ffffff" },
     success: { main: "#059669", light: "#d1fae5", contrastText: "#ffffff" },
     warning: { main: "#d97706", light: "#fef3c7", contrastText: "#ffffff" },
     error: { main: "#dc2626", light: "#fee2e2", contrastText: "#ffffff" },
     info: { main: "#0284c7", light: "#e0f2fe", contrastText: "#ffffff" },
+    // Slate-50 page background keeps content areas visually distinct from
+    // white paper surfaces (cards, dialogs, sidebars).
     background: { default: "#f8fafc", paper: "#ffffff" },
     text: { primary: "#0f172a", secondary: "#64748b", disabled: "#94a3b8" },
     divider: "#e2e8f0",
@@ -37,6 +63,9 @@ const theme = createTheme({
     caption: { color: "#64748b" },
   },
   shape: { borderRadius: 12 },
+  // Custom shadow scale using low-opacity Slate-950 to match the light palette.
+  // MUI requires exactly 25 shadow entries (elevation 0–24); entries 6–24 are
+  // collapsed to "none" because the app does not use those elevation levels.
   shadows: [
     "none",
     "0 1px 3px rgba(15,23,42,0.04), 0 1px 2px rgba(15,23,42,0.06)",
@@ -46,7 +75,11 @@ const theme = createTheme({
     "0 25px 50px rgba(15,23,42,0.08)",
     ...Array(19).fill("none"),
   ],
+  // Component-level overrides: normalise default MUI styling to match the
+  // application design system. Each override applies globally — individual
+  // components do not need per-instance sx props for these baseline styles.
   components: {
+    // Buttons: flat (no box-shadow) by default; elevation only via border/fill.
     MuiButton: {
       styleOverrides: {
         root: {
@@ -95,6 +128,8 @@ const theme = createTheme({
         elevation2: { boxShadow: "0 4px 6px rgba(15,23,42,0.04), 0 2px 4px rgba(15,23,42,0.06)" },
       },
     },
+    // Table headers: all-caps label style (11 px, slate-400) to distinguish
+    // column headers from data rows without relying on background colour alone.
     MuiTableHead: {
       styleOverrides: {
         root: {
@@ -220,9 +255,13 @@ const theme = createTheme({
   },
 });
 
+// Mount the React application into the #root element provided by index.html.
+// StrictMode is intentionally kept in production to surface potential issues
+// during the review cycle; it adds no runtime overhead in production builds.
 ReactDOM.createRoot(document.getElementById("root")).render(
   <StrictMode>
     <ThemeProvider theme={theme}>
+      {/* CssBaseline normalises browser default styles before any route renders. */}
       <CssBaseline />
       <FeedbackProvider>
         <RouterProvider router={router} />

@@ -1,3 +1,14 @@
+/**
+ * routes/__root.jsx — TanStack Router root route.
+ *
+ * Responsibilities:
+ *  • Provides QueryClientProvider, AuthProvider, OrganizationScopeProvider, and
+ *    a secondary ThemeProvider to all child routes.
+ *  • Registers the global 404 (NotFoundComponent) and error boundary
+ *    (ErrorComponent) so every nested route benefits without any per-route setup.
+ *  • The route context must include `queryClient` (supplied by router.jsx) so
+ *    that route loaders can call ensureQueryData / prefetchQuery.
+ */
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
 import { AuthProvider } from "../lib/auth.jsx";
@@ -5,6 +16,8 @@ import { OrganizationScopeProvider } from "../lib/organizationScope.jsx";
 import { Box, Typography, Button, CssBaseline, ThemeProvider, createTheme } from "@mui/material";
 import { useEffect } from "react";
 
+// Displayed when no route matches the current URL.
+// Uses a Link component (client-side navigation) to send the user home.
 function NotFoundComponent() {
   return (
     <Box
@@ -40,6 +53,13 @@ function NotFoundComponent() {
   );
 }
 
+/**
+ * ErrorComponent is the root-level error boundary.
+ * `router.invalidate()` clears all route loader caches so a full re-fetch runs
+ * on the next render; `reset()` then re-mounts the subtree. Both are needed:
+ * calling only reset() may replay the same failed loader, and calling only
+ * invalidate() without reset() does not re-mount the component tree.
+ */
 function ErrorComponent({ error, reset }) {
   console.error(error);
   const router = useRouter();
@@ -82,6 +102,15 @@ function ErrorComponent({ error, reset }) {
   );
 }
 
+/**
+ * ThemeProviderWrapper applies the MUI theme to all child routes.
+ *
+ * The application is permanently locked to `light` mode regardless of the
+ * user's OS preference. The value is written to localStorage and a
+ * `data-theme` attribute so any CSS that reads either will stay consistent.
+ * If dark-mode support is added later, `themeMode` should become reactive
+ * state driven by user preference rather than a constant.
+ */
 function ThemeProviderWrapper({ children }) {
   // The application surfaces use a light design system. Keep the root theme
   // aligned with those surfaces instead of inheriting a dark OS preference.
@@ -318,12 +347,27 @@ function ThemeProviderWrapper({ children }) {
   );
 }
 
+// Route context type parameter constrains the context shape expected by all
+// child routes. Any child route trying to access queryClient will get a type
+// error at build time if the context object does not contain that property.
 export const Route = createRootRouteWithContext()({
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
 
+/**
+ * RootComponent is the layout rendered for every route in the application.
+ *
+ * Provider nesting order is significant:
+ *  1. QueryClientProvider — must be outermost so AuthProvider can run queries
+ *     (e.g. /auth/me/) during its initialisation effect.
+ *  2. AuthProvider — depends on QueryClient; exposes login, logout, and user.
+ *  3. OrganizationScopeProvider — depends on auth (user determines allowed BRs).
+ *  4. ThemeProviderWrapper — purely visual; innermost so themes never affect
+ *     the data providers.
+ *  5. Outlet — renders the matched child route component.
+ */
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 

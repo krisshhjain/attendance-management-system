@@ -1,3 +1,16 @@
+/**
+ * components/Sidebar.jsx — Application sidebar navigation.
+ *
+ * Renders a fixed-width drawer containing the navigation links, user
+ * information, and a logout button. Supports two modes:
+ *  • Permanent (desktop): always visible as a sticky left column.
+ *  • Temporary (mobile): slides in from the left when mobileOpen is true;
+ *    a translucent overlay is rendered behind it to allow tap-to-dismiss.
+ *
+ * Navigation items are derived from the current loginType and user flags so
+ * that role-specific links (HR Copilot, System Logs, Regularization review)
+ * are only shown to users with the appropriate permissions.
+ */
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "../lib/useAuth.js";
 
@@ -96,7 +109,9 @@ const ICONS = {
   ),
 };
 
-// ── Nav items — all existing routes preserved ─────────────────────────────────
+// Builds the navigation item list for the current user session.
+// canReviewRegularization controls visibility of the admin regularization link;
+// it is true for any privileged session (staff, superuser, admin, systemadmin).
 function getNavItems(loginType, user) {
   const canReviewRegularization = Boolean(
     user?.is_staff ||
@@ -117,13 +132,17 @@ function getNavItems(loginType, user) {
             text: "Regularization",
             icon: ICONS.regularization,
             path: "/admin-regularization",
+            // activePath provides an alternate match prefix for this link so it
+            // highlights correctly when inside nested regularization detail routes.
             activePath: "/administration/regularization/",
           },
         ]
       : []),
+    // HR Copilot is exclusive to the systemadmin role.
     ...(loginType === "systemadmin"
       ? [{ text: "HR Copilot", icon: ICONS.hrcopilot, path: "/hr-copilot" }]
       : []),
+    // System Logs is visible only to superusers (is_superuser flag, not loginType).
     ...(user?.is_superuser
       ? [{ text: "System Logs", icon: ICONS.logs, path: "/system-logs" }]
       : []),
