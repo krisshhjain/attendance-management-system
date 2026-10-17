@@ -292,7 +292,12 @@ class Phase6WriteTests(TestCase):
         self.assertEqual(error.exception.code, "scope_denied")
         self.assertEqual(error.exception.status, 403)
 
-    def test_attendance_create_rechecks_duplicates_after_confirmation(self):
+    @patch.object(
+        timezone, "localdate", return_value=datetime(2026, 10, 16).date()
+    )
+    def test_attendance_create_rechecks_duplicates_after_confirmation(
+        self, _mock_localdate
+    ):
         target = timezone.localdate()
         session = f"hr-copilot-user-{self.admin.id}-attendance-create-stale"
         pending = write_action_planner.plan_write_action(
@@ -920,7 +925,12 @@ class Phase6WriteTests(TestCase):
         )
         self.assertEqual(pending["status"], "AWAITING_INFORMATION")
 
-    def test_attendance_status_fallbacks_use_the_original_request(self):
+    @patch.object(
+        timezone, "localdate", return_value=datetime(2026, 10, 16).date()
+    )
+    def test_attendance_status_fallbacks_use_the_original_request(
+        self, _mock_localdate
+    ):
         target = timezone.localdate().isoformat()
         for phrase, expected_status in (
             ("Mark Asha Rao absent today", "ABSENT"),
