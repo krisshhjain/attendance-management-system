@@ -14,8 +14,8 @@ import { OrganizationScopeContext } from "./organizationScopeContext.js";
  */
 export function OrganizationScopeProvider({ children }) {
   const [selectedScope, setSelectedScope] = useState({
-    brId: null,       // Business Region ID filter
-    sectionId: null,  // Section ID filter
+    brId: null, // Business Region ID filter
+    sectionId: null, // Section ID filter
     subsectionId: null, // Sub-section ID filter
   });
   const value = useMemo(() => ({ selectedScope, setSelectedScope }), [selectedScope]);
