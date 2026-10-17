@@ -292,8 +292,13 @@ class Phase6WriteTests(TestCase):
         self.assertEqual(error.exception.code, "scope_denied")
         self.assertEqual(error.exception.status, 403)
 
-    def test_attendance_create_rechecks_duplicates_after_confirmation(self):
-        target = timezone.localdate()
+    @patch("holidays.services.attendance_required", return_value=True)
+    def test_attendance_create_rechecks_duplicates_after_confirmation(self, _attendance_required):
+        # Use a fixed Monday to ensure the test never fails on weekends.
+        # The weekend validation in write_actions and write_executor is mocked
+        # above so that only the duplicate-detection logic under test is reached.
+        from datetime import date
+        target = date(2026, 10, 19)  # Monday
         session = f"hr-copilot-user-{self.admin.id}-attendance-create-stale"
         pending = write_action_planner.plan_write_action(
             self.intent(
@@ -920,8 +925,14 @@ class Phase6WriteTests(TestCase):
         )
         self.assertEqual(pending["status"], "AWAITING_INFORMATION")
 
-    def test_attendance_status_fallbacks_use_the_original_request(self):
-        target = timezone.localdate().isoformat()
+    @patch("holidays.services.attendance_required", return_value=True)
+    def test_attendance_status_fallbacks_use_the_original_request(self, _attendance_required):
+        # Use a fixed Monday so the test never fails on weekends.
+        # The planner's weekend validation for ABSENT status is mocked via
+        # attendance_required above, letting us verify the status-inference
+        # fallback logic regardless of what day CI runs.
+        from datetime import date
+        target = date(2026, 10, 19).isoformat()  # Monday
         for phrase, expected_status in (
             ("Mark Asha Rao absent today", "ABSENT"),
             ("Mark Asha Rao incomplete today", "INCOMPLETE"),
