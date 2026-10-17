@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -71,6 +71,15 @@ class Phase6WriteTests(TestCase):
             effective_from=timezone.localdate().replace(month=1, day=1),
             is_active=True,
         )
+
+    def _get_working_day(self, base_date=None):
+        """Return a deterministic working day where attendance is required."""
+        from holidays.services import attendance_required
+
+        candidate = base_date or date(2026, 10, 14)
+        while not attendance_required(candidate):
+            candidate += timedelta(days=1)
+        return candidate
 
     def intent(self, name, entities):
         return {
@@ -293,41 +302,48 @@ class Phase6WriteTests(TestCase):
         self.assertEqual(error.exception.status, 403)
 
     def test_attendance_create_rechecks_duplicates_after_confirmation(self):
-        target = timezone.localdate()
-        session = f"hr-copilot-user-{self.admin.id}-attendance-create-stale"
-        pending = write_action_planner.plan_write_action(
-            self.intent(
-                "attendance_create",
-                {
-                    "employee_id": self.employee.id,
-                    "date_range": {
-                        "start": target.isoformat(),
-                        "end": target.isoformat(),
+        target = self._get_working_day()
+        with patch("django.utils.timezone.localdate", return_value=target):
+            session = (
+                f"hr-copilot-user-{self.admin.id}-attendance-create-stale"
+            )
+            pending = write_action_planner.plan_write_action(
+                self.intent(
+                    "attendance_create",
+                    {
+                        "employee_id": self.employee.id,
+                        "date_range": {
+                            "start": target.isoformat(),
+                            "end": target.isoformat(),
+                        },
+                        "target_status": "ABSENT",
                     },
-                    "target_status": "ABSENT",
-                },
-            ),
-            self.admin,
-            session,
-        )
-        action_id = pending_action_manager.store_pending_action(
-            session, pending
-        )
-        approved = pending_action_manager.approve_action(
-            session, action_id, self.admin.id
-        )
-        Attendance.objects.create(
-            employee=self.employee, date=target, status="PRESENT"
-        )
+                ),
+                self.admin,
+                session,
+            )
+            action_id = pending_action_manager.store_pending_action(
+                session, pending
+            )
+            approved = pending_action_manager.approve_action(
+                session, action_id, self.admin.id
+            )
+            Attendance.objects.create(
+                employee=self.employee, date=target, status="PRESENT"
+            )
 
-        with self.assertRaises(CopilotError) as error:
-            write_action_executor.execute_approved_action(approved, self.admin)
+            with self.assertRaises(CopilotError) as error:
+                write_action_executor.execute_approved_action(
+                    approved, self.admin
+                )
 
-        self.assertEqual(error.exception.code, "attendance_exists")
-        self.assertEqual(
-            Attendance.objects.get(employee=self.employee, date=target).status,
-            "PRESENT",
-        )
+            self.assertEqual(error.exception.code, "attendance_exists")
+            self.assertEqual(
+                Attendance.objects.get(
+                    employee=self.employee, date=target
+                ).status,
+                "PRESENT",
+            )
 
     def test_attendance_update_outside_manager_scope_is_rejected(self):
         outside_user = get_user_model().objects.create_user(
@@ -921,32 +937,37 @@ class Phase6WriteTests(TestCase):
         self.assertEqual(pending["status"], "AWAITING_INFORMATION")
 
     def test_attendance_status_fallbacks_use_the_original_request(self):
-        target = timezone.localdate().isoformat()
-        for phrase, expected_status in (
-            ("Mark Asha Rao absent today", "ABSENT"),
-            ("Mark Asha Rao incomplete today", "INCOMPLETE"),
-            ("Put Asha Rao on leave today", "LEAVE"),
+        target_date = self._get_working_day()
+        target = target_date.isoformat()
+        with patch(
+            "django.utils.timezone.localdate", return_value=target_date
         ):
-            with self.subTest(expected_status=expected_status):
-                intent = self.intent(
-                    "attendance_update",
-                    {
-                        "employee_id": self.employee.id,
-                        "date_range": {"start": target, "end": target},
-                        "reason": "Approved personal leave",
-                    },
-                )
-                intent["original_query"] = phrase
+            for phrase, expected_status in (
+                ("Mark Asha Rao absent today", "ABSENT"),
+                ("Mark Asha Rao incomplete today", "INCOMPLETE"),
+                ("Put Asha Rao on leave today", "LEAVE"),
+            ):
+                with self.subTest(expected_status=expected_status):
+                    intent = self.intent(
+                        "attendance_update",
+                        {
+                            "employee_id": self.employee.id,
+                            "date_range": {"start": target, "end": target},
+                            "reason": "Approved personal leave",
+                        },
+                    )
+                    intent["original_query"] = phrase
 
-                pending = write_action_planner.plan_write_action(
-                    intent,
-                    self.admin,
-                    f"phase6-status-fallback-{expected_status}",
-                )
+                    pending = write_action_planner.plan_write_action(
+                        intent,
+                        self.admin,
+                        f"phase6-status-fallback-{expected_status}",
+                    )
 
-                self.assertEqual(
-                    pending["target_data"]["target_status"], expected_status
-                )
+                    self.assertEqual(
+                        pending["target_data"]["target_status"],
+                        expected_status,
+                    )
 
     def test_leave_approval_failure_keeps_request_pending(self):
         target = timezone.localdate() + timedelta(days=1)
@@ -1020,3 +1041,152 @@ class Phase6WriteTests(TestCase):
 
         self.assertEqual(error.exception.code, "attendance_not_required")
         self.assertEqual(error.exception.status, 400)
+
+    def test_attendance_create_planner_rejects_absent_on_non_required_day(
+        self,
+    ):
+        """Confirm attendance_create rejects ABSENT on non-working days."""
+        from holidays.models import Holiday
+
+        saturday = date(2026, 10, 17)
+        sunday = date(2026, 10, 18)
+        holiday_date = date(2026, 10, 15)
+        holiday = Holiday.objects.create(
+            date=holiday_date,
+            name="Midweek Company Holiday",
+            is_active=True,
+        )
+
+        try:
+            for non_working_date, expected_phrase in (
+                (saturday, "weekend"),
+                (sunday, "weekend"),
+                (holiday_date, "holiday"),
+            ):
+                with self.subTest(date=non_working_date):
+                    with patch(
+                        "django.utils.timezone.localdate",
+                        return_value=non_working_date,
+                    ):
+                        intent = self.intent(
+                            "attendance_create",
+                            {
+                                "employee_id": self.employee.id,
+                                "date_range": {
+                                    "start": non_working_date.isoformat(),
+                                    "end": non_working_date.isoformat(),
+                                },
+                                "target_status": "ABSENT",
+                            },
+                        )
+                        with self.assertRaises(CopilotError) as error:
+                            write_action_planner.plan_write_action(
+                                intent,
+                                self.admin,
+                                f"phase6-absence-create-{non_working_date}",
+                            )
+
+                        self.assertEqual(
+                            error.exception.code, "attendance_not_required"
+                        )
+                        self.assertEqual(error.exception.status, 400)
+                        self.assertIn(
+                            expected_phrase, str(error.exception).lower()
+                        )
+        finally:
+            holiday.delete()
+
+    def test_attendance_status_fallbacks_under_controlled_date_classifications(
+        self,
+    ):
+        """Verify status fallbacks across distinct calendar day types."""
+        from holidays.models import Holiday
+
+        working_day = self._get_working_day()
+        saturday = date(2026, 10, 17)
+        sunday = date(2026, 10, 18)
+        holiday_date = date(2026, 10, 15)
+        holiday = Holiday.objects.create(
+            date=holiday_date, name="Foundation Day", is_active=True
+        )
+
+        scenarios = (
+            ("working_day", working_day, True),
+            ("saturday", saturday, False),
+            ("sunday", sunday, False),
+            ("holiday", holiday_date, False),
+        )
+
+        try:
+            for day_label, controlled_date, is_attendance_req in scenarios:
+                with self.subTest(day_type=day_label):
+                    with patch(
+                        "django.utils.timezone.localdate",
+                        return_value=controlled_date,
+                    ):
+                        target = controlled_date.isoformat()
+
+                        absent_intent = self.intent(
+                            "attendance_update",
+                            {
+                                "employee_id": self.employee.id,
+                                "date_range": {
+                                    "start": target,
+                                    "end": target,
+                                },
+                                "reason": "Not feeling well",
+                            },
+                        )
+                        absent_intent["original_query"] = (
+                            "Mark Asha Rao absent today"
+                        )
+
+                        if is_attendance_req:
+                            pending = write_action_planner.plan_write_action(
+                                absent_intent,
+                                self.admin,
+                                f"status-fallback-absent-{day_label}",
+                            )
+                            self.assertEqual(
+                                pending["target_data"]["target_status"],
+                                "ABSENT",
+                            )
+                        else:
+                            with self.assertRaises(CopilotError) as error:
+                                write_action_planner.plan_write_action(
+                                    absent_intent,
+                                    self.admin,
+                                    f"status-fallback-absent-{day_label}",
+                                )
+                            self.assertEqual(
+                                error.exception.code,
+                                "attendance_not_required",
+                            )
+
+                        for phrase, expected_status in (
+                            ("Mark Asha Rao incomplete today", "INCOMPLETE"),
+                            ("Put Asha Rao on leave today", "LEAVE"),
+                        ):
+                            other_intent = self.intent(
+                                "attendance_update",
+                                {
+                                    "employee_id": self.employee.id,
+                                    "date_range": {
+                                        "start": target,
+                                        "end": target,
+                                    },
+                                    "reason": "Routine update",
+                                },
+                            )
+                            other_intent["original_query"] = phrase
+                            pending = write_action_planner.plan_write_action(
+                                other_intent,
+                                self.admin,
+                                f"fallback-{expected_status}-{day_label}",
+                            )
+                            self.assertEqual(
+                                pending["target_data"]["target_status"],
+                                expected_status,
+                            )
+        finally:
+            holiday.delete()
