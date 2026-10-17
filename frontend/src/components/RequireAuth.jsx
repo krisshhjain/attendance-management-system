@@ -10,6 +10,21 @@ import { ShiftSelectionScreen } from "./ShiftSelectionScreen.jsx";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMyShift } from "../lib/api.js";
 
+/**
+ * RequireAuth — UI-level route guard and layout dispatcher.
+ *
+ * This component is a UI control only. It redirects unauthenticated users to
+ * /login and prevents access to sections the user's app_access flags disallow.
+ * It does NOT replace backend permission enforcement; the server validates every
+ * request independently.
+ *
+ * After confirming authentication and section access it selects the correct
+ * layout (SuperAdminLayout vs EmployeeLayout) based on loginType / is_superuser,
+ * and for employee sessions ensures a shift is assigned before rendering the
+ * dashboard. If no shift is found, ShiftSelectionScreen is shown instead.
+ *
+ * @param {{ children: React.ReactNode }} props
+ */
 export function RequireAuth({ children }) {
   const { isAuthenticated, ready, user, loginType } = useAuth();
   const navigate = useNavigate();
@@ -30,11 +45,18 @@ export function RequireAuth({ children }) {
   const isEmployeeSession =
     effectiveLoginType === "employee" && !user?.is_superuser && !user?.is_staff;
 
+  // routeAccessKey maps URL pathnames to the corresponding key in
+  // user.app_access. Only the three employee-facing routes are gated;
+  // admin and system-admin routes are not restricted by app_access.
   const routeAccessKey = {
     "/dashboard": "dashboard",
     "/attendance": "attendance",
     "/leave": "leave",
   }[location.pathname];
+  // hasSectionAccess is true when:
+  //  • the session is not an employee session (admins bypass this check), OR
+  //  • the current route is not in the access key map, OR
+  //  • the user's app_access flag for this section is not explicitly false.
   const hasSectionAccess =
     effectiveLoginType !== "employee" ||
     !routeAccessKey ||
@@ -160,6 +182,9 @@ export function RequireAuth({ children }) {
     // 4. Shift confirmed by API — fall through to normal layout
   }
 
+  // Both isAdminSession and isSystemAdminSession currently render SuperAdminLayout.
+  // They are kept as separate branches so future differences in layout or
+  // permissions can be introduced without a refactor.
   return (
     <>
       {user?.must_change_password && <ForcePasswordChangeModal open={true} />}

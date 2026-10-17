@@ -1,3 +1,16 @@
+/**
+ * lib/api.js — Centralised HTTP client for the Dailoqa AMS backend.
+ *
+ * Responsibilities:
+ *  • Manages JWT access/refresh tokens in localStorage (tokenStore).
+ *  • Provides apiRequest(), the single function all feature modules use to call
+ *    the backend; it handles auth headers, token refresh, and error normalisation.
+ *  • Exports typed domain functions (fetchLeaveTypes, checkIn, etc.) that
+ *    correspond 1:1 with backend REST endpoints.
+ *
+ * Token storage key names are intentionally opaque ("sa_*") to avoid collision
+ * with other apps that might share the same origin in development.
+ */
 export const API_BASE_URL = (
   import.meta.env?.VITE_API_BASE_URL ??
   (import.meta.env?.DEV ? "http://127.0.0.1:8000/api" : "/api")
@@ -6,6 +19,14 @@ export const API_BASE_URL = (
 const ACCESS_KEY = "sa_access_token";
 const REFRESH_KEY = "sa_refresh_token";
 
+/**
+ * In-memory token store backed by localStorage.
+ *
+ * Getter/setter properties are used instead of plain reads so that the token is
+ * always read fresh from localStorage on each access — this prevents a stale
+ * closure value being used after a token refresh completes in another tab or
+ * component. SSR guard (window === undefined) is included for future use.
+ */
 export const tokenStore = {
   get access() {
     if (typeof window === "undefined") return null;
@@ -27,6 +48,11 @@ export const tokenStore = {
   },
 };
 
+/**
+ * ApiError extends Error with an HTTP status code so callers can distinguish
+ * network failures (status 0) from server errors (4xx, 5xx) without parsing
+ * the error message string.
+ */
 export class ApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -55,6 +81,15 @@ function friendlyMessage(status, payload) {
   return "Something went wrong. Please try again.";
 }
 
+/**
+ * isRefreshing and refreshSubscribers implement a token-refresh queue.
+ *
+ * When a 401 response triggers a token refresh, subsequent concurrent requests
+ * that also receive 401 must not each independently try to refresh — that would
+ * cause a race where only one refresh succeeds and the others invalidate the
+ * token. Instead, they subscribe to the in-progress refresh and retry with the
+ * new token once it resolves.
+ */
 let isRefreshing = false;
 let refreshSubscribers = [];
 
@@ -92,6 +127,24 @@ async function refreshAccessToken() {
   return null;
 }
 
+/**
+ * Core HTTP request function used by all domain API calls.
+ *
+ * @param {string} path - API path relative to API_BASE_URL (e.g. "/auth/me/").
+ * @param {{ method?, body?, auth? }} options
+ *   - auth: when false, the Authorization header is omitted (used for login).
+ * @param {boolean} isRetry - Internal flag; set to true on the one automatic
+ *   retry after a successful token refresh to prevent infinite retry loops.
+ *
+ * On a 401 response the function attempts a token refresh exactly once. If
+ * the refresh fails, tokenStore is cleared and an error is thrown — the
+ * AuthProvider's session-restore effect will detect the missing token on the
+ * next page load and redirect to /login.
+ *
+ * Auth-endpoint paths (containing "/auth/") are excluded from the refresh
+ * logic because a 401 from /auth/login/ means bad credentials, not an expired
+ * session token.
+ */
 export async function apiRequest(path, options = {}, isRetry = false) {
   const { method = "GET", body, auth = true } = options;
 
@@ -248,6 +301,9 @@ export async function deleteLeavePolicy(id) {
 }
 
 // File upload for leave attachments
+// uploadFile uses fetch directly (not apiRequest) because multipart/form-data
+// requires the browser to set the Content-Type boundary automatically; setting
+// it manually via apiRequest's JSON header would break the multipart body.
 export async function uploadFile(file) {
   const formData = new FormData();
   formData.append("file", file);
