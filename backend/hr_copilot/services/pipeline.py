@@ -1,3 +1,12 @@
+"""Read-only SQL pipeline and query planning for HR Copilot.
+
+SQL is assembled from fixed templates with bound parameters. Execution
+requires the SQL to match ``build_sql(plan)``, SELECT-only AST checks,
+allowlisted tables, no ``SELECT *``, and a read-only transaction with a
+five-second statement timeout. Specialized attendance, leave, and
+workforce metrics are planned here but executed by typed tools, not SQL.
+"""
+
 import re
 from datetime import date, timedelta
 
@@ -10,6 +19,9 @@ from employees.models import Employee
 from .employee_resolver import employee_resolver
 from .regex_safety import find_email_address
 
+# Security whitelists prevent arbitrary table access, SQL injection,
+# and unauthorized mutations by constraining all generated queries to
+# approved sources, intents, filters, tables, and statement limits.
 MAX_ROWS = 100
 ALLOWED_SOURCES = {"employee", "attendance", "leave"}
 ALLOWED_QUERY_INTENTS = {
@@ -79,6 +91,8 @@ FORBIDDEN_SQL = re.compile(
 
 
 class CopilotError(Exception):
+    """Controlled Copilot failure with a public ``code`` and HTTP status."""
+
     def __init__(self, code, message, status=400):
         self.code = code
         self.message = message
@@ -87,10 +101,7 @@ class CopilotError(Exception):
 
 
 def analyze_question(question, context=None, session_id=None):
-    (
-        'Extract semantic intent from natural language using enhanced LLM '
-        'interpretation.'
-    )
+    """Extract semantic intent, classify read vs write, and resolve scopes."""
     from .semantic_interpreter import semantic_interpreter
     from .write_actions import write_action_planner
 
@@ -160,6 +171,7 @@ def analyze_question(question, context=None, session_id=None):
 
 
 def _apply_temporal_scope(question, source, intent_name, entities, today):
+    """Fill default or parsed date ranges for attendance-style read queries."""
     if (
         source == "attendance"
         and not entities.get("date_range")
@@ -476,6 +488,7 @@ def _apply_deterministic_entities(question, source, entities):
 
 
 def _validate_absence_date_range(entities):
+    """Ensure absence queries target a single completed past calendar date."""
     date_range = entities.get("date_range")
     if not date_range:
         raise CopilotError(
@@ -499,6 +512,11 @@ def _validate_absence_date_range(entities):
 
 
 def derive_scope(user):
+    """Return server-side manager scope, or raise 403 if none is assigned.
+
+    Uses ``get_manager_scope(user)``. Empty non-unrestricted scope is
+    treated as unassigned rather than as an open query.
+    """
     scope = get_manager_scope(user)
     scope["sections"] = list(scope.get("sections", []))
     scope["departments"] = list(scope.get("departments", []))
@@ -517,6 +535,7 @@ def derive_scope(user):
 
 
 def plan_query(intent, scope, user):
+    """Validate intent filters, resolve employee records, and build plan."""
     if not intent["source"] or intent["intent"] == "unknown":
         raise CopilotError(
             "unknown_question",
@@ -681,6 +700,7 @@ def plan_query(intent, scope, user):
 
 
 def build_sql(plan):
+    """Assemble parameterized SQL query and parameters from validated plan."""
     _validate_query_plan(plan)
     source, filters, scope = plan["source"], plan["filters"], plan["scope"]
     intent = plan["intent"]
@@ -949,6 +969,7 @@ def _validate_query_plan(plan, *, require_authorized_scope=False):
 
 
 def validate_sql(sql, plan=None):
+    """Validate SQL against plan template, AST rules, and security limits."""
     # SQL without its server-derived plan has no authorization context and is
     # never accepted for execution.
     if plan is None:
@@ -992,6 +1013,10 @@ def validate_sql(sql, plan=None):
 
 
 def execute_query(sql, params, plan=None):
+    """Execute validated SELECT SQL in a read-only, 5s-timeout transaction.
+
+    ``sql`` and ``params`` must match ``build_sql(plan)`` exactly.
+    """
     from django.db import transaction
 
     validate_sql(sql, plan)
@@ -1013,6 +1038,7 @@ def execute_query(sql, params, plan=None):
 
 
 def serialize_result(columns, rows):
+    """Convert database rows into JSON-serializable dictionaries."""
     result = []
     for row in rows:
         entry = {}
@@ -1028,6 +1054,7 @@ def serialize_result(columns, rows):
 
 
 def generate_answer(intent, data):
+    """Generate rule-based deterministic summary answer from result data."""
     intent_name = intent.get("intent", "")
     if not data:
         if intent_name.startswith("absence_"):

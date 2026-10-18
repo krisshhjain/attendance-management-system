@@ -466,6 +466,7 @@ class WriteActionExecutor:
         return result
 
     def _execute_force_checkout(self, pending_action, user):
+        """Create admin checkout event and recompute attendance."""
         target = pending_action["target_data"]
         target_date = datetime.fromisoformat(target["date"]).date()
         attendance = Attendance.objects.select_related("employee").get(
@@ -499,6 +500,7 @@ class WriteActionExecutor:
         }
 
     def _execute_regularization_create(self, pending_action, user):
+        """Persist a submitted attendance regularization request."""
         target = pending_action["target_data"]
         target_date = datetime.fromisoformat(target["attendance_date"]).date()
         values = {
@@ -541,6 +543,7 @@ class WriteActionExecutor:
         }
 
     def _execute_regularization_review(self, pending_action, user):
+        """Approve or reject a pending regularization request."""
         target = pending_action["target_data"]
         request = RegularizationRequest.objects.select_for_update().get(
             pk=target["request_id"], employee_id=target["employee_id"]
@@ -573,6 +576,7 @@ class WriteActionExecutor:
         }
 
     def _execute_shift_assignment(self, pending_action, user):
+        """Assign the designated shift to the employee record."""
         target = pending_action["target_data"]
         employee = Employee.objects.select_for_update().get(
             pk=target["employee_id"]
@@ -596,6 +600,7 @@ class WriteActionExecutor:
         }
 
     def _execute_employee_status(self, pending_action, user):
+        """Update active status on employee and persist the change."""
         target = pending_action["target_data"]
         employee = Employee.objects.select_for_update().get(
             pk=target["employee_id"]
@@ -831,6 +836,7 @@ class PendingActionManager:
         return action
 
     def approve_action(self, session_id: str, action_id: str, user_id: int):
+        """Mark pending action approved within atomic transaction."""
         expired = False
         result = None
         with transaction.atomic():
@@ -875,6 +881,7 @@ class PendingActionManager:
         return result
 
     def cancel_action(self, session_id: str, action_id: str, user_id: int):
+        """Cancel a pending or awaiting-information action."""
         action = CopilotPendingAction.objects.filter(
             action_id=action_id, session_id=session_id, user_id=user_id
         ).first()
@@ -893,6 +900,7 @@ class PendingActionManager:
     def get_awaiting_action(
         self, session_id: str, conversation_id: str, user_id: int
     ):
+        """Retrieve active action waiting for parameter clarification."""
         action = CopilotPendingAction.objects.filter(
             session_id=session_id,
             conversation_id=conversation_id,
@@ -905,6 +913,7 @@ class PendingActionManager:
     def update_awaiting_action(
         self, action_id: str, user_id: int, session_id: str, updates
     ):
+        """Apply follow-up clarification updates to a draft action."""
         with transaction.atomic():
             action = (
                 CopilotPendingAction.objects.select_for_update()
@@ -949,6 +958,7 @@ class PendingActionManager:
     def mark_executed(
         self, action_id: str, user_id: int, session_id: str, result
     ):
+        """Record successful execution timestamp and result payload."""
         CopilotPendingAction.objects.filter(
             action_id=action_id,
             user_id=user_id,
@@ -963,6 +973,7 @@ class PendingActionManager:
     def mark_failed(
         self, action_id: str, user_id: int, session_id: str, error
     ):
+        """Record execution failure message on the pending action."""
         CopilotPendingAction.objects.filter(
             action_id=action_id,
             user_id=user_id,
@@ -975,6 +986,7 @@ class PendingActionManager:
         )
 
     def get_session_actions(self, session_id: str, user_id: int):
+        """Fetch unexpired pending actions for the given session."""
         actions = CopilotPendingAction.objects.filter(
             session_id=session_id,
             user_id=user_id,

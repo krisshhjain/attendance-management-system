@@ -1,3 +1,5 @@
+"""Data models for HR Copilot query auditing, context, and actions."""
+
 import uuid
 
 from django.conf import settings
@@ -5,12 +7,19 @@ from django.db import models
 
 
 class CopilotQueryAudit(models.Model):
+    """Audit log recording incoming natural language queries and execution.
+
+    Tracks intent classification, server-derived query plan, generated SQL,
+    and security/scope validation results for every query attempt.
+    """
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
     )
     question = models.TextField()
     intent = models.JSONField(default=dict)
     query_plan = models.JSONField(default=dict)
+    # Generated SQL template only; bound parameter values are not stored.
     sql = models.TextField(blank=True, default="")
     validation_result = models.CharField(max_length=32, default="not_run")
     scope_result = models.CharField(max_length=32, default="not_run")
@@ -23,7 +32,12 @@ class CopilotQueryAudit(models.Model):
 
 
 class CopilotConversationContext(models.Model):
-    """Session-scoped conversation context for HR Copilot follow-up queries."""
+    """Session-scoped conversation context for HR Copilot follow-up queries.
+
+    Stores recent message turns and cached referents (current employee,
+    date ranges, section, and pending action) isolated by user and
+    conversation ID to prevent cross-chat state leakage.
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE
@@ -40,8 +54,17 @@ class CopilotConversationContext(models.Model):
 
 
 class CopilotPendingAction(models.Model):
-    """Stores pending write actions that require user approval."""
+    """Stores pending write actions requiring human-in-the-loop approval.
 
+    Implements a two-phase commit pattern: write requests are staged,
+    validated against permissions, and held with an expiration timeout
+    (typically 10 minutes). Execution occurs only after affirmative user
+    confirmation.
+    """
+
+    # Django choices for ``action_type``. The planner also persists labels
+    # that are not listed here (for example regularization and shift
+    # assignment). Some listed labels are not implemented by the executor.
     ACTION_TYPES = [
         ("attendance_update", "Update Attendance"),
         ("attendance_create", "Create Attendance"),
@@ -141,20 +164,20 @@ class CopilotPendingAction(models.Model):
 
     @property
     def is_expired(self):
-        """Check if the action has expired."""
+        """Return True if the action has exceeded its expiration timestamp."""
         from django.utils import timezone
 
         return timezone.now() > self.expires_at
 
     @property
     def is_executable(self):
-        """Check if the action can be executed."""
+        """Return True if the action is pending, validated, and unexpired."""
         return (
             self.status == "PENDING" and self.validated and not self.is_expired
         )
 
     def mark_approved(self):
-        """Mark the action as approved and ready for execution."""
+        """Transition action to APPROVED status upon user confirmation."""
         if self.status != "PENDING":
             raise ValueError(f"Cannot approve action in status {self.status}")
 
@@ -171,7 +194,7 @@ class CopilotPendingAction(models.Model):
         self.save(update_fields=["status", "approved_at"])
 
     def mark_executed(self, result=None):
-        """Mark the action as successfully executed."""
+        """Record execution timestamp and returned result payload."""
         from django.utils import timezone
 
         self.status = "EXECUTED"
@@ -181,7 +204,7 @@ class CopilotPendingAction(models.Model):
         self.save(update_fields=["status", "executed_at", "execution_result"])
 
     def mark_failed(self, error_message):
-        """Mark the action as failed during execution."""
+        """Record execution failure timestamp and error explanation."""
         from django.utils import timezone
 
         self.status = "FAILED"
@@ -190,7 +213,7 @@ class CopilotPendingAction(models.Model):
         self.save(update_fields=["status", "executed_at", "execution_error"])
 
     def cancel(self):
-        """Cancel the pending action."""
+        """Cancel a pending action before it executes."""
         if self.status not in ["AWAITING_INFORMATION", "PENDING"]:
             raise ValueError(f"Cannot cancel action in status {self.status}")
 
@@ -199,7 +222,12 @@ class CopilotPendingAction(models.Model):
 
 
 class CopilotActionAudit(models.Model):
-    """Audit trail for all HR Copilot actions (both read and write)."""
+    """Immutable audit trail for all executed HR Copilot operations.
+
+    Maintains before/after snapshots (previous_state, new_state), the
+    active authorization_scope, and explicit_confirmation status for
+    compliance auditing and change tracking across write operations.
+    """
 
     # Reference to the pending action (null for read operations)
     pending_action = models.ForeignKey(

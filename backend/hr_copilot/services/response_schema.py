@@ -1,9 +1,15 @@
-"""Stable public response helpers for HR Copilot."""
+"""Stable public JSON helpers for Copilot read and write responses.
+
+``result_response`` and ``action_response`` describe the payload contract.
+``safe_error_message`` maps selected internal codes to browser-safe text
+so provider details are not returned.
+"""
 
 
 def result_response(
     *, answer, intent, data, scope=None, conversation_id=None, metadata=None
 ):
+    """Construct a standard dictionary payload for successful read queries."""
     payload = {
         "response_type": "result",
         "answer": answer,
@@ -29,6 +35,7 @@ def action_response(
     action_result=None,
     pending_action=None,
 ):
+    """Construct a standard dictionary payload for write action states."""
     payload = {
         "response_type": (
             "action_success"

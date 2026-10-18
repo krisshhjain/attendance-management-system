@@ -37,7 +37,12 @@ class SessionState:
 
 
 class SessionMemoryManager:
-    """Manages bounded session memory to reduce LLM context."""
+    """Cache compact conversation slots for later LLM prompts.
+
+    State is stored under ``hr_copilot_session:`` for CACHE_TIMEOUT
+    seconds. ``get_compact_context`` drops ``last_query`` so follow-ups
+    do not depend on stale wording.
+    """
 
     MAX_CONTEXT_ENTRIES = 3  # Keep only last 3 interactions
     CACHE_TIMEOUT = 3600  # 1 hour

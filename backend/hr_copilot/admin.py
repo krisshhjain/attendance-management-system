@@ -1,3 +1,5 @@
+"""Django admin configuration for HR Copilot query audit records."""
+
 from django.contrib import admin
 
 from .models import CopilotQueryAudit
@@ -5,6 +7,8 @@ from .models import CopilotQueryAudit
 
 @admin.register(CopilotQueryAudit)
 class CopilotQueryAuditAdmin(admin.ModelAdmin):
+    """Read-only administration interface for CopilotQueryAudit logs."""
+
     list_display = (
         "created_at",
         "user",
@@ -25,7 +29,9 @@ class CopilotQueryAuditAdmin(admin.ModelAdmin):
     )
 
     def has_add_permission(self, request):
+        """Prevent manual addition of audit records via admin."""
         return False
 
     def has_change_permission(self, request, obj=None):
+        """Prevent modification of immutable audit logs via admin."""
         return False
