@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-Dataset multi-face audit script.
+Dataset multi-face audit utility.
 
-Scans every image in the dataset and reports:
-- How many images have multiple detected faces
-- Which specific files contain multiple faces
-- Bounding box sizes and ratios for multi-face images
-- Summary statistics by identity
-
-Saves results as JSON for manual review of flagged images.
+Scans image datasets (e.g. training and validation splits) to diagnose face
+detection quality and identify data hygiene issues prior to embedding
+generation:
+  - Detects images containing zero faces (detection failures) or
+    multiple faces.
+  - Computes bounding box areas and area ratios between the top two faces.
+  - Flags ambiguous cases where second_area / largest_area >= (1.0 / 1.5),
+    indicating competing subjects of similar scale.
+  - Aggregates per-identity error rates and highlights problematic identities
+    with >= 30% failure rates for manual review or dataset curation.
+  - Outputs a timestamped JSON audit report.
 """
 
 import json
@@ -34,7 +38,7 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
 
 def get_images_in_directory(directory: Path) -> List[Path]:
-    """Get all image files recursively from a directory."""
+    """Recursively collect sorted image paths matching valid extensions."""
     if not directory.exists():
         return []
 
@@ -47,20 +51,28 @@ def get_images_in_directory(directory: Path) -> List[Path]:
 
 
 def audit_single_image(img_path: Path) -> Dict:
-    """Audit a single image for multi-face detection."""
+    """Audit a single image file for face count, bounding areas, and ratios.
+
+    Extracts identity from directory structure (e.g. 'train/<id>/img.jpg').
+    Invokes RetinaFace detection via get_face_details. For multi-face images,
+    calculates the area ratio between the second largest and largest face to
+    detect ambiguous subjects within the 1.5x tolerance threshold.
+
+    Returns:
+        dict: Image audit record with face count, details, and ambiguity flags.
+    """
     try:
         # Get relative path for reporting
         rel_path = img_path.relative_to(DATASET_ROOT)
 
-        # Extract identity from path (assuming structure like
-        # train/n000020/image.jpg)
+        # Extract identity from directory structure: <split>/<identity>/<file>
         parts = rel_path.parts
         if len(parts) >= 2:
-            identity = parts[1]  # train/VAL -> identity
+            identity = parts[1]
         else:
             identity = "unknown"
 
-        # Get face detection details
+        # Detect face bounding boxes and confidence scores using RetinaFace
         face_details = get_face_details(str(img_path), "retinaface")
         num_faces = len(face_details)
 
@@ -73,15 +85,16 @@ def audit_single_image(img_path: Path) -> Dict:
             "has_detection_failure": num_faces == 0,
         }
 
-        # Calculate area ratios for multi-face images
+        # For multi-face images, compute area ratio to detect ambiguity
         if num_faces >= 2:
             areas = sorted([f["area"] for f in face_details], reverse=True)
             result["largest_face_area"] = areas[0]
             result["second_largest_area"] = areas[1]
             result["area_ratio"] = areas[1] / areas[0] if areas[0] > 0 else 0
+            # Flag if second face area is within 1.5x of largest face
             result["is_ambiguous"] = result["area_ratio"] >= (
                 1.0 / 1.5
-            )  # Within 1.5x tolerance
+            )
 
         if num_faces > 0:
             logger.debug(f"✓ {rel_path}: {num_faces} face(s)")
@@ -105,7 +118,7 @@ def audit_single_image(img_path: Path) -> Dict:
 def audit_dataset_parallel(
     dataset_dir: Path, max_workers: int = 4
 ) -> List[Dict]:
-    """Audit all images in a dataset directory using parallel processing."""
+    """Audit all images in a dataset directory concurrently using threads."""
     if not dataset_dir.exists():
         logger.warning(f"Dataset directory not found: {dataset_dir}")
         return []
@@ -145,7 +158,16 @@ def audit_dataset_parallel(
 
 
 def generate_audit_statistics(results: List[Dict]) -> Dict:
-    """Generate summary statistics from audit results."""
+    """Aggregate per-identity and dataset-level quality statistics.
+
+    Calculates clean single-face rate, multi-face rate, and failure rate.
+    Identifies problematic identities meeting two criteria:
+      1. Has at least 3 total images (avoids noise from sparse identities).
+      2. Has >= 30% combined multi-face and detection failure rate.
+
+    Returns:
+        dict: Summary metrics, per-identity counts, and flagged identities.
+    """
     total_images = len(results)
     if total_images == 0:
         return {}

@@ -1,3 +1,24 @@
+"""
+Flask microservice for facial enrollment, liveness, and recognition.
+
+This service acts as the internal computer vision backend for the Dailoqa
+Attendance Management System. It provides HTTP endpoints consumed by the
+Django backend (backend/attendance/face_service.py):
+  - /health: Unauthenticated service health probe.
+  - /enroll: Averages embeddings from exactly 3 enrollment images.
+  - /extract: Extracts a 512-d L2-normalized embedding from a single image.
+  - /recognize: Single-frame liveness verification and 1:N candidate matching.
+  - /recognize-sequence: Temporal multi-frame liveness gating and 1:N match.
+
+Security model:
+  - Default bind host is loopback (127.0.0.1). Non-loopback binds require
+    FACE_SERVICE_TOKEN to be configured.
+  - Bearer token authentication is enforced on all non-health endpoints.
+  - Timing-safe HMAC comparison is used to mitigate side-channel attacks.
+  - CSRF is not configured because this is a stateless JSON API without
+    browser session cookies.
+"""
+
 import base64
 import hashlib
 import hmac
@@ -27,7 +48,13 @@ app.config["LIVENESS_DIAGNOSTICS_ENABLED"] = os.environ.get(
 
 
 def _configured_bind_host():
-    """Use loopback by default; require service auth for non-loopback binds."""
+    """Determine the bind host and enforce authentication for network binds.
+
+    By default, the service binds to loopback (127.0.0.1) for local IPC.
+    When configured for external interfaces (e.g. container networking),
+    a non-empty FACE_SERVICE_TOKEN is mandatory to prevent unauthorized
+    access.
+    """
     host = os.environ.get("FR_BIND_HOST", "127.0.0.1").strip() or "127.0.0.1"
     try:
         is_loopback = ipaddress.ip_address(host).is_loopback
@@ -63,6 +90,13 @@ def _authenticate_non_health_requests():
     return None
 
 
+# Temporal sequence gating constants for multi-frame attendance captures:
+# - SEQUENCE_MIN_FRAMES / SEQUENCE_MAX_FRAMES: Enforces 3 to 7 frames per
+#   check-in attempt, matching the kiosk/webcam capture capabilities.
+# - SEQUENCE_MIN_LIVE_RATIO: At least 80% of frames must be classified as live.
+# - SEQUENCE_MIN_SPAN_MS / SEQUENCE_MAX_SPAN_MS: The capture sequence must span
+#   between 300ms and 3000ms to guarantee natural motion and prevent bursts of
+#   identical frames.
 SEQUENCE_MIN_FRAMES = 3
 SEQUENCE_MAX_FRAMES = 7
 SEQUENCE_MIN_LIVE_RATIO = float(
@@ -73,7 +107,23 @@ SEQUENCE_MAX_SPAN_MS = 3000
 
 
 def _recognize_embedding(query_emb, candidates, threshold):
-    """Apply the existing cosine-distance candidate matching behavior."""
+    """Apply cosine-distance candidate matching against enrolled templates.
+
+    Calculates cosine distance as (1.0 - dot(query_emb, cand_template)).
+    Because ArcFace embeddings are L2-normalized unit vectors, the dot product
+    equals cosine similarity in [-1.0, 1.0], bounding distance to [0.0, 1.0].
+    Smaller distances indicate closer facial similarity.
+
+    Args:
+        query_emb: 1D L2-normalized numpy array representing the query face.
+        candidates: List of dicts with 'id' (int/str) and 'template' (list).
+        threshold: Float maximum cosine distance to qualify as a match
+            (default 0.60, corresponding to cosine similarity >= 0.40).
+
+    Returns:
+        dict: {"status": "match", "employee_id": ..., "distance": ...} if
+        distance <= threshold, else {"status": "unknown", "distance": ...}.
+    """
     best_match_id = None
     best_distance = float("inf")
     for candidate in candidates:
@@ -108,6 +158,11 @@ def _sequence_diagnostics(
     latency_ms,
     metadata=None,
 ):
+    """Format optional liveness and recognition diagnostic telemetry.
+
+    When FR_LIVENESS_DIAGNOSTICS is enabled, returns detailed per-frame scores,
+    timing, and device context to aid audit logging and model calibration.
+    """
     if not enabled:
         return {}
     return {
@@ -131,7 +186,15 @@ def _sequence_diagnostics(
 
 
 def _decode_image(b64_string: str) -> np.ndarray:
-    """Helper to decode base64 into a numpy array."""
+    """Decode a base64-encoded image string into an RGB numpy array.
+
+    Handles optional Data URL scheme prefix (e.g. 'data:image/jpeg;base64,').
+    Uses PIL to ensure standard 3-channel RGB orientation regardless of source
+    format (JPEG, PNG, etc.).
+
+    Raises:
+        FaceExtractionError: If the base64 string is corrupted or unreadable.
+    """
     try:
         if b64_string.startswith("data:image"):
             b64_string = b64_string.split(",", 1)[1]
@@ -145,11 +208,27 @@ def _decode_image(b64_string: str) -> np.ndarray:
 
 @app.route("/health", methods=["GET"])
 def health():
+    """Unauthenticated health probe for container orchestration."""
     return jsonify({"status": "ok"}), 200
 
 
 @app.route("/enroll", methods=["POST"])
 def enroll():
+    """Extract and average embeddings across 3 distinct enrollment images.
+
+    Expected JSON body:
+        {"images": [<b64_image_1>, <b64_image_2>, <b64_image_3>]}
+
+    Pipeline:
+      1. Validates that exactly 3 images are provided.
+      2. Extracts 512-d ArcFace embedding from each with min_confidence=0.95.
+      3. Computes the mean embedding across all 3 vectors.
+      4. Re-normalizes the mean vector with L2 norm to preserve unit length.
+
+    Returns:
+        JSON with 'template' containing the 512-d float list on HTTP 200,
+        or 400/500 error payload on extraction/validation failure.
+    """
     data = request.json
     if not data or "images" not in data:
         return jsonify({"error": "Missing 'images' field"}), 400
@@ -182,7 +261,14 @@ def enroll():
 
 @app.route("/extract", methods=["POST"])
 def extract():
-    """Extracts embedding from a single image."""
+    """Extract a 512-d L2-normalized ArcFace embedding from a single image.
+
+    Expected JSON body:
+        {"image": "<base64_string>"}
+
+    Returns:
+        JSON with 'embedding' containing the 512-d float list on HTTP 200.
+    """
     data = request.json
     if not data or "image" not in data:
         return jsonify({"error": "Missing 'image' field"}), 400
@@ -199,7 +285,18 @@ def extract():
 
 @app.route("/recognize", methods=["POST"])
 def recognize():
-    """Performs 1:N recognition against provided candidates."""
+    """Perform 1:N face identification with single-frame liveness gating.
+
+    Pipeline:
+      1. Decodes base64 RGB image.
+      2. Assesses presentation-attack liveness via MiniFASNet. Rejects if
+         spoof is detected (HTTP 400) or fails closed if runtime errors occur
+         (HTTP 503).
+      3. Extracts 512-d primary face embedding via RetinaFace + ArcFace.
+      4. Compares query embedding against all candidate templates via cosine
+         distance.
+      5. Returns match if best_distance <= threshold, else unknown.
+    """
     data = request.json
     if not data or "image" not in data or "candidates" not in data:
         return jsonify({"error": "Missing 'image' or 'candidates' field"}), 400
@@ -292,7 +389,33 @@ def recognize():
 
 @app.route("/recognize-sequence", methods=["POST"])
 def recognize_sequence():
-    """Gate recognition on a short, ordered sequence of RGB camera frames."""
+    """Gate 1:N face recognition on a temporal sequence of RGB frames.
+
+    Designed for kiosk and mobile check-in flows where presentation attacks
+    (screens, paper printouts, video replays) must be detected before
+    running ArcFace recognition.
+
+    Expected JSON body:
+        {
+            "frames": ["<b64_frame_1>", "<b64_frame_2>", ...],
+            "captured_at_ms": [1000, 1500, 2000, ...],
+            "candidates": [{"id": ..., "template": [...]}, ...],
+            "threshold": 0.60  # optional, default 0.60
+        }
+
+    Sequence validation rules:
+      - 3 to 7 frames required.
+      - Exactly one millisecond timestamp per frame.
+      - Timestamps must be strictly monotonically increasing.
+      - Sequence duration (last - first) must span 300ms to 3000ms.
+
+    Liveness gating:
+      - Every unique frame is evaluated with MiniFASNet.
+      - Duplicate frames (detected via SHA-256 byte hashing) are ignored.
+      - Requires at least ceil(N * SEQUENCE_MIN_LIVE_RATIO) live frames.
+      - If passed, selects the temporally central live frame for ArcFace
+        embedding extraction and 1:N candidate matching.
+    """
     started = time.perf_counter()
     data = request.json
     if not data or "frames" not in data or "candidates" not in data:
@@ -390,6 +513,7 @@ def recognize_sequence():
                 )
 
             decoded_frames.append(image)
+            # Detect frozen video or duplicate camera frames via SHA-256 digest
             frame_hash = hashlib.sha256(image.tobytes()).digest()
             if frame_hash in frame_hashes:
                 frame_result = {"index": index, "result": "duplicate"}
@@ -453,6 +577,7 @@ def recognize_sequence():
                     503,
                 )
 
+        # Enforce minimum live ratio across the sequence (e.g. >= 80% live)
         required_live = math.ceil(len(frames) * SEQUENCE_MIN_LIVE_RATIO)
         passed = len(live_indices) >= required_live
         if not passed:
@@ -478,9 +603,9 @@ def recognize_sequence():
                 400,
             )
 
-        # Use the temporally central passing frame so recognition sees a normal
-        # camera frame; ArcFace extraction and candidate matching stay
-        # unchanged.
+        # Select the temporally central live frame so recognition uses a stable
+        # frontal frame, avoiding transitional edges from the start/end of the
+        # sequence. ArcFace extraction and 1:N candidate matching then proceed.
         center = (len(frames) - 1) / 2
         recognition_index = min(
             live_indices, key=lambda idx: abs(idx - center)
