@@ -18,9 +18,17 @@ from .workforce_intelligence import workforce_intelligence
 
 
 class HRTools:
+    """Dispatcher for deterministic HR Copilot reads after validation.
+
+    Attendance, leave/regularization, and workforce metrics call typed
+    services. Generic lookups use ``execute_plan``, which rebuilds SQL
+    from the server plan rather than executing caller-supplied SQL.
+    """
+
     def execute_attendance_intelligence(
         self, *, metric, scope, user, filters, employee_id=None
     ):
+        """Execute attendance domain metrics under manager scope."""
         return attendance_intelligence.execute(
             metric=metric,
             scope=scope,
@@ -32,6 +40,7 @@ class HRTools:
     def execute_leave_regularization_intelligence(
         self, *, metric, scope, user, filters, employee_id=None
     ):
+        """Execute leave and regularization metrics under manager scope."""
         return leave_regularization_intelligence.execute(
             metric=metric,
             scope=scope,
@@ -43,6 +52,7 @@ class HRTools:
     def execute_workforce_intelligence(
         self, *, metric, scope, user, filters, employee_id=None
     ):
+        """Execute organizational workforce metrics under manager scope."""
         return workforce_intelligence.execute(
             metric=metric,
             scope=scope,
@@ -52,6 +62,7 @@ class HRTools:
         )
 
     def get_employee_profile(self, *, employee_id, scope, user=None):
+        """Retrieve scoped employee profile data with authorization checks."""
         resolution = employee_resolver.resolve_employee(
             user=user, employee_id=employee_id
         )
@@ -105,6 +116,7 @@ class HRTools:
         execute_query_fn=execute_query,
         validate_sql_fn=validate_sql,
     ):
+        """Build, validate, and execute SQL plan, returning serialized rows."""
         sql, params = build_sql(plan)
         validate_sql_fn(sql, plan)
         columns, rows = execute_query_fn(sql, params, plan)

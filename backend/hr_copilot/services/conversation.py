@@ -20,6 +20,7 @@ FOLLOW_UP_REFERENCE = re.compile(
 
 
 def load_context(user, conversation_id):
+    """Retrieve stored conversation context dictionary for a user session."""
     if not conversation_id:
         return {}
     record = (
@@ -33,10 +34,12 @@ def load_context(user, conversation_id):
 
 
 def append_message(user, conversation_id, role, content, metadata=None):
-    (
-        'Persist a chat turn server-side so route changes and reloads can '
-        'restore it.'
-    )
+    """Persist a conversation message turn server-side with atomic locking.
+
+    Locks the context record via select_for_update() within an atomic
+    transaction, appends the message turn, and bounds the stored history
+    to the most recent 200 messages to prevent unbounded JSON growth.
+    """
     if not conversation_id:
         return
     with transaction.atomic():
@@ -72,6 +75,7 @@ def append_message(user, conversation_id, role, content, metadata=None):
 
 
 def load_messages(user, conversation_id):
+    """Load the ordered list of messages for a specific conversation."""
     if not conversation_id:
         return []
     record = (
@@ -88,6 +92,7 @@ def load_messages(user, conversation_id):
 def update_action_message(
     user, conversation_id, action_id, status, content=None
 ):
+    """Update the status and content of a pending action message in-place."""
     if not conversation_id:
         return
     with transaction.atomic():
@@ -216,6 +221,12 @@ def apply_context(question, intent, context):
 
 
 def save_context(user, conversation_id, plan, data=None):
+    """Extract and persist active referents from query plans and result rows.
+
+    Captures current employee identity, dates, section/subsection, and
+    request IDs into CopilotConversationContext to support subsequent
+    follow-up queries without extra LLM roundtrips.
+    """
     if not conversation_id:
         return
     try:

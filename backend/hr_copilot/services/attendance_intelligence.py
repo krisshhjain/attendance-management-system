@@ -87,6 +87,7 @@ class AttendanceIntelligence:
         return list(get_effective_attendance_events(employee, target_date))
 
     def _state(self, employee, target_date):
+        """Determine attendance state from events, records, and leave."""
         events = self._events(employee, target_date)
         attendance = Attendance.objects.filter(
             employee=employee, date=target_date
@@ -128,6 +129,7 @@ class AttendanceIntelligence:
     def missing_checkins(
         self, *, user, scope, target_date, target_employee_id=None
     ):
+        """Identify active employees lacking check-ins on a working date."""
         if not is_working_day(target_date):
             day = get_day_classification(target_date)
             return self._base(
@@ -173,6 +175,7 @@ class AttendanceIntelligence:
     def late_employees(
         self, *, user, scope, target_date, target_employee_id=None
     ):
+        """Identify employees whose check-in exceeded shift grace period."""
         if not is_working_day(target_date):
             return self._base(
                 "late_employees",
@@ -222,6 +225,7 @@ class AttendanceIntelligence:
     def working_hours(
         self, *, user, scope, start, end, target_employee_id=None
     ):
+        """Calculate total and daily completed hours for an employee."""
         employee_id = target_employee_id
         if employee_id is None:
             employee_id = getattr(getattr(user, "employee", None), "id", None)
@@ -276,6 +280,7 @@ class AttendanceIntelligence:
     def incomplete_explanation(
         self, *, user, scope, target_date, target_employee_id=None
     ):
+        """Explain reasons why an attendance record is marked incomplete."""
         employee_id = target_employee_id or getattr(
             getattr(user, "employee", None), "id", None
         )
@@ -357,6 +362,7 @@ class AttendanceIntelligence:
     def absence_streaks(
         self, *, user, scope, start, end, target_employee_id=None
     ):
+        """Detect streaks of consecutive absent working days (>= 2 days)."""
         rows = []
         for employee in self._employees(user, scope, target_employee_id, end):
             streak_start = None
@@ -406,6 +412,7 @@ class AttendanceIntelligence:
         )
 
     def summary(self, *, user, scope, start, end, target_employee_id=None):
+        """Aggregate daily attendance counts across the specified range."""
         rows = []
         dates = []
         current = start
@@ -471,6 +478,7 @@ class AttendanceIntelligence:
     def period_comparison(
         self, *, user, scope, end_date, target_employee_id=None
     ):
+        """Compare current period attendance totals against previous period."""
         current_start = end_date - timedelta(days=end_date.weekday())
         current_end = current_start + timedelta(days=6)
         previous_start = current_start - timedelta(days=7)
@@ -521,6 +529,7 @@ class AttendanceIntelligence:
         }
 
     def execute(self, *, metric, scope, user, filters, employee_id=None):
+        """Route attendance intelligence request to the target metric tool."""
         if metric not in METRICS:
             raise CopilotError(
                 "unsupported_metric",

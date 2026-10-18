@@ -34,7 +34,11 @@ def _is_find_employee_query(text: str) -> bool:
 
 
 class IntentNormalizer:
-    """Normalizes LLM intent output to backend-compatible format."""
+    """Map LLM intent JSON onto backend source, tool, and read/write flags.
+
+    ``unsupported_write_intents`` fail closed. Intent-to-source mapping is
+    deterministic so the model cannot pick arbitrary tables or tools.
+    """
 
     def __init__(self):
         self.unsupported_write_intents = {
