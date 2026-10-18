@@ -94,6 +94,8 @@ def calculate_employee_leave_balances(employee, year=None):
                     Decimal("0.0"),
                 )
                 unused_prev = max(Decimal("0.0"), prev_entitlement - prev_used)
+                # Carry only the unused prior entitlement, capped by this
+                # policy's configured carry-forward limit.
                 carried_forward = min(unused_prev, max_carry_forward)
 
         # Approved used for current year

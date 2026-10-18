@@ -35,6 +35,8 @@ def calculate_working_duration(events, now=None, end_at=None):
                 working_duration += event.timestamp - open_check_in
             open_check_in = None
 
+    # Count an unfinished interval only through this evaluation time; callers
+    # can cap ``now`` at the attendance date boundary with ``end_at``.
     if open_check_in is not None and now >= open_check_in:
         working_duration += now - open_check_in
 

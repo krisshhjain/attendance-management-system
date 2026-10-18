@@ -80,6 +80,8 @@ def validate_attendance_geofence(latitude, longitude, accuracy):
 
         locations = list(OfficeLocation.objects.filter(is_active=True))
     except Exception:
+        # An unavailable office-location query follows the same fallback path
+        # as an empty active-location table below.
         locations = []
 
     if locations:

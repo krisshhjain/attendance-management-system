@@ -163,6 +163,8 @@ def _request_values(request):
 
 
 def _sanitize_json(value, depth=0):
+    # Bound nested metadata and redact matching mapping keys before storing it;
+    # arbitrary string values are checked separately by ``_sanitize_string``.
     if depth >= MAX_DEPTH:
         return "[TRUNCATED]"
     if value is None or isinstance(value, (bool, int, float)):

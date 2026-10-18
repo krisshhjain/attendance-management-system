@@ -78,6 +78,8 @@ def _recognize_payload(image_data, candidates, threshold, captured_at_ms=None):
         'single-image callers.'
     )
     if isinstance(image_data, (list, tuple)):
+        # Attendance frame sequences use the liveness endpoint; the scalar
+        # branch below remains available to legacy single-image callers.
         if not 3 <= len(image_data) <= 7:
             raise FaceExtractionError(
                 "A facial attendance check requires 3 to 7 camera frames."

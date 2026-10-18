@@ -143,6 +143,8 @@ def queue_deduplicated_notification_after_commit(
                 [user.email], email_subject, email_body
             )
 
+    # Defer both the in-app record and optional email enqueue until the
+    # surrounding database transaction commits successfully.
     transaction.on_commit(publish)
 
 
@@ -185,6 +187,8 @@ def queue_notification_after_commit(
                 email_body,
             )
 
+    # Defer both the in-app record and optional email enqueue until the
+    # surrounding database transaction commits successfully.
     transaction.on_commit(publish)
 
 

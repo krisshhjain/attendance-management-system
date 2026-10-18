@@ -25,6 +25,8 @@ class Command(BaseCommand):
                 '--confirm to proceed.'
             )
 
+        # Lock the account rows before changing credentials and employee flags
+        # within this atomic bulk operation.
         users = list(User.objects.select_for_update().order_by("pk"))
         employees = {
             employee.user_id: employee
