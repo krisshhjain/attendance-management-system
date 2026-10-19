@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import LeaveType, LeavePolicy, LeaveRequest
+
+from .models import LeavePolicy, LeaveRequest, LeaveType
 
 
 @admin.register(LeaveType)
@@ -11,13 +12,27 @@ class LeaveTypeAdmin(admin.ModelAdmin):
 
 @admin.register(LeavePolicy)
 class LeavePolicyAdmin(admin.ModelAdmin):
-    list_display = ("employee_type", "leave_type", "annual_entitlement", "effective_from", "is_active")
+    list_display = (
+        "employee_type",
+        "leave_type",
+        "annual_entitlement",
+        "effective_from",
+        "is_active",
+    )
     search_fields = ("employee_type", "leave_type__name")
     list_filter = ("employee_type", "is_active")
 
 
 @admin.register(LeaveRequest)
 class LeaveRequestAdmin(admin.ModelAdmin):
-    list_display = ("employee", "leave_type", "start_date", "end_date", "duration_days", "status", "submitted_at")
+    list_display = (
+        "employee",
+        "leave_type",
+        "start_date",
+        "end_date",
+        "duration_days",
+        "status",
+        "submitted_at",
+    )
     search_fields = ("employee__user__email", "leave_type__name", "reason")
     list_filter = ("status", "leave_type", "day_type")

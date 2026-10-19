@@ -30,9 +30,9 @@ class ChangePasswordSerializer(serializers.Serializer):
         user = self.context["request"].user
 
         if not user.check_password(attrs["current_password"]):
-            raise serializers.ValidationError({
-                "current_password": "Current password is incorrect."
-            })
+            raise serializers.ValidationError(
+                {"current_password": "Current password is incorrect."}
+            )
 
         password_validation.validate_password(
             attrs["new_password"],
@@ -52,7 +52,15 @@ class UserProfileSerializer(serializers.Serializer):
     email = serializers.EmailField()
     is_staff = serializers.BooleanField()
     is_superuser = serializers.BooleanField()
+    is_system_admin = serializers.BooleanField()
     must_change_password = serializers.SerializerMethodField()
+    app_access = serializers.SerializerMethodField()
+
+    def get_app_access(self, obj):
+        try:
+            return obj.employee.app_access
+        except Exception:
+            return {"dashboard": True, "attendance": True, "leave": True}
 
     def get_must_change_password(self, obj):
         """

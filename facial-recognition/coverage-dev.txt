@@ -1,0 +1,2 @@
+# Development-only coverage tooling; production requirements.lock is unchanged.
+coverage==7.16.1

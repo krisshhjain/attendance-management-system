@@ -1,3 +1,17 @@
+/**
+ * lib/date.js — Display formatting utilities for dates, times, and durations.
+ *
+ * All functions return a dash (“—”) for missing/falsy input rather than
+ * throwing, so they are safe to call on optional API fields.
+ * Locale formatting uses `undefined` as the locale argument, which inherits
+ * the browser's default locale — the output is not guaranteed to be consistent
+ * across environments.
+ */
+
+/**
+ * Formats an ISO date-time string or Date-constructible value as a locale time
+ * string (e.g. "09:30 AM").
+ */
 export function formatTime(value) {
   if (!value) return "—";
   const date = parse(value);
@@ -20,6 +34,15 @@ export function formatDate(value) {
   });
 }
 
+/**
+ * Formats a duration value from the backend into a human-readable "Xh Ym" string.
+ *
+ * The backend may return durations in three different formats:
+ *  1. HH:MM:SS[.ffffff] (Django DurationField default for < 1 day)
+ *  2. "N day(s), HH:MM:SS[.ffffff]" (Django DurationField when ≥ 1 day)
+ *  3. A plain numeric string representing total seconds (legacy format)
+ * All three are handled; any unrecognised format returns "—".
+ */
 export function formatDuration(value) {
   if (!value) return "—";
 
@@ -29,6 +52,17 @@ export function formatDuration(value) {
     if (hms) {
       const hours = Number(hms[1]);
       const minutes = Number(hms[2]);
+      return `${hours}h ${minutes}m`;
+    }
+
+    const djangoDuration = /^(?:(\d+)\s+days?,\s*)?(\d{1,2}):(\d{2}):(\d{2})(?:\.\d+)?$/.exec(
+      value,
+    );
+
+    if (djangoDuration) {
+      const days = Number(djangoDuration[1] || 0);
+      const hours = days * 24 + Number(djangoDuration[2]);
+      const minutes = Number(djangoDuration[3]);
       return `${hours}h ${minutes}m`;
     }
 
@@ -46,6 +80,10 @@ export function formatDuration(value) {
   return "—";
 }
 
+/**
+ * Returns a time-of-day greeting string based on the local hour.
+ * Boundaries: morning < 12, afternoon 12–16, evening ≥ 17.
+ */
 export function greeting(date = new Date()) {
   const hour = date.getHours();
   if (hour < 12) return "Good morning";

@@ -1,6 +1,7 @@
 from datetime import date
+
 from django.core.management.base import BaseCommand
-from leave_management.models import LeaveType, LeavePolicy
+from leave_management.models import LeavePolicy, LeaveType
 
 
 class Command(BaseCommand):
@@ -30,7 +31,8 @@ class Command(BaseCommand):
             {
                 "name": "Earned Leave",
                 "code": "EARNED",
-                "description": "Privilege/Earned leave accrued through continuous service",
+                "description":
+                "Privilege/Earned leave accrued through continuous service",
                 "is_paid": True,
                 "allow_half_day": False,
                 "min_notice_days": 2,
@@ -38,7 +40,8 @@ class Command(BaseCommand):
             {
                 "name": "Privileged Leave",
                 "code": "PRIVILEGED",
-                "description": "Special privileged leave for extended vacations or events",
+                "description":
+                "Special privileged leave for extended vacations or events",
                 "is_paid": True,
                 "allow_half_day": False,
                 "min_notice_days": 3,
@@ -46,7 +49,8 @@ class Command(BaseCommand):
             {
                 "name": "Unpaid Leave",
                 "code": "UNPAID",
-                "description": "Leave without pay when paid balances are exhausted",
+                "description":
+                "Leave without pay when paid balances are exhausted",
                 "is_paid": False,
                 "allow_half_day": True,
                 "min_notice_days": 0,
@@ -54,7 +58,8 @@ class Command(BaseCommand):
             {
                 "name": "Optional Holiday",
                 "code": "OPTIONAL_HOLIDAY",
-                "description": "Restricted/Optional holiday from company holiday list",
+                "description":
+                "Restricted/Optional holiday from company holiday list",
                 "is_paid": True,
                 "allow_half_day": False,
                 "min_notice_days": 1,
@@ -69,7 +74,9 @@ class Command(BaseCommand):
             )
             created_types[item["code"]] = lt
             if created:
-                self.stdout.write(self.style.SUCCESS(f"  + Created LeaveType: {lt.name}"))
+                self.stdout.write(
+                    self.style.SUCCESS(f"  + Created LeaveType: {lt.name}")
+                )
             else:
                 self.stdout.write(f"  - LeaveType already exists: {lt.name}")
 
@@ -78,22 +85,76 @@ class Command(BaseCommand):
 
         policies_data = [
             # PERMANENT
-            {"employee_type": "PERMANENT", "code": "CASUAL", "annual_entitlement": 12.0, "allow_carry_forward": True, "max_carry_forward": 5.0},
-            {"employee_type": "PERMANENT", "code": "SICK", "annual_entitlement": 10.0, "requires_document": True},
-            {"employee_type": "PERMANENT", "code": "EARNED", "annual_entitlement": 15.0, "allow_carry_forward": True, "max_carry_forward": 10.0, "min_notice_days": 2},
-            {"employee_type": "PERMANENT", "code": "PRIVILEGED", "annual_entitlement": 10.0, "min_notice_days": 3},
-            {"employee_type": "PERMANENT", "code": "UNPAID", "annual_entitlement": 30.0},
-            {"employee_type": "PERMANENT", "code": "OPTIONAL_HOLIDAY", "annual_entitlement": 2.0, "min_notice_days": 1},
-
+            {
+                "employee_type": "PERMANENT",
+                "code": "CASUAL",
+                "annual_entitlement": 12.0,
+                "allow_carry_forward": True,
+                "max_carry_forward": 5.0,
+            },
+            {
+                "employee_type": "PERMANENT",
+                "code": "SICK",
+                "annual_entitlement": 10.0,
+                "requires_document": True,
+            },
+            {
+                "employee_type": "PERMANENT",
+                "code": "EARNED",
+                "annual_entitlement": 15.0,
+                "allow_carry_forward": True,
+                "max_carry_forward": 10.0,
+                "min_notice_days": 2,
+            },
+            {
+                "employee_type": "PERMANENT",
+                "code": "PRIVILEGED",
+                "annual_entitlement": 10.0,
+                "min_notice_days": 3,
+            },
+            {
+                "employee_type": "PERMANENT",
+                "code": "UNPAID",
+                "annual_entitlement": 30.0,
+            },
+            {
+                "employee_type": "PERMANENT",
+                "code": "OPTIONAL_HOLIDAY",
+                "annual_entitlement": 2.0,
+                "min_notice_days": 1,
+            },
             # CONTRACT
-            {"employee_type": "CONTRACT", "code": "CASUAL", "annual_entitlement": 6.0},
-            {"employee_type": "CONTRACT", "code": "SICK", "annual_entitlement": 5.0},
-            {"employee_type": "CONTRACT", "code": "UNPAID", "annual_entitlement": 15.0},
-
+            {
+                "employee_type": "CONTRACT",
+                "code": "CASUAL",
+                "annual_entitlement": 6.0,
+            },
+            {
+                "employee_type": "CONTRACT",
+                "code": "SICK",
+                "annual_entitlement": 5.0,
+            },
+            {
+                "employee_type": "CONTRACT",
+                "code": "UNPAID",
+                "annual_entitlement": 15.0,
+            },
             # INTERN
-            {"employee_type": "INTERN", "code": "CASUAL", "annual_entitlement": 2.0},
-            {"employee_type": "INTERN", "code": "SICK", "annual_entitlement": 2.0},
-            {"employee_type": "INTERN", "code": "UNPAID", "annual_entitlement": 10.0},
+            {
+                "employee_type": "INTERN",
+                "code": "CASUAL",
+                "annual_entitlement": 2.0,
+            },
+            {
+                "employee_type": "INTERN",
+                "code": "SICK",
+                "annual_entitlement": 2.0,
+            },
+            {
+                "employee_type": "INTERN",
+                "code": "UNPAID",
+                "annual_entitlement": 10.0,
+            },
         ]
 
         for item in policies_data:
@@ -107,7 +168,9 @@ class Command(BaseCommand):
                 effective_from=effective_date,
                 defaults={
                     "annual_entitlement": item.get("annual_entitlement", 0.0),
-                    "allow_carry_forward": item.get("allow_carry_forward", False),
+                    "allow_carry_forward": item.get(
+                        "allow_carry_forward", False
+                    ),
                     "max_carry_forward": item.get("max_carry_forward", 0.0),
                     "min_notice_days": item.get("min_notice_days", 0),
                     "requires_document": item.get("requires_document", False),
@@ -115,6 +178,15 @@ class Command(BaseCommand):
                 },
             )
             if created:
-                self.stdout.write(self.style.SUCCESS(f"  + Created Policy: {item['employee_type']} - {lt.name} ({item.get('annual_entitlement')} days)"))
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"  + Created Policy: {item['employee_type']} - "
+                        f"{lt.name} ({item.get('annual_entitlement')} days"
+                        f")"
+                    ))
 
-        self.stdout.write(self.style.SUCCESS("Leave management seeding completed successfully."))
+        self.stdout.write(
+            self.style.SUCCESS(
+                "Leave management seeding completed successfully."
+            )
+        )

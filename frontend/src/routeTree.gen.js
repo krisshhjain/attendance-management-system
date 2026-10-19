@@ -4,10 +4,18 @@ import { Route as AttendanceRouteImport } from './routes/attendance.jsx'
 import { Route as DashboardRouteImport } from './routes/dashboard.jsx'
 import { Route as LoginRouteImport } from './routes/login.jsx'
 import { Route as AdminLoginRouteImport } from './routes/admin-login.jsx'
+import { Route as SystemAdminLoginRouteImport } from './routes/systemadmin-login.jsx'
+import { Route as HRCopilotRouteImport } from './routes/hr-copilot.jsx'
 import { Route as SettingsRouteImport } from './routes/settings.jsx'
 import { Route as LeaveRouteImport } from './routes/leave.jsx'
 import { Route as AdministrationRouteImport } from './routes/administration.jsx'
+import { Route as AdministrationRegularizationIdRouteImport } from './routes/administration.regularization.$id.jsx'
 import { Route as EmployeesRouteImport } from './routes/employees.jsx'
+import { Route as MyTeamRouteImport } from './routes/my-team.jsx'
+import { Route as RegularizationRouteImport } from './routes/regularization.jsx'
+import { Route as AdminRegularizationRouteImport } from './routes/admin-regularization.jsx'
+import { Route as SystemLogsRouteImport } from './routes/system-logs.jsx'
+import { Route as KioskRouteImport } from './routes/kiosk.jsx'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -39,6 +47,18 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
   getParentRoute: () => rootRouteImport,
 })
 
+const SystemAdminLoginRoute = SystemAdminLoginRouteImport.update({
+  id: '/systemadmin-login',
+  path: '/systemadmin-login',
+  getParentRoute: () => rootRouteImport,
+})
+
+const HRCopilotRoute = HRCopilotRouteImport.update({
+  id: '/hr-copilot',
+  path: '/hr-copilot',
+  getParentRoute: () => rootRouteImport,
+})
+
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -57,9 +77,45 @@ const AdministrationRoute = AdministrationRouteImport.update({
   getParentRoute: () => rootRouteImport,
 })
 
+const AdministrationRegularizationIdRoute = AdministrationRegularizationIdRouteImport.update({
+  id: '/administration/regularization/$id',
+  path: '/administration/regularization/$id',
+  getParentRoute: () => rootRouteImport,
+})
+
 const EmployeesRoute = EmployeesRouteImport.update({
   id: '/employees',
   path: '/employees',
+  getParentRoute: () => rootRouteImport,
+})
+
+const MyTeamRoute = MyTeamRouteImport.update({
+  id: '/my-team',
+  path: '/my-team',
+  getParentRoute: () => rootRouteImport,
+})
+
+const RegularizationRoute = RegularizationRouteImport.update({
+  id: '/regularization',
+  path: '/regularization',
+  getParentRoute: () => rootRouteImport,
+})
+
+const AdminRegularizationRoute = AdminRegularizationRouteImport.update({
+  id: '/admin-regularization',
+  path: '/admin-regularization',
+  getParentRoute: () => rootRouteImport,
+})
+
+const SystemLogsRoute = SystemLogsRouteImport.update({
+  id: '/system-logs',
+  path: '/system-logs',
+  getParentRoute: () => rootRouteImport,
+})
+
+const KioskRoute = KioskRouteImport.update({
+  id: '/kiosk',
+  path: '/kiosk',
   getParentRoute: () => rootRouteImport,
 })
 
@@ -69,10 +125,18 @@ const rootRouteChildren = {
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   AdminLoginRoute: AdminLoginRoute,
+  SystemAdminLoginRoute: SystemAdminLoginRoute,
+  HRCopilotRoute: HRCopilotRoute,
   SettingsRoute: SettingsRoute,
   LeaveRoute: LeaveRoute,
   AdministrationRoute: AdministrationRoute,
+  AdministrationRegularizationIdRoute: AdministrationRegularizationIdRoute,
   EmployeesRoute: EmployeesRoute,
+  MyTeamRoute: MyTeamRoute,
+  RegularizationRoute: RegularizationRoute,
+  AdminRegularizationRoute: AdminRegularizationRoute,
+  SystemLogsRoute: SystemLogsRoute,
+  KioskRoute: KioskRoute,
 }
 
 export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)

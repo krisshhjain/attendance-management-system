@@ -1,0 +1,11 @@
+# Development/test inputs for requirements-dev.lock. Install from the hashed
+# lock file; see DEPENDENCIES.md for lock regeneration.
+-r requirements.txt
+iniconfig==2.3.0
+colorama==0.4.6; sys_platform == "win32"
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.21.0
+pytest==9.0.3
+coverage==7.16.1
+tomli==2.4.1; python_version < "3.11"

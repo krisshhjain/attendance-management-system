@@ -1,0 +1,126 @@
+"""Deterministic HR data tools used after intent and scope validation."""
+
+from employees.models import Employee
+
+from .attendance_intelligence import attendance_intelligence
+from .employee_resolver import employee_resolver
+from .leave_regularization_intelligence import (
+    leave_regularization_intelligence,
+)
+from .pipeline import (
+    CopilotError,
+    build_sql,
+    execute_query,
+    serialize_result,
+    validate_sql,
+)
+from .workforce_intelligence import workforce_intelligence
+
+
+class HRTools:
+    """Dispatcher for deterministic HR Copilot reads after validation.
+
+    Attendance, leave/regularization, and workforce metrics call typed
+    services. Generic lookups use ``execute_plan``, which rebuilds SQL
+    from the server plan rather than executing caller-supplied SQL.
+    """
+
+    def execute_attendance_intelligence(
+        self, *, metric, scope, user, filters, employee_id=None
+    ):
+        """Execute attendance domain metrics under manager scope."""
+        return attendance_intelligence.execute(
+            metric=metric,
+            scope=scope,
+            user=user,
+            filters=filters,
+            employee_id=employee_id,
+        )
+
+    def execute_leave_regularization_intelligence(
+        self, *, metric, scope, user, filters, employee_id=None
+    ):
+        """Execute leave and regularization metrics under manager scope."""
+        return leave_regularization_intelligence.execute(
+            metric=metric,
+            scope=scope,
+            user=user,
+            filters=filters,
+            employee_id=employee_id,
+        )
+
+    def execute_workforce_intelligence(
+        self, *, metric, scope, user, filters, employee_id=None
+    ):
+        """Execute organizational workforce metrics under manager scope."""
+        return workforce_intelligence.execute(
+            metric=metric,
+            scope=scope,
+            user=user,
+            filters=filters,
+            employee_id=employee_id,
+        )
+
+    def get_employee_profile(self, *, employee_id, scope, user=None):
+        """Retrieve scoped employee profile data with authorization checks."""
+        resolution = employee_resolver.resolve_employee(
+            user=user, employee_id=employee_id
+        )
+        if resolution.status != "resolved":
+            raise CopilotError(
+                "employee_not_found", "No employee matched that identity."
+            )
+        employee = (
+            Employee.objects.select_related("user")
+            .filter(pk=resolution.employee_id)
+            .first()
+        )
+        if employee is None:
+            raise CopilotError(
+                "employee_not_found", "No employee matched that identity."
+            )
+        if user:
+            from accounts.scope_service import employee_in_manager_scope
+
+            if not employee_in_manager_scope(user, employee):
+                raise CopilotError(
+                    "scope_denied",
+                    "You do not have access to that employee.",
+                    403,
+                )
+        return [
+            {
+                "id": employee.id,
+                "name": " ".join(
+                    part
+                    for part in [
+                        employee.user.first_name,
+                        employee.user.last_name,
+                    ]
+                    if part
+                ).strip(),
+                "email": employee.user.email,
+                "department": employee.department,
+                "employment_type": employee.employment_type,
+                "section": employee.section,
+                "subsection": employee.subsection,
+                "is_active": employee.is_active,
+                "date_joined": employee.date_joined.isoformat(),
+            }
+        ]
+
+    def execute_plan(
+        self,
+        plan,
+        *,
+        execute_query_fn=execute_query,
+        validate_sql_fn=validate_sql,
+    ):
+        """Build, validate, and execute SQL plan, returning serialized rows."""
+        sql, params = build_sql(plan)
+        validate_sql_fn(sql, plan)
+        columns, rows = execute_query_fn(sql, params, plan)
+        return sql, serialize_result(columns, rows), columns
+
+
+hr_tools = HRTools()

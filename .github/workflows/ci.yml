@@ -1,40 +1,113 @@
 name: CI
 
 on:
+  push:
+    branches: [ "main", "develop" ]
   pull_request:
     branches: [ "main", "develop" ]
+
+permissions:
+  contents: read
 
 jobs:
   backend-checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: attendance_db
+          POSTGRES_USER: attendance_user
+          POSTGRES_PASSWORD: ci-only-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U attendance_user -d attendance_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: '3.10'
+        cache: 'pip'
+        cache-dependency-path: |
+          backend/requirements.txt
+          backend/requirements-dev.txt
+          backend/requirements.lock
+          backend/requirements-dev.lock
+          backend/pip-bootstrap.lock
 
     - name: Install dependencies
+      env:
+        PIP_ONLY_BINARY: ":all:"
       run: |
-        python -m pip install --upgrade pip
-        pip install -r backend/requirements.txt
+        python -m pip install --no-cache-dir --require-hashes -r backend/pip-bootstrap.lock
+        python -m pip install --require-hashes -r backend/requirements-dev.lock
+        python -m pip check
     
-    # Optional: Run tests if available
-    # - name: Run tests
-    #   run: |
-    #     cd backend
-    #     python manage.py test
+    - name: Django system checks
+      working-directory: backend
+      env:
+        DJANGO_SECRET_KEY: ci-only-not-a-deployment-secret
+        POSTGRES_DB: attendance_db
+        POSTGRES_USER: attendance_user
+        POSTGRES_PASSWORD: ci-only-test-password
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: 5432
+      run: python manage.py check
+
+    - name: Run Django tests with coverage
+      working-directory: backend
+      env:
+        DJANGO_SECRET_KEY: ci-only-not-a-deployment-secret
+        POSTGRES_DB: attendance_db
+        POSTGRES_USER: attendance_user
+        POSTGRES_PASSWORD: ci-only-test-password
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: 5432
+      run: |
+        python -m coverage run --rcfile=.coveragerc manage.py test --keepdb --noinput
+
+    - name: Run isolated HR Copilot pytest coverage
+      working-directory: backend
+      env:
+        DJANGO_SECRET_KEY: ci-only-not-a-deployment-secret
+        POSTGRES_DB: test_attendance_db
+        POSTGRES_USER: attendance_user
+        POSTGRES_PASSWORD: ci-only-test-password
+        POSTGRES_HOST: 127.0.0.1
+        POSTGRES_PORT: 5432
+      run: |
+        python -m coverage run --append --rcfile=.coveragerc ../.github/scripts/run_backend_pytest.py hr_copilot/test_api.py hr_copilot/test_llm.py hr_copilot/test_providers.py hr_copilot/test_intent_normalization.py
+        python -m coverage report --rcfile=.coveragerc
+        python -m coverage xml --rcfile=.coveragerc -o coverage.xml
+        python -m coverage json --rcfile=.coveragerc -o coverage.json
+        python ../.github/scripts/normalize_coverage_xml.py coverage.xml backend
+
+    - name: Upload backend coverage
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: backend-coverage
+        path: |
+          backend/coverage.xml
+          backend/coverage.json
+        if-no-files-found: error
 
   frontend-build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
 
     - name: Verify Node version
       run: node -v
@@ -42,9 +115,115 @@ jobs:
     - name: Install dependencies
       run: |
         cd frontend
-        npm ci
+        npm ci --ignore-scripts --no-audit --no-fund
+
+    - name: Run frontend lint
+      working-directory: frontend
+      run: npm run lint
+
+    - name: Check frontend formatting
+      working-directory: frontend
+      run: npx prettier --check .
 
     - name: Build frontend
       run: |
         cd frontend
         npm run build
+
+    - name: Run frontend tests with coverage
+      working-directory: frontend
+      run: npm run test:coverage
+
+    - name: Upload frontend coverage
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: frontend-coverage
+        path: |
+          frontend/coverage/lcov.info
+          frontend/coverage/coverage-final.json
+          frontend/coverage/index.html
+          frontend/coverage/lcov-report/
+        if-no-files-found: error
+
+  facial-recognition-checks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        lfs: true
+
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: |
+          facial-recognition/requirements.lock
+          facial-recognition/coverage.lock
+
+    - name: Install dependencies
+      working-directory: facial-recognition
+      env:
+        PIP_ONLY_BINARY: ":all:"
+      run: |
+        python -m pip install --require-hashes -r requirements.lock
+        python -m pip install --require-hashes -r coverage.lock
+        python -m pip check
+
+    - name: Verify facial-recognition models load
+      working-directory: facial-recognition
+      run: python -c "from liveness import _load_runtime; _load_runtime()"
+
+    - name: Run facial-recognition tests with coverage
+      working-directory: facial-recognition
+      run: |
+        python -m coverage run --rcfile=.coveragerc -m unittest test_service test_face_utils test_regeneration_utilities test_operational_utilities
+        python -m coverage report --rcfile=.coveragerc
+        python -m coverage xml --rcfile=.coveragerc -o coverage.xml
+        python -m coverage json --rcfile=.coveragerc -o coverage.json
+        python ../.github/scripts/normalize_coverage_xml.py coverage.xml facial-recognition
+
+    - name: Upload facial-recognition coverage
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: facial-recognition-coverage
+        path: |
+          facial-recognition/coverage.xml
+          facial-recognition/coverage.json
+        if-no-files-found: error
+
+  sonarqube:
+    runs-on: ubuntu-latest
+    needs: [backend-checks, frontend-build, facial-recognition-checks]
+    if: ${{ vars.SONAR_PROJECT_KEY != '' && vars.SONAR_ORGANIZATION != '' }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+
+    - name: Download backend coverage
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: backend-coverage
+        path: coverage-reports/backend
+
+    - name: Download frontend coverage
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: frontend-coverage
+        path: coverage-reports/frontend
+
+    - name: Download facial-recognition coverage
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: facial-recognition-coverage
+        path: coverage-reports/facial-recognition
+
+    - name: SonarQube Cloud analysis
+      uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+        args: >-
+          -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+          -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}

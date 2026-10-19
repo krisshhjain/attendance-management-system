@@ -1,26 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, getToday } from "../lib/attendance.js";
-import { ApiError } from "../lib/api.js";
+import { getCurrentCoordinates } from "../lib/location.js";
 import { formatDuration, formatTime } from "../lib/date.js";
+import { useFeedback } from "../feedback/useFeedback.js";
 import { StatusBadge } from "./StatusBadge.jsx";
 import { ErrorState, LoadingState } from "./States.jsx";
-import {
-  Card,
-  CardHeader,
-  CardContent,
-  Typography,
-  Box,
-  Button,
-  Divider,
-} from "@mui/material";
+import { Card, CardHeader, CardContent, Typography, Box, Button, Divider } from "@mui/material";
 
 export function AttendanceCard({ onChanged }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [actionError, setActionError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [pendingText, setPendingText] = useState("");
   const inFlight = useRef(false);
+  const { success, notifyError } = useFeedback();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,22 +37,27 @@ export function AttendanceCard({ onChanged }) {
       if (inFlight.current) return;
       inFlight.current = true;
       setPending(true);
-      setActionError(null);
+      setPendingText("Getting your location...");
+
       try {
-        if (action === "in") await checkIn();
-        else await checkOut();
+        const coords = await getCurrentCoordinates();
+        setPendingText(action === "in" ? "Checking in..." : "Checking out...");
+        await (action === "in" ? checkIn(coords) : checkOut(coords));
+        success(action === "in" ? "Attendance marked successfully." : "Checked out successfully.");
         setData(await getToday());
         onChanged?.();
       } catch (error) {
-        setActionError(
-          error instanceof ApiError ? error.message : "Something went wrong. Please try again.",
-        );
+        notifyError(error, {
+          title: "Attendance unavailable",
+          fallback: "Attendance could not be updated.",
+        });
       } finally {
         inFlight.current = false;
         setPending(false);
+        setPendingText("");
       }
     },
-    [onChanged],
+    [notifyError, onChanged, success],
   );
 
   const status = data?.status;
@@ -91,7 +90,15 @@ export function AttendanceCard({ onChanged }) {
       <CardHeader
         sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 2 }}
         title={
-          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+            }}
+          >
             <Box>
               <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: "-0.5px" }}>
                 Today&rsquo;s Attendance
@@ -110,7 +117,14 @@ export function AttendanceCard({ onChanged }) {
         }
       />
 
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: "1px", bgcolor: "divider" }}>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" },
+          gap: "1px",
+          bgcolor: "divider",
+        }}
+      >
         <Metric label="Check-in" value={formatTime(data.check_in)} />
         <Metric label="Check-out" value={formatTime(data.check_out)} />
         <Metric label="Working hours" value={formatDuration(data.working_duration)} />
@@ -118,40 +132,33 @@ export function AttendanceCard({ onChanged }) {
       <Divider />
 
       <CardContent sx={{ pt: 3 }}>
-        {actionError && (
-          <Box
-            sx={{
-              mb: 2,
-              p: 1.5,
-              borderRadius: 1,
-              border: "1px solid",
-              borderColor: "error.light",
-              bgcolor: "error.50",
-              backgroundColor: "rgba(211, 47, 47, 0.05)",
-              color: "error.main",
-              typography: "body2",
-            }}
-          >
-            {actionError}
-          </Box>
-        )}
-
         {status === "NOT_CHECKED_IN" && (
           <ActionButton
             pending={pending}
             label="Check in"
-            pendingLabel="Checking in..."
+            pendingLabel={pendingText || "Checking in..."}
             onClick={() => runAction("in")}
           />
         )}
 
         {status === "CHECKED_IN" && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1, alignItems: { sm: "flex-start" } }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+              alignItems: { sm: "flex-start" },
+            }}
+          >
             <ActionButton
               pending={pending}
               disabled={secondsRemaining > 0}
-              label={secondsRemaining > 0 ? `Check out (${Math.floor(secondsRemaining / 60)}:${(secondsRemaining % 60).toString().padStart(2, "0")} resting period)` : "Check out"}
-              pendingLabel="Checking out..."
+              label={
+                secondsRemaining > 0
+                  ? `Check out (${Math.floor(secondsRemaining / 60)}:${(secondsRemaining % 60).toString().padStart(2, "0")} resting period)`
+                  : "Check out"
+              }
+              pendingLabel={pendingText || "Checking out..."}
               onClick={() => runAction("out")}
             />
             {secondsRemaining > 0 && (
@@ -175,7 +182,15 @@ export function AttendanceCard({ onChanged }) {
 function Metric({ label, value }) {
   return (
     <Box sx={{ bgcolor: "background.paper", px: 3, py: 2.5 }}>
-      <Typography variant="caption" sx={{ fontWeight: 500, textTransform: "uppercase", letterSpacing: 1, color: "text.secondary" }}>
+      <Typography
+        variant="caption"
+        sx={{
+          fontWeight: 500,
+          textTransform: "uppercase",
+          letterSpacing: 1,
+          color: "text.secondary",
+        }}
+      >
         {label}
       </Typography>
       <Typography variant="h5" sx={{ mt: 1, fontWeight: 600, fontFamily: "monospace" }}>
@@ -198,7 +213,7 @@ function ActionButton({ pending, disabled, label, pendingLabel, onClick }) {
         fontWeight: 600,
         textTransform: "uppercase",
         letterSpacing: 1,
-        width: { sm: "auto" }
+        width: { sm: "auto" },
       }}
     >
       {pending ? pendingLabel : label}

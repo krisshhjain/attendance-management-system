@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useAuth } from "../lib/auth.jsx";
+import { useAuth } from "../lib/useAuth.js";
 import { Box, CircularProgress } from "@mui/material";
 
 export const Route = createFileRoute("/")({
@@ -18,7 +18,15 @@ function Index() {
   }, [ready, isAuthenticated, navigate]);
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", bgcolor: "background.default" }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: "background.default",
+      }}
+    >
       <CircularProgress />
     </Box>
   );

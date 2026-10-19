@@ -1,11 +1,32 @@
+/**
+ * lib/api.js — Centralised HTTP client for the Dailoqa AMS backend.
+ *
+ * Responsibilities:
+ *  • Manages JWT access/refresh tokens in localStorage (tokenStore).
+ *  • Provides apiRequest(), the single function all feature modules use to call
+ *    the backend; it handles auth headers, token refresh, and error normalisation.
+ *  • Exports typed domain functions (fetchLeaveTypes, checkIn, etc.) that
+ *    correspond 1:1 with backend REST endpoints.
+ *
+ * Token storage key names are intentionally opaque ("sa_*") to avoid collision
+ * with other apps that might share the same origin in development.
+ */
 export const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? 
-  (import.meta.env.DEV ? "http://127.0.0.1:8000/api" : "/api")
+  import.meta.env?.VITE_API_BASE_URL ??
+  (import.meta.env?.DEV ? "http://127.0.0.1:8000/api" : "/api")
 ).replace(/\/$/, "");
 
 const ACCESS_KEY = "sa_access_token";
 const REFRESH_KEY = "sa_refresh_token";
 
+/**
+ * In-memory token store backed by localStorage.
+ *
+ * Getter/setter properties are used instead of plain reads so that the token is
+ * always read fresh from localStorage on each access — this prevents a stale
+ * closure value being used after a token refresh completes in another tab or
+ * component. SSR guard (window === undefined) is included for future use.
+ */
 export const tokenStore = {
   get access() {
     if (typeof window === "undefined") return null;
@@ -27,6 +48,11 @@ export const tokenStore = {
   },
 };
 
+/**
+ * ApiError extends Error with an HTTP status code so callers can distinguish
+ * network failures (status 0) from server errors (4xx, 5xx) without parsing
+ * the error message string.
+ */
 export class ApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -36,7 +62,8 @@ export class ApiError extends Error {
 
 function friendlyMessage(status, payload) {
   if (payload && typeof payload === "object") {
-    const candidate = payload.detail ?? payload.message ?? payload.error ?? payload.non_field_errors;
+    const candidate =
+      payload.detail ?? payload.message ?? payload.error ?? payload.non_field_errors;
     if (typeof candidate === "string") return candidate;
     if (Array.isArray(candidate) && typeof candidate[0] === "string") return candidate[0];
 
@@ -54,6 +81,15 @@ function friendlyMessage(status, payload) {
   return "Something went wrong. Please try again.";
 }
 
+/**
+ * isRefreshing and refreshSubscribers implement a token-refresh queue.
+ *
+ * When a 401 response triggers a token refresh, subsequent concurrent requests
+ * that also receive 401 must not each independently try to refresh — that would
+ * cause a race where only one refresh succeeds and the others invalidate the
+ * token. Instead, they subscribe to the in-progress refresh and retry with the
+ * new token once it resolves.
+ */
 let isRefreshing = false;
 let refreshSubscribers = [];
 
@@ -91,11 +127,25 @@ async function refreshAccessToken() {
   return null;
 }
 
-export async function apiRequest(
-  path,
-  options = {},
-  isRetry = false,
-) {
+/**
+ * Core HTTP request function used by all domain API calls.
+ *
+ * @param {string} path - API path relative to API_BASE_URL (e.g. "/auth/me/").
+ * @param {{ method?, body?, auth? }} options
+ *   - auth: when false, the Authorization header is omitted (used for login).
+ * @param {boolean} isRetry - Internal flag; set to true on the one automatic
+ *   retry after a successful token refresh to prevent infinite retry loops.
+ *
+ * On a 401 response the function attempts a token refresh exactly once. If
+ * the refresh fails, tokenStore is cleared and an error is thrown — the
+ * AuthProvider's session-restore effect will detect the missing token on the
+ * next page load and redirect to /login.
+ *
+ * Auth-endpoint paths (containing "/auth/") are excluded from the refresh
+ * logic because a 401 from /auth/login/ means bad credentials, not an expired
+ * session token.
+ */
+export async function apiRequest(path, options = {}, isRetry = false) {
   const { method = "GET", body, auth = true } = options;
 
   const headers = { "Content-Type": "application/json" };
@@ -251,9 +301,12 @@ export async function deleteLeavePolicy(id) {
 }
 
 // File upload for leave attachments
+// uploadFile uses fetch directly (not apiRequest) because multipart/form-data
+// requires the browser to set the Content-Type boundary automatically; setting
+// it manually via apiRequest's JSON header would break the multipart body.
 export async function uploadFile(file) {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append("file", file);
 
   const response = await fetch(`${API_BASE_URL}/leave/upload/`, {
     method: "POST",
@@ -265,11 +318,162 @@ export async function uploadFile(file) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new ApiError(
-      errorData.error || "Failed to upload file",
-      response.status
-    );
+    throw new ApiError(errorData.error || "Failed to upload file", response.status);
   }
 
   return response.json();
+}
+
+// Shift Management API functions
+export async function fetchMyShift() {
+  return apiRequest("/attendance/my-shift/");
+}
+
+export async function fetchActiveShifts() {
+  return apiRequest("/attendance/shifts/");
+}
+
+export async function selfAssignShift(shiftId) {
+  return apiRequest("/attendance/my-shift/assign/", {
+    method: "POST",
+    body: { shift_id: shiftId },
+  });
+}
+
+// Admin Shift Configuration API functions
+export async function fetchAdminShiftConfiguration() {
+  return apiRequest("/attendance/admin/shift/configure/");
+}
+
+export async function configureEmploymentTypeShifts(employmentType, shifts) {
+  return apiRequest("/attendance/admin/shift/configure/", {
+    method: "POST",
+    body: {
+      employment_type: employmentType,
+      shifts: shifts,
+    },
+  });
+}
+
+export async function fetchAllShifts() {
+  return apiRequest("/attendance/admin/shift/all/");
+}
+
+// Regularization APIs
+export async function fetchMyRegularizationRequests(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return apiRequest(`/attendance/regularization/list/${query ? `?${query}` : ""}`);
+}
+
+export async function fetchMyRegularizationQuota() {
+  return apiRequest("/attendance/regularization/quota/");
+}
+
+export async function createRegularizationRequest(data) {
+  return apiRequest("/attendance/regularization/", { method: "POST", body: data });
+}
+
+export async function fetchAdminRegularizationRequests(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return apiRequest(`/attendance/admin/regularization/${query ? `?${query}` : ""}`);
+}
+
+export async function fetchAdminRegularizationQuotaPolicy() {
+  return apiRequest("/attendance/admin/regularization/quota-settings/");
+}
+
+export async function updateAdminRegularizationQuotaPolicy(data) {
+  return apiRequest("/attendance/admin/regularization/quota-settings/", {
+    method: "PATCH",
+    body: data,
+  });
+}
+
+export async function fetchAdminRegularizationRequest(id) {
+  return apiRequest(`/attendance/admin/regularization/${id}/`);
+}
+
+export async function approveRegularizationRequest(id, data) {
+  return apiRequest(`/attendance/admin/regularization/${id}/approve/`, {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function rejectRegularizationRequest(id, rejectionReason) {
+  return apiRequest(`/attendance/admin/regularization/${id}/reject/`, {
+    method: "POST",
+    body: { rejection_reason: rejectionReason },
+  });
+}
+
+export async function fetchOfficeLocations() {
+  return apiRequest("/attendance/locations/");
+}
+
+export async function createOfficeLocation(data) {
+  return apiRequest("/attendance/locations/", { method: "POST", body: data });
+}
+
+export async function updateOfficeLocation(id, data) {
+  return apiRequest(`/attendance/locations/${id}/`, { method: "PUT", body: data });
+}
+
+export async function deleteOfficeLocation(id) {
+  return apiRequest(`/attendance/locations/${id}/`, { method: "DELETE" });
+}
+
+export async function fetchActiveHolidays() {
+  return apiRequest("/holidays/");
+}
+
+export async function fetchAdminHolidays() {
+  return apiRequest("/holidays/admin/");
+}
+
+export async function createHoliday(data) {
+  return apiRequest("/holidays/admin/", { method: "POST", body: data });
+}
+
+export async function updateHoliday(id, data) {
+  return apiRequest(`/holidays/admin/${id}/`, { method: "PATCH", body: data });
+}
+
+export async function fetchSystemLogs(params = {}) {
+  const query = new URLSearchParams(
+    Object.entries(params).filter(
+      ([, value]) => value !== undefined && value !== "" && value !== null,
+    ),
+  ).toString();
+  return apiRequest(`/system-logs/${query ? `?${query}` : ""}`);
+}
+
+export async function fetchSystemLogActors(search = "") {
+  const query = search ? `?${new URLSearchParams({ search }).toString()}` : "";
+  return apiRequest(`/system-logs/actors/${query}`);
+}
+
+export async function downloadSystemLogs(params = {}, format = "csv") {
+  const query = new URLSearchParams({ ...params, export_format: format }).toString();
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}/system-logs/export/?${query}`, {
+      headers: { Authorization: `Bearer ${tokenStore.access}` },
+    });
+  } catch {
+    throw new ApiError("Unable to reach the server. Check your connection and try again.", 0);
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 401) tokenStore.clear();
+    throw new ApiError(friendlyMessage(response.status, payload), response.status);
+  }
+  return {
+    blob: await response.blob(),
+    filename: format === "xlsx" ? "system-logs.xlsx" : "system-logs.csv",
+  };
+}
+
+export async function deleteSystemLogs(untilDate) {
+  return apiRequest(`/system-logs/?until_date=${untilDate}`, { method: "DELETE" });
 }

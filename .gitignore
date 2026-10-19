@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Git worktrees
+.worktrees/
+
 # Python virtual environments
 venv/
 .venv/
@@ -47,14 +50,35 @@ pnpm-debug.log*
 dist/
 build/
 coverage/
+**/.coverage
+**/.coverage.*
+**/coverage.xml
+coverage-reports/
 
 # React/Vite environment files
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
 
-# Facial recognition
-facial-recognition/
+# Facial-recognition local data and generated artifacts. Keep source and test
+# scripts visible to Git so they can be reviewed and intentionally tracked.
+facial-recognition/diagnostic_output/
+facial-recognition/embeddings/
+facial-recognition/embeddings_backup_*/
+facial-recognition/person*/
+facial-recognition/benchmark_results*.json
+facial-recognition/scoped_regeneration_report_*.json
+facial-recognition/vggface2_open_set_results.json
+
+# Keep additional downloaded model assets out of Git; the runtime models and
+# license below are explicitly tracked through the exceptions.
+facial-recognition/models/*
+!facial-recognition/models/mini_fas_best_model_quantized.onnx
+!facial-recognition/models/mini_fas_detector_quantized.onnx
+!facial-recognition/models/LICENSE
+
+# Locally transferred language model weights
+models/**/*.gguf
 
 # Jupyter
 .ipynb_checkpoints/
@@ -63,3 +87,17 @@ facial-recognition/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+backend/*.sql
+# Archived facial-recognition research scripts:
+# Retrieve from https://github.com/krisshhjain/dailoqa-facial-recognition-research-archive
+facial-recognition/check_duplicate_indices.py
+facial-recognition/diagnose.py
+facial-recognition/findimage.py
+facial-recognition/evaluate_recognition.py
+facial-recognition/margin_analysis.py
+facial-recognition/threshold_sweep.py
+facial-recognition/vggface2_benchmark.py
+facial-recognition/vggface2_benchmark_fixed.py
+facial-recognition/vggface2_enrollment_experiment.py
+facial-recognition/vggface2_open_set.py

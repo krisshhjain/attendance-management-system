@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import LeaveType, LeavePolicy, LeaveRequest
+
+from .models import LeavePolicy, LeaveRequest, LeaveType
 
 
 class LeaveTypeSerializer(serializers.ModelSerializer):
@@ -23,8 +24,12 @@ class LeaveTypeSerializer(serializers.ModelSerializer):
 
 
 class LeavePolicySerializer(serializers.ModelSerializer):
-    leave_type_name = serializers.CharField(source="leave_type.name", read_only=True)
-    leave_type_code = serializers.CharField(source="leave_type.code", read_only=True)
+    leave_type_name = serializers.CharField(
+        source="leave_type.name", read_only=True
+    )
+    leave_type_code = serializers.CharField(
+        source="leave_type.code", read_only=True
+    )
 
     class Meta:
         model = LeavePolicy
@@ -51,15 +56,31 @@ class LeavePolicySerializer(serializers.ModelSerializer):
 
 
 class LeaveRequestSerializer(serializers.ModelSerializer):
-    employee_id = serializers.IntegerField(source="employee.id", read_only=True)
-    employee_email = serializers.CharField(source="employee.user.email", read_only=True)
+    employee_id = serializers.IntegerField(
+        source="employee.id", read_only=True
+    )
+    employee_email = serializers.CharField(
+        source="employee.user.email", read_only=True
+    )
     employee_name = serializers.SerializerMethodField()
-    employee_department = serializers.CharField(source="employee.department", read_only=True)
-    employment_type = serializers.CharField(source="employee.employment_type", read_only=True)
-    leave_type_name = serializers.CharField(source="leave_type.name", read_only=True)
-    leave_type_code = serializers.CharField(source="leave_type.code", read_only=True)
-    reviewed_by_email = serializers.CharField(source="reviewed_by.email", read_only=True, default=None)
-    cancelled_by_email = serializers.CharField(source="cancelled_by.email", read_only=True, default=None)
+    employee_department = serializers.CharField(
+        source="employee.department", read_only=True
+    )
+    employment_type = serializers.CharField(
+        source="employee.employment_type", read_only=True
+    )
+    leave_type_name = serializers.CharField(
+        source="leave_type.name", read_only=True
+    )
+    leave_type_code = serializers.CharField(
+        source="leave_type.code", read_only=True
+    )
+    reviewed_by_email = serializers.CharField(
+        source="reviewed_by.email", read_only=True, default=None
+    )
+    cancelled_by_email = serializers.CharField(
+        source="cancelled_by.email", read_only=True, default=None
+    )
 
     class Meta:
         model = LeaveRequest

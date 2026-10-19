@@ -3,22 +3,41 @@ from rest_framework import serializers
 
 from .models import Employee
 
-
 User = get_user_model()
 
 
 class EmployeeCreateSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
-    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
-    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
-    department = serializers.CharField(max_length=100)
+    first_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, default=""
+    )
+    last_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, default=""
+    )
+    department = serializers.CharField(
+        max_length=100, allow_blank=False, trim_whitespace=True
+    )
     employment_type = serializers.ChoiceField(
         choices=Employee.EMPLOYMENT_TYPES
     )
     date_joined = serializers.DateField()
-    section = serializers.CharField(max_length=10, required=False, allow_blank=True, default="")
-    subsection = serializers.CharField(max_length=10, required=False, allow_blank=True, default="")
+    section = serializers.CharField(
+        max_length=10, required=False, allow_blank=True, default=""
+    )
+    subsection = serializers.CharField(
+        max_length=10, required=False, allow_blank=True, default=""
+    )
+
+    def validate(self, attrs):
+        if (
+            attrs.get("employment_type") == "INTERN"
+            and not attrs.get("section", "").strip()
+        ):
+            raise serializers.ValidationError(
+                {"section": "Section is required for Intern employees."}
+            )
+        return attrs
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -48,14 +67,45 @@ class EmployeeCreateSerializer(serializers.Serializer):
 
 
 class EmployeeUpdateSerializer(serializers.Serializer):
-    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
-    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
-    department = serializers.CharField(max_length=100, required=False)
-    employment_type = serializers.ChoiceField(choices=Employee.EMPLOYMENT_TYPES, required=False)
+    first_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True
+    )
+    last_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True
+    )
+    department = serializers.CharField(
+        max_length=100, required=False, allow_blank=False, trim_whitespace=True
+    )
+    employment_type = serializers.ChoiceField(
+        choices=Employee.EMPLOYMENT_TYPES, required=False
+    )
     date_joined = serializers.DateField(required=False)
     is_active = serializers.BooleanField(required=False)
-    section = serializers.CharField(max_length=10, required=False, allow_blank=True)
-    subsection = serializers.CharField(max_length=10, required=False, allow_blank=True)
+    section = serializers.CharField(
+        max_length=10, required=False, allow_blank=True
+    )
+    subsection = serializers.CharField(
+        max_length=10, required=False, allow_blank=True
+    )
+    app_access = serializers.DictField(
+        child=serializers.BooleanField(), required=False
+    )
+
+    def validate(self, attrs):
+        employment_type = attrs.get(
+            "employment_type", self.instance.employment_type
+        )
+        department = attrs.get("department", self.instance.department)
+        section = attrs.get("section", self.instance.section)
+        if not department or not department.strip():
+            raise serializers.ValidationError(
+                {"department": "Department is required."}
+            )
+        if employment_type == "INTERN" and not section.strip():
+            raise serializers.ValidationError(
+                {"section": "Section is required for Intern employees."}
+            )
+        return attrs
 
     def update(self, instance, validated_data):
         # Update User fields
@@ -77,6 +127,8 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email")
     first_name = serializers.CharField(source="user.first_name")
     last_name = serializers.CharField(source="user.last_name")
+    has_face_enrolled = serializers.SerializerMethodField()
+    shift = serializers.SerializerMethodField()
 
     class Meta:
         model = Employee
@@ -91,4 +143,32 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             "is_active",
             "section",
             "subsection",
+            "app_access",
+            "has_face_enrolled",
+            "shift",
         ]
+
+    def get_has_face_enrolled(self, obj):
+        try:
+            return obj.face_profile.status == "ACTIVE"
+        except Employee.face_profile.RelatedObjectDoesNotExist:
+            return False
+
+    def get_shift(self, obj):
+        if obj.shift is None:
+            return None
+        return {
+            "id": obj.shift.id,
+            "code": obj.shift.code,
+            "name": obj.shift.name,
+            "start_time": (
+                obj.shift.start_time.strftime("%H:%M")
+                if hasattr(obj.shift.start_time, "strftime")
+                else str(obj.shift.start_time)
+            ),
+            "end_time": (
+                obj.shift.end_time.strftime("%H:%M")
+                if hasattr(obj.shift.end_time, "strftime")
+                else str(obj.shift.end_time)
+            ),
+        }

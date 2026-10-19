@@ -10,15 +10,18 @@ import {
   Box,
   Typography,
   CircularProgress,
-  Alert
+  Alert,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api.js";
+import { useFeedback } from "../../feedback/useFeedback.js";
+import { getErrorMessage } from "../../feedback/errorMessage.js";
 
 const EMPLOYMENT_TYPES = ["PERMANENT", "CONTRACT", "INTERN"];
 
 export function AddEmployeeDialog({ open, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { success } = useFeedback();
 
   const [formData, setFormData] = useState({
     first_name: "",
@@ -60,18 +63,25 @@ export function AddEmployeeDialog({ open, onClose, onSuccess }) {
         date_joined: new Date().toISOString().split("T")[0],
       });
 
+      success("Employee created successfully.");
       onSuccess();
     } catch (err) {
-      setError(err.message || "Failed to create employee.");
+      setError(getErrorMessage(err, "Failed to create employee."));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={!loading ? onClose : undefined} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}>
+    <Dialog
+      open={open}
+      onClose={!loading ? onClose : undefined}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
+    >
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" fontWeight={600} letterSpacing="-0.5px">
+        <Typography component="span" variant="h6" fontWeight={600} letterSpacing="-0.5px">
           Add New Employee
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -81,11 +91,16 @@ export function AddEmployeeDialog({ open, onClose, onSuccess }) {
 
       <form onSubmit={handleSubmit}>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2.5, py: 2 }}>
-          {error && <Alert severity="error" sx={{ borderRadius: "8px" }}>{error}</Alert>}
+          {error && (
+            <Alert severity="error" sx={{ borderRadius: "8px" }}>
+              {error}
+            </Alert>
+          )}
 
           {/* Name row */}
           <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
             <TextField
+              required
               fullWidth
               label="First Name"
               name="first_name"
@@ -161,27 +176,30 @@ export function AddEmployeeDialog({ open, onClose, onSuccess }) {
             </TextField>
           </Box>
 
-          {/* Section + Subsection */}
-          <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
-            <TextField
-              fullWidth
-              label="Section"
-              name="section"
-              value={formData.section}
-              onChange={handleChange}
-              size="small"
-              placeholder="e.g. A"
-            />
-            <TextField
-              fullWidth
-              label="Subsection"
-              name="subsection"
-              value={formData.subsection}
-              onChange={handleChange}
-              size="small"
-              placeholder="e.g. A1"
-            />
-          </Box>
+          {/* Section + Subsection are organization fields for Interns only. */}
+          {formData.employment_type === "INTERN" && (
+            <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
+              <TextField
+                required
+                fullWidth
+                label="Section"
+                name="section"
+                value={formData.section}
+                onChange={handleChange}
+                size="small"
+                placeholder="e.g. A"
+              />
+              <TextField
+                fullWidth
+                label="Subsection"
+                name="subsection"
+                value={formData.subsection}
+                onChange={handleChange}
+                size="small"
+                placeholder="e.g. A1"
+              />
+            </Box>
+          )}
 
           <TextField
             required
@@ -194,10 +212,13 @@ export function AddEmployeeDialog({ open, onClose, onSuccess }) {
             size="small"
             InputLabelProps={{ shrink: true }}
           />
-
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, pt: 1 }}>
-          <Button onClick={onClose} disabled={loading} sx={{ textTransform: "none", fontWeight: 600 }}>
+          <Button
+            onClick={onClose}
+            disabled={loading}
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
             Cancel
           </Button>
           <Button

@@ -1,13 +1,40 @@
+/**
+ * routes/__root.jsx — TanStack Router root route.
+ *
+ * Responsibilities:
+ *  • Provides QueryClientProvider, AuthProvider, OrganizationScopeProvider, and
+ *    a secondary ThemeProvider to all child routes.
+ *  • Registers the global 404 (NotFoundComponent) and error boundary
+ *    (ErrorComponent) so every nested route benefits without any per-route setup.
+ *  • The route context must include `queryClient` (supplied by router.jsx) so
+ *    that route loaders can call ensureQueryData / prefetchQuery.
+ */
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
 import { AuthProvider } from "../lib/auth.jsx";
-import { Box, Typography, Button } from "@mui/material";
+import { OrganizationScopeProvider } from "../lib/organizationScope.jsx";
+import { Box, Typography, Button, CssBaseline, ThemeProvider, createTheme } from "@mui/material";
+import { useEffect } from "react";
 
+// Displayed when no route matches the current URL.
+// Uses a Link component (client-side navigation) to send the user home.
 function NotFoundComponent() {
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", bgcolor: "background.default", px: 2 }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: "background.default",
+        px: 2,
+      }}
+    >
       <Box sx={{ maxWidth: 400, textAlign: "center" }}>
-        <Typography variant="h1" sx={{ fontWeight: "bold", color: "text.primary", fontSize: "4rem" }}>
+        <Typography
+          variant="h1"
+          sx={{ fontWeight: "bold", color: "text.primary", fontSize: "4rem" }}
+        >
           404
         </Typography>
         <Typography variant="h6" sx={{ mt: 2, fontWeight: 600, color: "text.primary" }}>
@@ -26,12 +53,28 @@ function NotFoundComponent() {
   );
 }
 
+/**
+ * ErrorComponent is the root-level error boundary.
+ * `router.invalidate()` clears all route loader caches so a full re-fetch runs
+ * on the next render; `reset()` then re-mounts the subtree. Both are needed:
+ * calling only reset() may replay the same failed loader, and calling only
+ * invalidate() without reset() does not re-mount the component tree.
+ */
 function ErrorComponent({ error, reset }) {
   console.error(error);
   const router = useRouter();
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", bgcolor: "background.default", px: 2 }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: "background.default",
+        px: 2,
+      }}
+    >
       <Box sx={{ maxWidth: 400, textAlign: "center" }}>
         <Typography variant="h6" sx={{ fontWeight: 600, color: "text.primary" }}>
           This page didn't load
@@ -59,19 +102,283 @@ function ErrorComponent({ error, reset }) {
   );
 }
 
+/**
+ * ThemeProviderWrapper applies the MUI theme to all child routes.
+ *
+ * The application is permanently locked to `light` mode regardless of the
+ * user's OS preference. The value is written to localStorage and a
+ * `data-theme` attribute so any CSS that reads either will stay consistent.
+ * If dark-mode support is added later, `themeMode` should become reactive
+ * state driven by user preference rather than a constant.
+ */
+function ThemeProviderWrapper({ children }) {
+  // The application surfaces use a light design system. Keep the root theme
+  // aligned with those surfaces instead of inheriting a dark OS preference.
+  const themeMode = "light";
+
+  useEffect(() => {
+    localStorage.setItem("themeMode", themeMode);
+    document.documentElement.setAttribute("data-theme", themeMode);
+  }, [themeMode]);
+
+  const theme = createTheme({
+    palette: {
+      mode: themeMode,
+      primary: {
+        main: "#4f46e5", // indigo-600
+        light: "#818cf8", // indigo-400
+        dark: "#4338ca", // indigo-700
+        contrastText: "#ffffff",
+        ...(themeMode === "light" && {
+          50: "#eef2ff", // indigo-50 for light theme
+          100: "#e0e7ff", // indigo-100 for light theme
+        }),
+        ...(themeMode === "dark" && {
+          50: "rgba(99, 102, 241, 0.1)", // indigo with opacity for dark theme
+          100: "rgba(99, 102, 241, 0.2)", // indigo with opacity for dark theme
+        }),
+      },
+      success: {
+        main: "#10b981", // emerald-500
+        light: "#34d399", // emerald-400
+        dark: "#059669", // emerald-600
+        contrastText: "#ffffff",
+      },
+      warning: {
+        main: "#f59e0b", // amber-500
+        light: "#fbbf24", // amber-400
+        dark: "#d97706", // amber-600
+        contrastText: "#ffffff",
+      },
+      error: {
+        main: "#ef4444", // red-500
+        light: "#f87171", // red-400
+        dark: "#dc2626", // red-600
+        contrastText: "#ffffff",
+      },
+      info: {
+        main: "#3b82f6", // blue-500
+        light: "#60a5fa", // blue-400
+        dark: "#2563eb", // blue-600
+        contrastText: "#ffffff",
+      },
+      secondary: {
+        main: "#64748b", // slate-500
+        light: "#94a3b8", // slate-400
+        dark: "#475569", // slate-600
+        contrastText: "#ffffff",
+      },
+      background: {
+        default: themeMode === "dark" ? "#0f172a" : "#f8fafc", // slate-950 : slate-50
+        paper: themeMode === "dark" ? "#1e293b" : "#ffffff", // slate-800 : white
+      },
+      text: {
+        primary: themeMode === "dark" ? "#f1f5f9" : "#0f172a", // slate-100 : slate-900
+        secondary: themeMode === "dark" ? "#94a3b8" : "#64748b", // slate-400 : slate-500
+        disabled: themeMode === "dark" ? "#64748b" : "#cbd5e1", // slate-500 : slate-300
+      },
+      divider: themeMode === "dark" ? "#334155" : "#e2e8f0", // slate-700 : slate-200
+      action: {
+        hover: themeMode === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.04)",
+        hoverOpacity: 0.08,
+        selected: themeMode === "dark" ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.08)",
+        selectedOpacity: 0.16,
+        disabled: themeMode === "dark" ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.38)",
+        disabledBackground: themeMode === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)",
+        disabledOpacity: 0.38,
+        focus: themeMode === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)",
+      },
+    },
+    shape: {
+      borderRadius: 8,
+    },
+    typography: {
+      fontFamily:
+        '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica", "Arial", sans-serif',
+      fontSize: 14,
+      fontWeightLight: 300,
+      fontWeightRegular: 400,
+      fontWeightMedium: 500,
+      fontWeightBold: 700,
+      h1: { fontWeight: 700, fontSize: "2.5rem" },
+      h2: { fontWeight: 700, fontSize: "2rem" },
+      h3: { fontWeight: 700, fontSize: "1.75rem" },
+      h4: { fontWeight: 700, fontSize: "1.5rem" },
+      h5: { fontWeight: 700, fontSize: "1.25rem" },
+      h6: { fontWeight: 700, fontSize: "1rem" },
+      subtitle1: { fontWeight: 600, fontSize: "1rem" },
+      subtitle2: { fontWeight: 600, fontSize: "0.875rem" },
+      body1: { fontWeight: 400, fontSize: "0.875rem" },
+      body2: { fontWeight: 400, fontSize: "0.8125rem" },
+      button: { fontWeight: 600, fontSize: "0.875rem", textTransform: "none" },
+      caption: { fontWeight: 400, fontSize: "0.75rem" },
+      overline: {
+        fontWeight: 600,
+        fontSize: "0.625rem",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+      },
+    },
+    shadows: [
+      "none",
+      "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+      "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+      "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+      "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+      "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
+      "0 25px 50px -12px rgb(0 0 0 / 0.25)",
+      ...Array(18).fill("0 25px 50px -12px rgb(0 0 0 / 0.25)"),
+    ],
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          body: {
+            scrollbarColor: themeMode === "dark" ? "#475569 #1e293b" : "#cbd5e1 #f8fafc",
+            "&::-webkit-scrollbar": {
+              width: "8px",
+              height: "8px",
+            },
+            "&::-webkit-scrollbar-track": {
+              background: themeMode === "dark" ? "#1e293b" : "#f8fafc",
+            },
+            "&::-webkit-scrollbar-thumb": {
+              backgroundColor: themeMode === "dark" ? "#475569" : "#cbd5e1",
+              borderRadius: "4px",
+              "&:hover": {
+                backgroundColor: themeMode === "dark" ? "#64748b" : "#94a3b8",
+              },
+            },
+          },
+        },
+      },
+      MuiButton: {
+        styleOverrides: {
+          root: {
+            textTransform: "none",
+            fontWeight: 600,
+            borderRadius: 8,
+            boxShadow: "none",
+            "&:hover": {
+              boxShadow: "none",
+            },
+          },
+          contained: {
+            boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+            "&:hover": {
+              boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
+            },
+          },
+        },
+      },
+      MuiCard: {
+        styleOverrides: {
+          root: {
+            borderRadius: 12,
+            boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+          },
+        },
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            borderRadius: 12,
+            backgroundImage: "none",
+          },
+          elevation1: {
+            boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+          },
+          elevation2: {
+            boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+          },
+          elevation3: {
+            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+          },
+        },
+      },
+      MuiTextField: {
+        styleOverrides: {
+          root: {
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 8,
+            },
+          },
+        },
+      },
+      MuiChip: {
+        styleOverrides: {
+          root: {
+            fontWeight: 600,
+            borderRadius: 6,
+          },
+        },
+      },
+      MuiDrawer: {
+        styleOverrides: {
+          paper: {
+            borderRadius: 0,
+            backgroundImage: "none",
+          },
+        },
+      },
+      MuiDialog: {
+        styleOverrides: {
+          paper: {
+            borderRadius: 12,
+            backgroundImage: "none",
+          },
+        },
+      },
+      MuiAppBar: {
+        styleOverrides: {
+          root: {
+            backgroundImage: "none",
+            boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+          },
+        },
+      },
+    },
+  });
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      {children}
+    </ThemeProvider>
+  );
+}
+
+// Route context type parameter constrains the context shape expected by all
+// child routes. Any child route trying to access queryClient will get a type
+// error at build time if the context object does not contain that property.
 export const Route = createRootRouteWithContext()({
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
 
+/**
+ * RootComponent is the layout rendered for every route in the application.
+ *
+ * Provider nesting order is significant:
+ *  1. QueryClientProvider — must be outermost so AuthProvider can run queries
+ *     (e.g. /auth/me/) during its initialisation effect.
+ *  2. AuthProvider — depends on QueryClient; exposes login, logout, and user.
+ *  3. OrganizationScopeProvider — depends on auth (user determines allowed BRs).
+ *  4. ThemeProviderWrapper — purely visual; innermost so themes never affect
+ *     the data providers.
+ *  5. Outlet — renders the matched child route component.
+ */
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Outlet />
+        <OrganizationScopeProvider>
+          <ThemeProviderWrapper>
+            <Outlet />
+          </ThemeProviderWrapper>
+        </OrganizationScopeProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -11,11 +11,14 @@ import {
   Alert,
 } from "@mui/material";
 import { apiRequest } from "../../lib/api";
+import { useFeedback } from "../../feedback/useFeedback.js";
+import { getErrorMessage } from "../../feedback/errorMessage.js";
 
 export function ChangePasswordDialog({ open, employee, onClose, onSuccess }) {
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { success } = useFeedback();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -31,9 +34,10 @@ export function ChangePasswordDialog({ open, employee, onClose, onSuccess }) {
         method: "POST",
         body: { new_password: newPassword },
       });
+      success("Employee password reset successfully.");
       onSuccess();
     } catch (err) {
-      setError(err.message || "Failed to reset password");
+      setError(getErrorMessage(err, "Failed to reset password."));
     } finally {
       setLoading(false);
     }
@@ -45,23 +49,36 @@ export function ChangePasswordDialog({ open, employee, onClose, onSuccess }) {
     onClose();
   };
 
-  const displayName = employee ? [employee.first_name, employee.last_name].filter(Boolean).join(" ") || employee.email : "";
+  const displayName = employee
+    ? [employee.first_name, employee.last_name].filter(Boolean).join(" ") || employee.email
+    : "";
 
   return (
-    <Dialog open={open} onClose={loading ? undefined : handleClose} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}>
+    <Dialog
+      open={open}
+      onClose={loading ? undefined : handleClose}
+      maxWidth="xs"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: "16px", p: 1 } }}
+    >
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" fontWeight={600}>
+        <Typography component="span" variant="h6" fontWeight={600}>
           Reset Password
         </Typography>
       </DialogTitle>
       <form onSubmit={handleSubmit}>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <Typography variant="body2" color="text.secondary">
-            Set a new password for <strong>{displayName}</strong>. They will be able to log in with this new password immediately.
+            Set a new password for <strong>{displayName}</strong>. They will be able to log in with
+            this new password immediately.
           </Typography>
-          
-          {error && <Alert severity="error" sx={{ borderRadius: "8px" }}>{error}</Alert>}
-          
+
+          {error && (
+            <Alert severity="error" sx={{ borderRadius: "8px" }}>
+              {error}
+            </Alert>
+          )}
+
           <TextField
             label="New Password"
             type="password"
@@ -76,7 +93,11 @@ export function ChangePasswordDialog({ open, employee, onClose, onSuccess }) {
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={handleClose} disabled={loading} sx={{ textTransform: "none", fontWeight: 600 }}>
+          <Button
+            onClick={handleClose}
+            disabled={loading}
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
             Cancel
           </Button>
           <Button

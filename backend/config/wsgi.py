@@ -15,6 +15,6 @@ import os
 from django.core.wsgi import get_wsgi_application
 
 # Ensure project settings are loaded before initializing the WSGI application callable
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
 application = get_wsgi_application()

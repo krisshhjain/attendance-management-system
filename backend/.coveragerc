@@ -1,0 +1,27 @@
+[run]
+branch = True
+source = .
+relative_files = True
+omit =
+    */migrations/*
+    */test_*.py
+    */tests_*.py
+    */tests.py
+    *\test_*.py
+    *\tests_*.py
+    *\tests.py
+    */__pycache__/*
+    */.venv/*
+    */venv/*
+
+[report]
+omit =
+    */migrations/*
+    */test_*.py
+    */tests_*.py
+    */tests.py
+    *\test_*.py
+    *\tests_*.py
+    *\tests.py
+show_missing = True
+skip_covered = False
