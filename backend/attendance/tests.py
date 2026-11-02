@@ -1,42 +1,31 @@
 from datetime import date, datetime
 from datetime import time as datetime_time
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import requests
-from accounts.models import ManagerScope
-from attendance.face_service import (
-    FaceExtractionError,
-    FaceLivenessError,
-    _recognize_payload,
-    find_closest_match,
-    process_enrollment,
-)
-from attendance.geofence import (
-    GEOFENCE_RADIUS_METERS,
-    WORKPLACE_LATITUDE,
-    WORKPLACE_LONGITUDE,
-    calculate_haversine_distance,
-)
-from attendance.models import (
-    Attendance,
-    AttendanceCorrection,
-    AttendanceEvent,
-    OfficeLocation,
-    RegularizationQuotaPolicy,
-    RegularizationRequest,
-    Shift,
-    attendance_day_end,
-    calculate_working_duration,
-    get_effective_attendance_events,
-)
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from employees.models import Employee, FaceProfile
 from rest_framework import status
 from rest_framework.test import APITestCase
+
+from accounts.models import ManagerScope
+from attendance.face_service import (FaceExtractionError, FaceLivenessError,
+                                     _recognize_payload, find_closest_match,
+                                     process_enrollment)
+from attendance.geofence import (GEOFENCE_RADIUS_METERS, WORKPLACE_LATITUDE,
+                                 WORKPLACE_LONGITUDE,
+                                 calculate_haversine_distance)
+from attendance.models import (Attendance, AttendanceCorrection,
+                               AttendanceEvent, OfficeLocation,
+                               RegularizationQuotaPolicy,
+                               RegularizationRequest, Shift,
+                               attendance_day_end, calculate_working_duration,
+                               get_effective_attendance_events)
+from employees.models import Employee, FaceProfile
 
 User = get_user_model()
 ATTENDANCE_TEST_WORKDAY = date(2026, 10, 12)  # Monday
@@ -126,6 +115,69 @@ def camera_sequence_payload(**extra):
         "captured_at_ms": [index * 250 for index in range(5)],
         **extra,
     }
+
+
+def invalid_camera_sequence_payloads():
+    """Return malformed liveness payloads shared by attendance endpoints."""
+    valid_frames = [f"frame-{index}" for index in range(5)]
+    valid_timestamps = [index * 250 for index in range(5)]
+    return (
+        ("scalar frame string", {"frames": "base64-image"}),
+        ("empty frame array", {"frames": [], "captured_at_ms": []}),
+        ("one frame", {"frames": ["single-frame"], "captured_at_ms": [0]}),
+        (
+            "two frames",
+            {"frames": ["frame-0", "frame-1"], "captured_at_ms": [0, 250]},
+        ),
+        (
+            "eight frames",
+            {
+                "frames": [f"frame-{index}" for index in range(8)],
+                "captured_at_ms": [index * 250 for index in range(8)],
+            },
+        ),
+        (
+            "missing timestamps",
+            {"frames": valid_frames},
+        ),
+        (
+            "mismatched timestamp count",
+            {"frames": valid_frames, "captured_at_ms": [0, 250]},
+        ),
+        (
+            "dictionary frames",
+            {"frames": {"image": "frame"}, "captured_at_ms": valid_timestamps},
+        ),
+        (
+            "numeric scalar frames",
+            {"frames": 123, "captured_at_ms": valid_timestamps},
+        ),
+        (
+            "empty frame string",
+            {
+                "frames": ["frame-0", "frame-1", "", "frame-3", "frame-4"],
+                "captured_at_ms": valid_timestamps,
+            },
+        ),
+        (
+            "scalar timestamps",
+            {"frames": valid_frames, "captured_at_ms": "0,250,500,750,1000"},
+        ),
+        (
+            "nonnumeric timestamps",
+            {
+                "frames": valid_frames,
+                "captured_at_ms": [0, 250, "500", 750, 1000],
+            },
+        ),
+        (
+            "boolean timestamp",
+            {
+                "frames": valid_frames,
+                "captured_at_ms": [0, 250, True, 750, 1000],
+            },
+        ),
+    )
 
 
 class ManagerEmployeeAttendanceScopeTests(APITestCase):
@@ -285,6 +337,14 @@ class RegularizationWorkflowTests(APITestCase):
             date_joined=self.attendance_date - timedelta(days=30),
             is_active=True,
         )
+        self.shift = Shift.objects.create(
+            name="Regularization Historical Shift",
+            code="REG-HIST-SHIFT",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
         self.admin_user = User.objects.create_user(
             email="regularization.admin@example.com",
             password="password123",
@@ -315,12 +375,14 @@ class RegularizationWorkflowTests(APITestCase):
         )
         self.original_check_in_event = AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=self.check_in,
             event_type="CHECK_IN",
             source="MOBILE",
         )
         self.original_check_out_event = AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=self.check_out,
             event_type="CHECK_OUT",
             source="MOBILE",
@@ -513,6 +575,16 @@ class RegularizationWorkflowTests(APITestCase):
         self.check_out = timezone.make_aware(
             datetime.combine(self.attendance_date, datetime_time(17, 0))
         )
+        prior_check_in = timezone.make_aware(
+            datetime.combine(second_date, datetime_time(9, 0))
+        )
+        self.attendance.check_in = prior_check_in
+        self.attendance.check_out = None
+        self.attendance.status = "INCOMPLETE"
+        self.attendance.save(
+            update_fields=["check_in", "check_out", "status"]
+        )
+        self.original_check_out_event.delete()
         self.client.force_authenticate(user=self.employee_user)
         with (
             patch("attendance.views.timezone.localdate", return_value=anchor),
@@ -596,6 +668,28 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertEqual(
             RegularizationRequest.objects.get(id=request_id).status, "APPROVED"
         )
+        approved_request = RegularizationRequest.objects.get(pk=request_id)
+        historical_day = approved_request.days.get(
+            attendance_date=second_date
+        )
+        historical_checkout = (
+            historical_day.attendance_correction.attendance_events.get(
+                event_type="CHECK_OUT"
+            )
+        )
+        self.assertEqual(
+            historical_checkout.shift_id, self.shift.id
+        )
+        new_pair_day = approved_request.days.get(
+            attendance_date=self.attendance_date
+        )
+        self.assertEqual(
+            set(
+                new_pair_day.attendance_correction.attendance_events
+                .values_list("shift_id", flat=True)
+            ),
+            {None},
+        )
 
     def test_admin_approval_applies_final_times_and_audits_correction(self):
         self.client.force_authenticate(user=self.admin_user)
@@ -631,6 +725,74 @@ class RegularizationWorkflowTests(APITestCase):
                 self.request.attendance_correction.previous_data["check_in"]
             ),
             self.check_in,
+        )
+
+    def test_regularization_uses_original_interval_shift_after_reassignment(
+        self,
+    ):
+        replacement = Shift.objects.create(
+            name="Current replacement shift",
+            code="REG-CURRENT-SHIFT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+
+        self.request.approve(
+            self.admin_user,
+            approved_check_in=self.request.requested_check_in,
+            approved_check_out=self.request.requested_check_out,
+        )
+
+        correction_events = list(
+            self.request.attendance_correction.attendance_events.order_by(
+                "timestamp", "id"
+            )
+        )
+        self.assertEqual(len(correction_events), 2)
+        self.assertEqual(
+            {event.shift_id for event in correction_events}, {self.shift.id}
+        )
+
+    def test_regularization_does_not_invent_shift_without_historical_evidence(
+        self,
+    ):
+        target_date = self.attendance_date - timedelta(days=1)
+        current_shift = Shift.objects.create(
+            name="Current only shift",
+            code="REG-NO-HISTORY-SHIFT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = current_shift
+        self.employee.save(update_fields=["shift"])
+        corrected_in = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(9, 0))
+        )
+        corrected_out = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(17, 0))
+        )
+        request_row = RegularizationRequest.objects.create(
+            employee=self.employee,
+            attendance_date=target_date,
+            request_type="INCORRECT_ATTENDANCE",
+            requested_check_in=corrected_in,
+            requested_check_out=corrected_out,
+            reason="Historical times have no original shift evidence.",
+        )
+
+        correction = request_row.approve(
+            self.admin_user,
+            approved_check_in=corrected_in,
+            approved_check_out=corrected_out,
+        )
+
+        self.assertEqual(
+            set(
+                correction.attendance_events.values_list("shift_id", flat=True)
+            ),
+            {None},
         )
 
     def _approve_request(
@@ -1848,125 +2010,174 @@ class FaceVerifyViewTests(APITestCase):
         )
         self.url = reverse("verify-face")
 
-    @patch("attendance.face_service.requests.post")
-    def test_verify_known_employee(self, mock_post):
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "match",
-            "employee_id": self.employee.id,
-            "distance": 0.3,
+    def payload(self):
+        return {
+            "frames": [f"frame-{index}" for index in range(5)],
+            "captured_at_ms": [0, 250, 500, 750, 1000],
         }
-        mock_post.return_value = mock_response
 
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["employee_id"], self.employee.id)
-        self.assertEqual(response.data["first_name"], "Test")
+    @patch("attendance.views.verify_employee_face")
+    def test_anonymous_request_is_denied_before_face_verification(
+        self, verify
+    ):
+        response = self.client.post(self.url, self.payload(), format="json")
+        self.assertEqual(response.status_code, 401)
+        verify.assert_not_called()
 
-    @patch("attendance.face_service.requests.post")
-    def test_verify_unknown_identity(self, mock_post):
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "unknown",
-            "distance": 0.8,
-        }
-        mock_post.return_value = mock_response
+    @patch("attendance.views.verify_employee_face")
+    def test_user_without_employee_is_denied(self, verify):
+        user = User.objects.create_user(email="no-employee@example.com")
+        self.client.force_authenticate(user=user)
+        response = self.client.post(self.url, self.payload(), format="json")
+        self.assertEqual(response.status_code, 403)
+        verify.assert_not_called()
 
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
-        self.assertEqual(response.status_code, 404)
-        self.assertEqual(response.data["status"], "unknown")
-
-    @patch("attendance.face_service.requests.post")
-    def test_verify_no_face(self, mock_post):
-        mock_response = Mock()
-        mock_response.status_code = 400
-        mock_response.json.return_value = {"error": "No faces detected"}
-        mock_post.return_value = mock_response
-
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("No faces detected", response.data["error"])
-
-    @patch("attendance.face_service.requests.post")
-    def test_verify_multiple_faces(self, mock_post):
-        mock_response = Mock()
-        mock_response.status_code = 400
-        mock_response.json.return_value = {
-            "error": "Ambiguous multi-face image"
-        }
-        mock_post.return_value = mock_response
-
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("multi-face", response.data["error"])
-
-    @patch("attendance.face_service.requests.post")
-    def test_verify_invalid_employee_id(self, mock_post):
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "match",
-            "employee_id": 9999,
-            "distance": 0.2,
-        }
-        mock_post.return_value = mock_response
-
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
-        self.assertEqual(response.status_code, 404)
-
-    @patch("attendance.face_service.requests.post")
-    def test_verify_inactive_employee(self, mock_post):
+    @patch("attendance.views.verify_employee_face")
+    def test_inactive_employee_is_denied(self, verify):
         self.employee.is_active = False
-        self.employee.save()
+        self.employee.save(update_fields=["is_active"])
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(self.url, self.payload(), format="json")
+        self.assertEqual(response.status_code, 403)
+        verify.assert_not_called()
 
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
-        self.assertEqual(response.status_code, 404)
-        mock_post.assert_not_called()
+    @patch("attendance.views.verify_employee_face")
+    def test_attendance_app_access_is_enforced(self, verify):
+        self.employee.app_access = {"attendance": False}
+        self.employee.save(update_fields=["app_access"])
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(self.url, self.payload(), format="json")
+        self.assertEqual(response.status_code, 403)
+        verify.assert_not_called()
 
-    @patch("attendance.face_service.requests.post")
-    def test_verify_no_active_face_profile(self, mock_post):
-        self.profile.status = "INACTIVE"
-        self.profile.save()
-
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
-        self.assertEqual(response.status_code, 404)
-        mock_post.assert_not_called()
-
-    @patch("attendance.face_service.requests.post")
-    def test_verify_service_unavailable(self, mock_post):
-        mock_post.side_effect = requests.exceptions.ConnectionError(
-            "Connection refused"
+    @patch("attendance.views.verify_employee_face", return_value=(True, 0.2))
+    def test_verifies_only_authenticated_employee_with_private_response(
+        self, verify
+    ):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(self.url, self.payload(), format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data, {"message": "Face verified successfully."}
+        )
+        verify.assert_called_once_with(
+            self.employee,
+            self.payload()["frames"],
+            captured_at_ms=self.payload()["captured_at_ms"],
         )
 
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
+    @patch("attendance.views.verify_employee_face", return_value=(False, 0.91))
+    def test_other_employee_face_mismatch_does_not_disclose_identity(
+        self, verify
+    ):
+        other_user = User.objects.create_user(
+            email="other-face@example.com", first_name="Other"
+        )
+        other_employee = Employee.objects.create(
+            user=other_user,
+            department="Sales",
+            employment_type="PERMANENT",
+            date_joined="2023-01-01",
+        )
+        self.client.force_authenticate(user=self.user)
+        payload = self.payload()
+        payload["employee_id"] = other_employee.id
+        response = self.client.post(self.url, payload, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data, {"error": "Face verification failed."})
+        self.assertNotIn(self.employee.user.email, str(response.data))
+        self.assertNotIn(str(self.employee.id), str(response.data))
+        self.assertNotIn(other_user.email, str(response.data))
+        self.assertNotIn(other_user.first_name, str(response.data))
+        verify.assert_called_once_with(
+            self.employee,
+            self.payload()["frames"],
+            captured_at_ms=self.payload()["captured_at_ms"],
+        )
+        self.assertNotIn("distance", str(response.data))
+
+    @patch("attendance.views.verify_employee_face")
+    def test_single_image_payload_is_not_accepted(self, verify):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            self.url, {"image": "one-frame"}, format="json"
+        )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("unavailable", response.data["error"])
+        verify.assert_not_called()
+
+    @patch("attendance.views.verify_employee_face")
+    def test_malformed_sequences_are_rejected_before_verification(
+        self, verify
+    ):
+        self.client.force_authenticate(user=self.user)
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                response = self.client.post(
+                    self.url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(self.employee.user.email, str(response.data))
+        verify.assert_not_called()
 
     @patch("attendance.face_service.requests.post")
-    def test_verify_service_timeout(self, mock_post):
-        mock_post.side_effect = requests.exceptions.Timeout("Timeout")
+    def test_valid_sequence_uses_recognize_sequence_endpoint(self, post):
+        result = Mock(status_code=200)
+        result.json.return_value = {
+            "status": "match",
+            "employee_id": self.employee.id,
+            "distance": 0.2,
+        }
+        post.return_value = result
+        self.client.force_authenticate(user=self.user)
 
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
+        response = self.client.post(
+            self.url, self.payload(), format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        service_url = post.call_args.args[0]
+        self.assertTrue(service_url.endswith("/recognize-sequence"))
+        self.assertFalse(service_url.endswith("/recognize"))
+
+    @patch("attendance.views.verify_employee_face")
+    def test_invalid_frame_sequence_returns_safe_error(self, verify):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            self.url,
+            {"frames": ["frame-1", "frame-2"], "captured_at_ms": [0, 250]},
+            format="json",
+        )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("unavailable", response.data["error"])
+        self.assertEqual(
+            response.data,
+            {"error": "Invalid camera frame sequence."},
+        )
+        verify.assert_not_called()
 
-    @patch("attendance.face_service.requests.post")
-    def test_verify_malformed_response(self, mock_post):
-        mock_response = Mock()
-        mock_response.status_code = 500
-        mock_response.json.return_value = {"error": "Internal server error"}
-        mock_post.return_value = mock_response
-
-        response = self.client.post(self.url, {"image": "dummy_base64_string"})
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Internal server error", response.data["error"])
-
-    def test_verify_no_image(self):
-        response = self.client.post(self.url, {})
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data["error"], "No image provided")
+    @patch("attendance.views.verify_employee_face")
+    def test_liveness_and_service_failures_are_safe(self, verify):
+        self.client.force_authenticate(user=self.user)
+        for error, expected_status in (
+            (FaceLivenessError("liveness_failed"), 400),
+            (FaceLivenessError("liveness_error"), 503),
+            (
+                FaceExtractionError(
+                    "Facial Recognition service is unavailable"
+                ),
+                503,
+            ),
+            (FaceExtractionError("No faces detected"), 400),
+        ):
+            with self.subTest(
+                error=type(error).__name__, status=expected_status
+            ):
+                verify.side_effect = error
+                response = self.client.post(
+                    self.url, self.payload(), format="json"
+                )
+                self.assertEqual(response.status_code, expected_status)
+                self.assertNotIn("Test", str(response.data))
+                self.assertNotIn("distance", str(response.data))
 
 
 class WebsiteFacialCheckInViewTests(APITestCase):
@@ -1983,6 +2194,14 @@ class WebsiteFacialCheckInViewTests(APITestCase):
             employment_type="PERMANENT",
             date_joined="2023-01-01",
         )
+        self.shift = Shift.objects.create(
+            name="Website Shift",
+            code="WEB-CHECKIN-SHIFT",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
         self.profile = FaceProfile.objects.create(
             employee=self.employee, face_template=[0.5] * 512, status="ACTIVE"
         )
@@ -2034,6 +2253,103 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         )
         self.assertTrue(request_call.args[0].endswith("/recognize-sequence"))
 
+    @patch("attendance.views.verify_employee_face", return_value=(True, 0.2))
+    @patch("attendance.views.validate_attendance_geofence")
+    def test_absent_and_leave_summaries_block_facial_checkin(
+        self, geofence, _verify
+    ):
+        from django.utils import timezone
+
+        geofence.return_value = (True, "", 10, (12.0, 77.0, 5))
+        self.client.force_authenticate(user=self.user)
+        today = timezone.localdate()
+        for blocked_status in ("ABSENT", "LEAVE"):
+            with self.subTest(status=blocked_status):
+                Attendance.objects.filter(employee=self.employee).delete()
+                AttendanceEvent.objects.filter(employee=self.employee).delete()
+                summary = Attendance.objects.create(
+                    employee=self.employee, date=today, status=blocked_status
+                )
+                response = self.client.post(
+                    self.url,
+                    camera_sequence_payload(**self.valid_location),
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 400)
+                summary.refresh_from_db()
+                self.assertEqual(summary.status, blocked_status)
+                self.assertFalse(
+                    AttendanceEvent.objects.filter(
+                        employee=self.employee, event_type="CHECK_IN"
+                    ).exists()
+                )
+
+    @patch("attendance.views.verify_employee_face", return_value=(True, 0.2))
+    @patch("attendance.views.validate_attendance_geofence")
+    def test_nonapproved_leave_statuses_do_not_block_facial_checkin(
+        self, geofence, _verify
+    ):
+        from django.utils import timezone
+
+        from leave_management.models import LeaveRequest, LeaveType
+
+        geofence.return_value = (True, "", 10, (12.0, 77.0, 5))
+        self.client.force_authenticate(user=self.user)
+        today = timezone.localdate()
+        for leave_status in ("PENDING", "DENIED", "CANCELLED"):
+            with self.subTest(status=leave_status):
+                Attendance.objects.filter(employee=self.employee).delete()
+                AttendanceEvent.objects.filter(employee=self.employee).delete()
+                LeaveRequest.objects.filter(employee=self.employee).delete()
+                leave_type = LeaveType.objects.create(
+                    name=f"Website {leave_status}",
+                    code=f"WEB-{leave_status}",
+                )
+                LeaveRequest.objects.create(
+                    employee=self.employee,
+                    leave_type=leave_type,
+                    start_date=today,
+                    end_date=today,
+                    day_type="FULL_DAY",
+                    duration_days=1,
+                    reason="Status behavior",
+                    status=leave_status,
+                )
+                response = self.client.post(
+                    self.url,
+                    camera_sequence_payload(**self.valid_location),
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(
+                    AttendanceEvent.objects.filter(
+                        employee=self.employee, event_type="CHECK_IN"
+                    ).count(),
+                    1,
+                )
+
+    @patch("attendance.views.verify_employee_face", return_value=(True, 0.3))
+    def test_facial_check_in_rejects_missing_shift_after_validation(
+        self, _mock_verify
+    ):
+        self.employee.shift = None
+        self.employee.save(update_fields=["shift"])
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            self.url,
+            camera_sequence_payload(**self.valid_location),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("shift assigned", response.data["error"])
+        self.assertFalse(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_IN"
+            ).exists()
+        )
+
     @patch("attendance.face_service.requests.post")
     def test_single_image_direct_request_cannot_bypass_sequence_gate(
         self, mock_post
@@ -2048,6 +2364,23 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         self.assertFalse(
             AttendanceEvent.objects.filter(employee=self.employee).exists()
         )
+        mock_post.assert_not_called()
+
+    @patch("attendance.face_service.requests.post")
+    def test_malformed_frame_sequences_never_reach_facial_recognition(
+        self, mock_post
+    ):
+        self.client.force_authenticate(user=self.user)
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                payload = {**payload, **self.valid_location}
+                response = self.client.post(
+                    self.url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.data["error"], "Invalid camera frame sequence."
+                )
         mock_post.assert_not_called()
 
     @patch("attendance.face_service.requests.post")
@@ -2102,8 +2435,9 @@ class WebsiteFacialCheckInViewTests(APITestCase):
     @patch("attendance.face_service.requests.post")
     def test_facial_check_in_duplicate(self, mock_post):
         # Create a check-in for today
-        from attendance.models import Attendance
         from django.utils import timezone
+
+        from attendance.models import Attendance
 
         Attendance.objects.create(
             employee=self.employee,
@@ -2134,6 +2468,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
     @patch("attendance.face_service.requests.post")
     def test_facial_check_in_on_leave(self, mock_post):
         from django.utils import timezone
+
         from leave_management.models import LeaveRequest, LeaveType
 
         today = timezone.localdate()
@@ -2166,7 +2501,10 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("on approved leave", response.data["error"])
+        self.assertEqual(
+            response.data["error"],
+            "You cannot check in because you are on approved leave today.",
+        )
 
     @patch("attendance.face_service.requests.post")
     def test_facial_check_in_rejected_outside_geofence(self, mock_post):
@@ -2280,8 +2618,9 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_success(self, mock_post):
         import datetime
 
-        from attendance.models import Attendance
         from django.utils import timezone
+
+        from attendance.models import Attendance
 
         # Check in 6 minutes ago
         check_in_time = timezone.now() - datetime.timedelta(minutes=6)
@@ -2310,6 +2649,83 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], "Check-out successful")
+        self.assertTrue(
+            mock_post.call_args.args[0].endswith("/recognize-sequence")
+        )
+
+    @patch("attendance.face_service.requests.post")
+    def test_malformed_frame_sequences_never_reach_facial_recognition(
+        self, mock_post
+    ):
+        self.client.force_authenticate(user=self.user)
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                payload = {**payload, **self.valid_location}
+                response = self.client.post(
+                    self.url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.data["error"], "Invalid camera frame sequence."
+                )
+        mock_post.assert_not_called()
+
+    @patch("attendance.views.verify_employee_face", return_value=(True, 0.3))
+    def test_facial_checkout_uses_shift_recorded_at_opening_event(
+        self, _mock_verify
+    ):
+        target_date = ATTENDANCE_TEST_WORKDAY
+        fixed_now = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(15, 0))
+        )
+        original_shift = Shift.objects.create(
+            name="Original Web Shift",
+            code="WEB-ORIGINAL",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        replacement = Shift.objects.create(
+            name="Replacement Web Shift",
+            code="WEB-REPLACEMENT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+        check_in = fixed_now - timedelta(minutes=10)
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=original_shift,
+            timestamp=check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=target_date,
+            check_in=check_in,
+            status="INCOMPLETE",
+        )
+        self.client.force_authenticate(user=self.user)
+
+        with (
+            patch(
+                "attendance.views.timezone.localdate",
+                return_value=target_date,
+            ),
+            patch("attendance.views.timezone.now", return_value=fixed_now),
+        ):
+            response = self.client.post(
+                self.url,
+                camera_sequence_payload(**self.valid_location),
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, original_shift.id)
 
     @patch("attendance.face_service.requests.post")
     def test_facial_check_out_no_check_in(self, mock_post):
@@ -2371,8 +2787,9 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_duplicate(self, mock_post):
         import datetime
 
-        from attendance.models import Attendance
         from django.utils import timezone
+
+        from attendance.models import Attendance
 
         check_in_time = timezone.now() - datetime.timedelta(minutes=10)
         check_out_time = timezone.now() - datetime.timedelta(minutes=2)
@@ -2407,8 +2824,9 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_mismatch(self, mock_post):
         import datetime
 
-        from attendance.models import Attendance
         from django.utils import timezone
+
+        from attendance.models import Attendance
 
         user2 = User.objects.create_user(
             email="other2@example.com", password="password123"
@@ -2591,20 +3009,238 @@ class KioskLivenessAttendanceTests(APITestCase):
             self.check_in_url, camera_sequence_payload(), format="json"
         )
         self.assertEqual(check_in.status_code, 201)
+        self.assertEqual(
+            check_in.data["message"], "Check-in successful."
+        )
+        self.assertNotIn(self.user.first_name, str(check_in.data))
+        self.assertNotIn("employee_id", check_in.data)
         self.assertTrue(
             AttendanceEvent.objects.filter(
                 employee=self.employee, event_type="CHECK_IN"
             ).exists()
         )
 
+        replacement = Shift.objects.create(
+            name="Kiosk Replacement",
+            code="KIOSK-REPLACEMENT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+
         check_out = self.client.post(
             self.check_out_url, camera_sequence_payload(), format="json"
         )
         self.assertEqual(check_out.status_code, 200)
+        self.assertEqual(check_out.data["message"], "Check-out successful.")
+        self.assertNotIn(self.user.first_name, str(check_out.data))
+        self.assertNotIn("employee_id", check_out.data)
         self.assertTrue(
             AttendanceEvent.objects.filter(
                 employee=self.employee, event_type="CHECK_OUT"
             ).exists()
+        )
+        kiosk_check_in = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_IN"
+        )
+        kiosk_check_out = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(kiosk_check_in.shift_id, self.shift.id)
+        self.assertEqual(kiosk_check_out.shift_id, self.shift.id)
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_IN"
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_OUT"
+            ).count(),
+            1,
+        )
+        self.assertEqual(len(mock_post.call_args_list), 2)
+        self.assertTrue(
+            all(
+                call.args[0].endswith("/recognize-sequence")
+                for call in mock_post.call_args_list
+            )
+        )
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_absent_and_leave_summaries_block_checkin_privately(
+        self, mock_post
+    ):
+        from django.utils import timezone
+
+        mock_post.return_value = self._fr_response(
+            200,
+            {
+                "status": "match",
+                "employee_id": self.employee.id,
+                "distance": 0.2,
+            },
+        )
+        today = timezone.localdate()
+        for blocked_status in ("ABSENT", "LEAVE"):
+            with self.subTest(status=blocked_status):
+                Attendance.objects.filter(employee=self.employee).delete()
+                AttendanceEvent.objects.filter(employee=self.employee).delete()
+                summary = Attendance.objects.create(
+                    employee=self.employee, date=today, status=blocked_status
+                )
+                response = self.client.post(
+                    self.check_in_url,
+                    camera_sequence_payload(),
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.data["error"],
+                    "Check-in is unavailable. Please contact an "
+                    "administrator.",
+                )
+                self.assertNotIn(self.user.first_name, str(response.data))
+                self.assertNotIn(str(self.employee.id), str(response.data))
+                summary.refresh_from_db()
+                self.assertEqual(summary.status, blocked_status)
+                self.assertFalse(
+                    AttendanceEvent.objects.filter(
+                        employee=self.employee, event_type="CHECK_IN"
+                    ).exists()
+                )
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_approved_leave_still_blocks_checkin(self, mock_post):
+        from django.utils import timezone
+
+        from leave_management.models import LeaveRequest, LeaveType
+
+        mock_post.return_value = self._fr_response(
+            200,
+            {
+                "status": "match",
+                "employee_id": self.employee.id,
+                "distance": 0.2,
+            },
+        )
+        today = timezone.localdate()
+        leave_type = LeaveType.objects.create(
+            name="Kiosk leave", code="KIOSK-LEAVE"
+        )
+        LeaveRequest.objects.create(
+            employee=self.employee,
+            leave_type=leave_type,
+            start_date=today,
+            end_date=today,
+            day_type="FULL_DAY",
+            duration_days=1,
+            reason="Approved leave",
+            status="APPROVED",
+        )
+        response = self.client.post(
+            self.check_in_url, camera_sequence_payload(), format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data["error"],
+            "Check-in is unavailable. Please contact an administrator.",
+        )
+        self.assertFalse(
+            AttendanceEvent.objects.filter(employee=self.employee).exists()
+        )
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_nonapproved_leave_statuses_do_not_block_checkin(
+        self, mock_post
+    ):
+        from django.utils import timezone
+
+        from leave_management.models import LeaveRequest, LeaveType
+
+        mock_post.return_value = self._fr_response(
+            200,
+            {
+                "status": "match",
+                "employee_id": self.employee.id,
+                "distance": 0.2,
+            },
+        )
+        today = timezone.localdate()
+        for leave_status in ("PENDING", "DENIED", "CANCELLED"):
+            with self.subTest(status=leave_status):
+                Attendance.objects.filter(employee=self.employee).delete()
+                AttendanceEvent.objects.filter(employee=self.employee).delete()
+                LeaveRequest.objects.filter(employee=self.employee).delete()
+                leave_type = LeaveType.objects.create(
+                    name=f"Kiosk {leave_status}",
+                    code=f"KSK-{leave_status}",
+                )
+                LeaveRequest.objects.create(
+                    employee=self.employee,
+                    leave_type=leave_type,
+                    start_date=today,
+                    end_date=today,
+                    day_type="FULL_DAY",
+                    duration_days=1,
+                    reason="Status behavior",
+                    status=leave_status,
+                )
+                response = self.client.post(
+                    self.check_in_url,
+                    camera_sequence_payload(),
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(
+                    AttendanceEvent.objects.filter(
+                        employee=self.employee, event_type="CHECK_IN"
+                    ).count(),
+                    1,
+                )
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_duplicate_and_missing_checkout_errors_are_private(
+        self, mock_post
+    ):
+        mock_post.return_value = self._fr_response(
+            200,
+            {
+                "status": "match",
+                "employee_id": self.employee.id,
+                "distance": 0.2,
+            },
+        )
+        missing = self.client.post(
+            self.check_out_url, camera_sequence_payload(), format="json"
+        )
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(
+            missing.data["error"],
+            "Check-out is unavailable. Please contact an administrator.",
+        )
+        self.assertNotIn(self.user.first_name, str(missing.data))
+
+        first = self.client.post(
+            self.check_in_url, camera_sequence_payload(), format="json"
+        )
+        duplicate = self.client.post(
+            self.check_in_url, camera_sequence_payload(), format="json"
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(
+            duplicate.data["error"],
+            "Check-in is unavailable. Please contact an administrator.",
+        )
+        self.assertNotIn(self.user.first_name, str(duplicate.data))
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_IN"
+            ).count(),
+            1,
         )
 
     @patch("attendance.face_service.requests.post")
@@ -2632,6 +3268,32 @@ class KioskLivenessAttendanceTests(APITestCase):
         self.assertFalse(
             AttendanceEvent.objects.filter(employee=self.employee).exists()
         )
+        mock_post.assert_not_called()
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_malformed_checkin_sequences_never_reach_recognition(
+        self, mock_post
+    ):
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                response = self.client.post(
+                    self.check_in_url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(self.user.first_name, str(response.data))
+        mock_post.assert_not_called()
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_malformed_checkout_sequences_never_reach_recognition(
+        self, mock_post
+    ):
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                response = self.client.post(
+                    self.check_out_url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(self.user.first_name, str(response.data))
         mock_post.assert_not_called()
 
 
@@ -3335,6 +3997,65 @@ class EmployeeShiftRelationTests(TestCase):
         # Reverse relation
         self.assertIn(emp, self.shift.employees.all())
 
+    def test_effective_shift_has_a_function_docstring(self):
+        self.assertIsNotNone(Employee.get_effective_shift.__doc__)
+        self.assertIn(
+            "effective shift", Employee.get_effective_shift.__doc__
+        )
+
+    def test_effective_shift_resolution_behavior(self):
+        assigned_user = User.objects.create_user(
+            email="assigned-emp@example.com", password="x"
+        )
+        assigned_employee = Employee.objects.create(
+            user=assigned_user,
+            department="Eng",
+            employment_type="PERMANENT",
+            date_joined=date(2026, 1, 1),
+            shift=self.shift,
+        )
+        self.assertEqual(assigned_employee.get_effective_shift(), self.shift)
+
+        configured_user = User.objects.create_user(
+            email="configured-emp@example.com", password="x"
+        )
+        configured_employee = Employee.objects.create(
+            user=configured_user,
+            department="Eng",
+            employment_type="CONTRACT",
+            date_joined=date(2026, 1, 1),
+        )
+        configured = Shift.objects.create(
+            name="Contract Day",
+            code="CONTRACT-DAY",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+            employment_type="CONTRACT",
+            is_active=True,
+        )
+        self.assertEqual(configured_employee.get_effective_shift(), configured)
+
+        no_shift_user = User.objects.create_user(
+            email="no-shift-emp@example.com", password="x"
+        )
+        no_shift_employee = Employee.objects.create(
+            user=no_shift_user,
+            department="Eng",
+            employment_type="INTERN",
+            date_joined=date(2026, 1, 1),
+        )
+        self.assertIsNone(no_shift_employee.get_effective_shift())
+
+        Shift.objects.create(
+            name="Contract Evening",
+            code="CONTRACT-EVE",
+            start_time=datetime_time(17, 0),
+            end_time=datetime_time(23, 0),
+            employment_type="CONTRACT",
+            is_active=True,
+        )
+        self.assertIsNone(configured_employee.get_effective_shift())
+
 
 class AttendanceEventModelTests(TestCase):
     """Tests for the AttendanceEvent model."""
@@ -3580,6 +4301,187 @@ class EventBasedAttendanceTests(APITestCase):
         )
         self.assertEqual(events.count(), 1)
         self.assertEqual(events.first().event_type, "CHECK_OUT")
+
+    def open_mobile_interval(self, shift):
+        target_date = ATTENDANCE_TEST_WORKDAY
+        fixed_now = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(15, 0))
+        )
+        check_in = fixed_now - timedelta(minutes=10)
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=shift,
+            timestamp=check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=target_date,
+            check_in=check_in,
+            status="INCOMPLETE",
+        )
+        return attendance
+
+    def mobile_checkout(self, location):
+        fixed_now = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(15, 0))
+        )
+        with (
+            patch(
+                "attendance.views.timezone.localdate",
+                return_value=ATTENDANCE_TEST_WORKDAY,
+            ),
+            patch("attendance.views.timezone.now", return_value=fixed_now),
+        ):
+            return self.client.post(
+                "/api/attendance/check-out/", location, format="json"
+            )
+
+    def test_mobile_checkout_uses_shift_recorded_at_checkin(self):
+        self.open_mobile_interval(self.shift)
+        replacement = Shift.objects.create(
+            name="Replacement",
+            code="MOBILE-REPLACEMENT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+
+        response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+
+    def test_mobile_checkout_uses_opening_shift_after_removal(self):
+        self.open_mobile_interval(self.shift)
+        self.employee.shift = None
+        self.employee.save(update_fields=["shift"])
+
+        response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+
+    def test_mobile_checkout_does_not_use_shift_assigned_after_checkin(self):
+        self.employee.shift = None
+        self.employee.save(update_fields=["shift"])
+        self.open_mobile_interval(self.shift)
+        replacement = Shift.objects.create(
+            name="Late Assignment",
+            code="MOBILE-LATE-ASSIGN",
+            start_time=datetime_time(11, 0),
+            end_time=datetime_time(19, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+
+        response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+
+    def test_mobile_checkout_preserves_null_shift_and_logs_it(self):
+        self.open_mobile_interval(None)
+
+        with self.assertLogs("attendance.models", level="ERROR") as logs:
+            response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertIsNone(checkout.shift_id)
+        self.assertIn("preserving null", logs.output[0])
+
+    def test_mobile_checkout_falls_back_for_legacy_summary_only_attendance(
+        self,
+    ):
+        Attendance.objects.create(
+            employee=self.employee,
+            date=ATTENDANCE_TEST_WORKDAY,
+            check_in=timezone.make_aware(
+                datetime.combine(
+                    ATTENDANCE_TEST_WORKDAY,
+                    datetime_time(14, 50),
+                )
+            ),
+            status="INCOMPLETE",
+        )
+
+        with self.assertLogs("attendance.models", level="WARNING") as logs:
+            response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+        self.assertIn("legacy summary shift fallback", logs.output[0])
+
+    def test_mobile_checkout_uses_shift_of_latest_open_interval(self):
+        start = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(9, 0))
+        )
+        second_start = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(14, 50))
+        )
+        second_shift = Shift.objects.create(
+            name="Second Interval",
+            code="MOBILE-SECOND",
+            start_time=datetime_time(12, 0),
+            end_time=datetime_time(20, 0),
+        )
+        for timestamp, kind, shift in (
+            (start, "CHECK_IN", self.shift),
+            (start + timedelta(hours=1), "CHECK_OUT", self.shift),
+            (second_start, "CHECK_IN", second_shift),
+        ):
+            AttendanceEvent.objects.create(
+                employee=self.employee,
+                shift=shift,
+                timestamp=timestamp,
+                event_type=kind,
+            )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=ATTENDANCE_TEST_WORKDAY,
+            check_in=start,
+            check_out=start + timedelta(hours=1),
+            status="INCOMPLETE",
+        )
+
+        response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.latest("id")
+        self.assertEqual(checkout.event_type, "CHECK_OUT")
+        self.assertEqual(checkout.shift_id, second_shift.id)
+
+    def test_mobile_checkout_still_rejects_out_of_geofence(self):
+        self.open_mobile_interval(self.shift)
+        outside = {
+            "latitude": WORKPLACE_LATITUDE + 0.2,
+            "longitude": WORKPLACE_LONGITUDE,
+            "accuracy": 10.0,
+        }
+        response = self.mobile_checkout(outside)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_OUT"
+            ).exists()
+        )
 
     @patch("attendance.views.timezone")
     def test_second_checkin_after_checkout(self, mock_view_timezone):
@@ -3934,6 +4836,91 @@ class EventBasedAttendanceTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("on approved leave", response.data["error"])
+
+    def test_absent_blocks_checkin_even_on_nonworking_day(self):
+        sunday = date(2026, 10, 11)
+        Attendance.objects.create(
+            employee=self.employee, date=sunday, status="ABSENT"
+        )
+        with patch("attendance.views.timezone.localdate", return_value=sunday):
+            response = self.client.post(
+                "/api/attendance/check-in/",
+                self.valid_location,
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("marked as absent", response.data["error"])
+        self.assertFalse(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_IN"
+            ).exists()
+        )
+        summary = Attendance.objects.get(employee=self.employee, date=sunday)
+        self.assertEqual(summary.status, "ABSENT")
+
+    def test_explicit_absent_and_leave_statuses_block_mobile_checkin(self):
+        today = timezone.localdate()
+        for blocked_status in ("ABSENT", "LEAVE"):
+            with self.subTest(status=blocked_status):
+                Attendance.objects.filter(employee=self.employee).delete()
+                AttendanceEvent.objects.filter(employee=self.employee).delete()
+                summary = Attendance.objects.create(
+                    employee=self.employee, date=today, status=blocked_status
+                )
+                response = self.client.post(
+                    "/api/attendance/check-in/",
+                    self.valid_location,
+                    format="json",
+                )
+                self.assertEqual(
+                    response.status_code, status.HTTP_400_BAD_REQUEST
+                )
+                summary.refresh_from_db()
+                self.assertEqual(summary.status, blocked_status)
+                self.assertIsNone(summary.check_in)
+                self.assertFalse(
+                    AttendanceEvent.objects.filter(
+                        employee=self.employee, event_type="CHECK_IN"
+                    ).exists()
+                )
+
+    def test_nonapproved_leave_requests_do_not_block_checkin(self):
+        from leave_management.models import LeaveRequest, LeaveType
+
+        today = timezone.localdate()
+        for leave_status in ("PENDING", "DENIED", "CANCELLED"):
+            with self.subTest(status=leave_status):
+                Attendance.objects.filter(employee=self.employee).delete()
+                AttendanceEvent.objects.filter(employee=self.employee).delete()
+                LeaveRequest.objects.filter(employee=self.employee).delete()
+                leave_type = LeaveType.objects.create(
+                    name=f"{leave_status} Leave",
+                    code=f"EVT-{leave_status}",
+                )
+                LeaveRequest.objects.create(
+                    employee=self.employee,
+                    leave_type=leave_type,
+                    start_date=today,
+                    end_date=today,
+                    day_type="FULL_DAY",
+                    duration_days=1,
+                    reason="Status behavior",
+                    status=leave_status,
+                )
+                response = self.client.post(
+                    "/api/attendance/check-in/",
+                    self.valid_location,
+                    format="json",
+                )
+                self.assertEqual(
+                    response.status_code, status.HTTP_201_CREATED
+                )
+                self.assertEqual(
+                    AttendanceEvent.objects.filter(
+                        employee=self.employee, event_type="CHECK_IN"
+                    ).count(),
+                    1,
+                )
 
     def test_immediate_checkout_after_checkin_allowed(self):
         """Immediate check-out after check-in is now allowed (no cooldown)."""
@@ -4365,6 +5352,14 @@ class AdminForceCheckoutTests(APITestCase):
             date_joined=self.target_date,
             is_active=True,
         )
+        self.shift = Shift.objects.create(
+            name="Force Checkout Shift",
+            code="FORCE-CHECKOUT-SHIFT",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
         self.client.force_authenticate(user=self.admin)
 
     def _timestamp(self, hour):
@@ -4377,18 +5372,27 @@ class AdminForceCheckoutTests(APITestCase):
         first_check_in = self._timestamp(9)
         first_check_out = self._timestamp(12)
         second_check_in = self._timestamp(13)
+        second_shift = Shift.objects.create(
+            name="Later Assigned Shift",
+            code="FORCE-CHECKOUT-LATER",
+            start_time=datetime_time(12, 0),
+            end_time=datetime_time(20, 0),
+        )
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=first_check_in,
             event_type="CHECK_IN",
         )
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=first_check_out,
             event_type="CHECK_OUT",
         )
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=second_shift,
             timestamp=second_check_in,
             event_type="CHECK_IN",
         )
@@ -4399,6 +5403,8 @@ class AdminForceCheckoutTests(APITestCase):
             check_out=first_check_out,
             status="INCOMPLETE",
         )
+        self.employee.shift = second_shift
+        self.employee.save(update_fields=["shift"])
 
         with patch(
             "django.utils.timezone.now", return_value=self._timestamp(15)
@@ -4422,6 +5428,95 @@ class AdminForceCheckoutTests(APITestCase):
             AttendanceEvent.objects.filter(employee=self.employee).count(),
             4,
         )
+        checkout = AttendanceEvent.objects.latest("id")
+        self.assertEqual(checkout.shift_id, second_shift.id)
+
+    def test_force_checkout_rejects_past_and_future_dates(self):
+        for target_date in (
+            self.target_date - timedelta(days=1),
+            self.target_date + timedelta(days=1),
+        ):
+            with self.subTest(target_date=target_date):
+                response = self.client.post(
+                    "/api/admin/force-checkout/",
+                    {
+                        "employee": self.employee_user.email,
+                        "date": target_date.isoformat(),
+                    },
+                    format="json",
+                )
+                self.assertEqual(
+                    response.status_code, status.HTTP_400_BAD_REQUEST
+                )
+                self.assertIn("today only", response.data["error"])
+                self.assertIn("regularization", response.data["error"])
+        self.assertFalse(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_OUT"
+            ).exists()
+        )
+
+    def test_bulk_force_checkout_rejects_historical_date(self):
+        response = self.client.post(
+            "/api/admin/force-checkout/",
+            {
+                "all": True,
+                "date": (self.target_date - timedelta(days=1)).isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("today only", response.data["error"])
+
+    def test_force_checkout_uses_configured_local_date_at_utc_boundary(self):
+        from datetime import timezone as datetime_timezone
+        from zoneinfo import ZoneInfo
+
+        local_date = date(2026, 11, 1)
+        fixed_utc_now = datetime(
+            2026, 10, 31, 18, 45, tzinfo=datetime_timezone.utc
+        )
+        check_in = timezone.make_aware(
+            datetime.combine(local_date, datetime_time(0, 0)),
+            ZoneInfo("Asia/Kolkata"),
+        )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=local_date,
+            check_in=check_in,
+            status="INCOMPLETE",
+        )
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=check_in,
+            event_type="CHECK_IN",
+        )
+
+        with (
+            timezone.override(ZoneInfo("Asia/Kolkata")),
+            patch("django.utils.timezone.now", return_value=fixed_utc_now),
+        ):
+            response = self.client.post(
+                "/api/admin/force-checkout/",
+                {
+                    "employee": self.employee_user.email,
+                    "date": local_date.isoformat(),
+                },
+                format="json",
+            )
+
+        self.assertEqual(
+            response.status_code, status.HTTP_200_OK, response.data
+        )
+        checkout = AttendanceEvent.objects.filter(
+            employee=self.employee, event_type="CHECK_OUT"
+        ).latest("id")
+        local_checkout_date = timezone.localtime(
+            checkout.timestamp, ZoneInfo("Asia/Kolkata")
+        ).date()
+        self.assertEqual(local_checkout_date, local_date)
+        self.assertEqual(checkout.timestamp, fixed_utc_now)
 
     def test_force_checkout_all_processes_only_currently_open_intervals(self):
         check_in = self._timestamp(9)
@@ -4457,6 +5552,87 @@ class AdminForceCheckoutTests(APITestCase):
             AttendanceEvent.objects.filter(employee=self.employee).count(),
             2,
         )
+
+    def test_bulk_force_checkout_preserves_each_opening_shift(self):
+        other_user = User.objects.create_user(
+            email="force-checkout.second@example.com",
+            password="password123",
+        )
+        other_employee = Employee.objects.create(
+            user=other_user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=self.target_date,
+        )
+        second_shift = Shift.objects.create(
+            name="Second Employee Shift",
+            code="FORCE-CHK-SECOND",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        for employee, shift, hour in (
+            (self.employee, self.shift, 9),
+            (other_employee, second_shift, 10),
+        ):
+            check_in = self._timestamp(hour)
+            Attendance.objects.create(
+                employee=employee,
+                date=self.target_date,
+                check_in=check_in,
+                status="INCOMPLETE",
+            )
+            AttendanceEvent.objects.create(
+                employee=employee,
+                shift=shift,
+                timestamp=check_in,
+                event_type="CHECK_IN",
+            )
+
+        before_local_midnight = timezone.make_aware(
+            datetime.combine(
+                self.target_date, datetime_time(23, 59, 0)
+            )
+        )
+        after_local_midnight = before_local_midnight + timedelta(minutes=2)
+        mocked_timezone = SimpleNamespace(
+            now=Mock(return_value=before_local_midnight),
+            localdate=Mock(
+                side_effect=[
+                    self.target_date,
+                    timezone.localdate(after_local_midnight),
+                ]
+            ),
+        )
+        with (
+            patch("attendance.views.timezone", mocked_timezone),
+            patch("attendance.views.record_event"),
+        ):
+            response = self.client.post(
+                "/api/admin/force-checkout/",
+                {"all": True, "date": self.target_date.isoformat()},
+                format="json",
+            )
+
+        self.assertEqual(
+            response.status_code, status.HTTP_200_OK, response.data
+        )
+        self.assertEqual(response.data["count"], 2)
+        mocked_timezone.now.assert_called_once_with()
+        mocked_timezone.localdate.assert_called_once_with(
+            before_local_midnight
+        )
+        for employee, shift in (
+            (self.employee, self.shift),
+            (other_employee, second_shift),
+        ):
+            checkout = AttendanceEvent.objects.filter(
+                employee=employee, event_type="CHECK_OUT"
+            ).latest("id")
+            self.assertEqual(checkout.shift_id, shift.id)
+            self.assertEqual(checkout.timestamp, before_local_midnight)
+            self.assertEqual(
+                timezone.localtime(checkout.timestamp).date(), self.target_date
+            )
 
 
 class AttendanceAdminScopeAndLocationTests(APITestCase):
@@ -4873,6 +6049,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -4900,6 +6077,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -4928,6 +6106,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -4955,6 +6134,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -4983,6 +6163,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -5010,6 +6191,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -5022,6 +6204,33 @@ class ShiftAdherenceTests(APITestCase):
 
         adherence = attendance.get_shift_adherence()
         self.assertEqual(adherence, "LATE")
+
+    def test_historical_adherence_uses_recorded_checkin_shift(self):
+        check_in_time = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(9, 30))
+        )
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=check_in_time,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        replacement = Shift.objects.create(
+            name="Current Later Shift",
+            code="ADHERENCE-LATER",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+        attendance = Attendance.objects.create(
+            employee=self.employee, date=ATTENDANCE_TEST_WORKDAY
+        )
+        attendance.recompute_from_events()
+
+        self.assertEqual(attendance.get_shift_adherence(), "LATE")
+        self.assertEqual(attendance.get_shift_for_adherence(), self.shift)
 
     def test_no_shift_returns_none_adherence(self):
         """Employee without shift returns None for adherence."""
@@ -5678,6 +6887,14 @@ class AdminEditAttendanceTests(APITestCase):
             date_joined=self.attendance_date - timedelta(days=30),
             is_active=True,
         )
+        self.shift = Shift.objects.create(
+            name="Admin Edit Original Shift",
+            code="ADMIN-EDIT-ORIGINAL",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
         self.manager_user = User.objects.create_user(
             email="manager@example.com",
             password="password123",
@@ -5709,6 +6926,7 @@ class AdminEditAttendanceTests(APITestCase):
         )
         self.event_check_in = AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=self.check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -5744,6 +6962,7 @@ class AdminEditAttendanceTests(APITestCase):
 
         old_admin_event = AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=timezone.make_aware(
                 datetime.combine(self.attendance_date, datetime_time(8, 45))
             ),
@@ -5757,6 +6976,14 @@ class AdminEditAttendanceTests(APITestCase):
         new_check_out = timezone.make_aware(
             datetime.combine(self.attendance_date, datetime_time(17, 0))
         )
+        replacement = Shift.objects.create(
+            name="Admin Edit Replacement Shift",
+            code="ADMIN-EDIT-REPLACE",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
 
         response = self.client.post(
             "/api/admin/attendance/edit/",
@@ -5792,12 +7019,57 @@ class AdminEditAttendanceTests(APITestCase):
         )
         self.assertEqual(correction.attendance_events.count(), 2)
         self.assertEqual(
+            set(
+                correction.attendance_events.values_list(
+                    "shift_id", flat=True
+                )
+            ),
+            {self.shift.id},
+        )
+        self.assertEqual(
             list(
                 get_effective_attendance_events(
                     self.employee, self.attendance_date
                 )
             ),
             list(correction.attendance_events.order_by("timestamp", "id")),
+        )
+
+    def test_superuser_edit_preserves_missing_historical_shift(self):
+        self.event_check_in.shift = None
+        self.event_check_in.save(update_fields=["shift"])
+        self.client.force_authenticate(user=self.superuser)
+        new_check_in = timezone.make_aware(
+            datetime.combine(self.attendance_date, datetime_time(9, 30))
+        )
+        new_check_out = timezone.make_aware(
+            datetime.combine(self.attendance_date, datetime_time(17, 30))
+        )
+
+        response = self.client.post(
+            "/api/admin/attendance/edit/",
+            {
+                "employee": self.employee_user.email,
+                "date": self.attendance_date.isoformat(),
+                "reason": "Correct historical times.",
+                "status": "PRESENT",
+                "check_in": new_check_in.isoformat(),
+                "check_out": new_check_out.isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        correction = AttendanceCorrection.objects.get(
+            attendance=self.attendance, correction_type="EDIT"
+        )
+        self.assertEqual(
+            set(
+                correction.attendance_events.values_list(
+                    "shift_id", flat=True
+                )
+            ),
+            {None},
         )
 
 

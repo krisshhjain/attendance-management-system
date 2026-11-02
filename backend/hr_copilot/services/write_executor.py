@@ -3,16 +3,16 @@
 from datetime import datetime, time
 from typing import Any, Dict
 
-from attendance.models import (
-    Attendance,
-    AttendanceCorrection,
-    AttendanceEvent,
-    RegularizationRequest,
-    Shift,
-)
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
+
+from attendance.models import (Attendance, AttendanceCorrection,
+                               AttendanceEvent, RegularizationRequest, Shift,
+                               get_attendance_event_state,
+                               get_effective_attendance_events,
+                               resolve_checkout_shift,
+                               resolve_historical_correction_shift)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 from system_logs.services import record_event
@@ -220,6 +220,25 @@ class WriteActionExecutor:
                 }
             )
 
+        historical_shift = None
+        if target_status == "PRESENT":
+            employee = (
+                existing.employee
+                if existing is not None
+                else Employee.objects.get(pk=employee_id)
+            )
+            effective_events = get_effective_attendance_events(
+                employee, target_date
+            )
+            historical_shift = resolve_historical_correction_shift(
+                employee,
+                target_date,
+                original_check_in=existing.check_in if existing else None,
+                original_check_out=existing.check_out if existing else None,
+                events=effective_events,
+                source="HR_COPILOT_ATTENDANCE_UPDATE",
+            )
+
         # Get or create attendance record
         attendance, created = Attendance.objects.get_or_create(
             employee_id=employee_id,
@@ -272,6 +291,7 @@ class WriteActionExecutor:
             )
             AttendanceEvent.objects.create(
                 employee_id=employee_id,
+                shift=historical_shift,
                 timestamp=check_in,
                 event_type="CHECK_IN",
                 source="ADMIN",
@@ -279,6 +299,7 @@ class WriteActionExecutor:
             )
             AttendanceEvent.objects.create(
                 employee_id=employee_id,
+                shift=historical_shift,
                 timestamp=check_out,
                 event_type="CHECK_OUT",
                 source="ADMIN",
@@ -368,11 +389,9 @@ class WriteActionExecutor:
             reason=reason,
             status="PENDING",
         )
-        from leave_management.services import (
-            calculate_working_days,
-            get_active_policy,
-            validate_leave_request,
-        )
+        from leave_management.services import (calculate_working_days,
+                                               get_active_policy,
+                                               validate_leave_request)
 
         leave_type = LeaveType.objects.get(pk=leave_type_id)
         # Use the authoritative validator whenever a policy exists. Legacy
@@ -466,29 +485,44 @@ class WriteActionExecutor:
         return result
 
     def _execute_force_checkout(self, pending_action, user):
+        """Create admin checkout event and recompute attendance."""
         target = pending_action["target_data"]
         target_date = datetime.fromisoformat(target["date"]).date()
-        attendance = Attendance.objects.select_related("employee").get(
-            employee_id=target["employee_id"], date=target_date
-        )
-        events = list(
-            AttendanceEvent.objects.filter(
-                employee_id=target["employee_id"], timestamp__date=target_date
-            ).order_by("timestamp", "id")
-        )
-        if not events or events[-1].event_type != "CHECK_IN":
+        checkout_at = timezone.now()
+        if target_date != timezone.localdate(checkout_at):
             raise CopilotError(
-                "no_active_checkin",
-                "No active check-in remains for this employee and date.",
+                "force_checkout_today_only",
+                "Force checkout is available for today only. Use attendance "
+                "regularization or an administrative attendance correction "
+                "for historical dates.",
             )
-        event = AttendanceEvent.objects.create(
-            employee=attendance.employee,
-            shift=attendance.employee.get_effective_shift(),
-            timestamp=timezone.now(),
-            event_type="CHECK_OUT",
-            source="ADMIN",
-        )
-        attendance.recompute_from_events()
+
+        employee = Employee.objects.get(pk=target["employee_id"])
+        with transaction.atomic():
+            attendance, _ = Attendance.get_or_create_for_date(
+                employee, target_date
+            )
+            # get_or_create_for_date selects the summary row for update. Keep
+            # this state recheck and event write in the same transaction so
+            # concurrent Copilot checkouts cannot both close the interval.
+            state, _ = get_attendance_event_state(
+                employee, target_date, attendance=attendance
+            )
+            if state != "CHECKED_IN":
+                raise CopilotError(
+                    "no_active_checkin",
+                    "No active check-in remains for this employee and date.",
+                )
+            event = AttendanceEvent.objects.create(
+                employee=employee,
+                shift=resolve_checkout_shift(
+                    employee, target_date, "HR_COPILOT", attendance
+                ),
+                timestamp=checkout_at,
+                event_type="CHECK_OUT",
+                source="ADMIN",
+            )
+            attendance.recompute_from_events()
         return {
             "success": True,
             "operation": "force_checkout",
@@ -499,6 +533,7 @@ class WriteActionExecutor:
         }
 
     def _execute_regularization_create(self, pending_action, user):
+        """Persist a submitted attendance regularization request."""
         target = pending_action["target_data"]
         target_date = datetime.fromisoformat(target["attendance_date"]).date()
         values = {
@@ -541,6 +576,7 @@ class WriteActionExecutor:
         }
 
     def _execute_regularization_review(self, pending_action, user):
+        """Approve or reject a pending regularization request."""
         target = pending_action["target_data"]
         request = RegularizationRequest.objects.select_for_update().get(
             pk=target["request_id"], employee_id=target["employee_id"]
@@ -573,6 +609,7 @@ class WriteActionExecutor:
         }
 
     def _execute_shift_assignment(self, pending_action, user):
+        """Assign the designated shift to the employee record."""
         target = pending_action["target_data"]
         employee = Employee.objects.select_for_update().get(
             pk=target["employee_id"]
@@ -596,6 +633,7 @@ class WriteActionExecutor:
         }
 
     def _execute_employee_status(self, pending_action, user):
+        """Update active status on employee and persist the change."""
         target = pending_action["target_data"]
         employee = Employee.objects.select_for_update().get(
             pk=target["employee_id"]
@@ -643,10 +681,8 @@ class WriteActionExecutor:
                 "This leave request is no longer pending review",
             )
 
-        from leave_management.services import (
-            approve_leave_request,
-            deny_leave_request,
-        )
+        from leave_management.services import (approve_leave_request,
+                                               deny_leave_request)
 
         try:
             if pending_action["action_type"] == "leave_approve":
@@ -831,6 +867,7 @@ class PendingActionManager:
         return action
 
     def approve_action(self, session_id: str, action_id: str, user_id: int):
+        """Mark pending action approved within atomic transaction."""
         expired = False
         result = None
         with transaction.atomic():
@@ -875,6 +912,7 @@ class PendingActionManager:
         return result
 
     def cancel_action(self, session_id: str, action_id: str, user_id: int):
+        """Cancel a pending or awaiting-information action."""
         action = CopilotPendingAction.objects.filter(
             action_id=action_id, session_id=session_id, user_id=user_id
         ).first()
@@ -893,6 +931,7 @@ class PendingActionManager:
     def get_awaiting_action(
         self, session_id: str, conversation_id: str, user_id: int
     ):
+        """Retrieve active action waiting for parameter clarification."""
         action = CopilotPendingAction.objects.filter(
             session_id=session_id,
             conversation_id=conversation_id,
@@ -905,6 +944,7 @@ class PendingActionManager:
     def update_awaiting_action(
         self, action_id: str, user_id: int, session_id: str, updates
     ):
+        """Apply follow-up clarification updates to a draft action."""
         with transaction.atomic():
             action = (
                 CopilotPendingAction.objects.select_for_update()
@@ -949,6 +989,7 @@ class PendingActionManager:
     def mark_executed(
         self, action_id: str, user_id: int, session_id: str, result
     ):
+        """Record successful execution timestamp and result payload."""
         CopilotPendingAction.objects.filter(
             action_id=action_id,
             user_id=user_id,
@@ -963,6 +1004,7 @@ class PendingActionManager:
     def mark_failed(
         self, action_id: str, user_id: int, session_id: str, error
     ):
+        """Record execution failure message on the pending action."""
         CopilotPendingAction.objects.filter(
             action_id=action_id,
             user_id=user_id,
@@ -975,6 +1017,7 @@ class PendingActionManager:
         )
 
     def get_session_actions(self, session_id: str, user_id: int):
+        """Fetch unexpired pending actions for the given session."""
         actions = CopilotPendingAction.objects.filter(
             session_id=session_id,
             user_id=user_id,

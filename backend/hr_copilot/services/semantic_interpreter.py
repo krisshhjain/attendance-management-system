@@ -1,4 +1,10 @@
-"""Enhanced semantic interpretation layer for natural language HR queries."""
+"""Semantic interpretation of natural-language HR questions.
+
+The local LLM proposes intent and entities. This module then applies
+security checks, conversation context, deterministic date resolution,
+safe defaults, and employee/department lookups before returning a
+structured intent.
+"""
 
 import re
 from datetime import date, timedelta

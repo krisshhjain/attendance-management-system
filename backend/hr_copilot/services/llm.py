@@ -1,3 +1,10 @@
+"""LLM-backed intent extraction and deterministic answer phrasing.
+
+The local provider extracts JSON intent and entities. Client-facing
+answers are built from verified result rows
+(``generate_natural_answer``), not free-form model text.
+"""
+
 import json
 import re
 from datetime import date
@@ -7,6 +14,8 @@ from .pipeline import CopilotError
 from .providers import LLMProviderError, get_llm_provider
 from .session_memory import session_memory
 
+# Intents the structured-output schema may emit. Normalization and the
+# write planner still reject or ignore values they do not implement.
 ALLOWED_INTENTS = {
     # Read operations (existing)
     "employee_lookup",
@@ -196,6 +205,12 @@ INTENT_SCHEMA = {
 
 
 def get_structured_intent(question, session_id=None, context=None):
+    """Ask the local provider for JSON intent, then normalize and validate.
+
+    Compact session memory may be appended to the system prompt. The raw
+    model dict is passed through ``intent_normalizer`` and checked against
+    ``ALLOWED_INTENTS`` / ``ALLOWED_ENTITIES`` before use.
+    """
     try:
         provider = get_llm_provider()
     except LLMProviderError as error:

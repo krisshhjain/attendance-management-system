@@ -8,6 +8,12 @@ from employees.models import Employee
 
 @dataclass(frozen=True)
 class EmployeeResolution:
+    """Database identity lookup result.
+
+    ``status`` is ``missing``, ``ambiguous``, ``not_found``, or
+    ``resolved``. ``employee_id`` is set only when status is resolved.
+    """
+
     status: str
     employee_id: int | None = None
 
@@ -24,6 +30,11 @@ class EmployeeResolver:
     def resolve_employee(
         self, *, user=None, name=None, email=None, employee_id=None
     ):
+        """Resolve a unique employee by one of id, email, or name.
+
+        Supplying more than one identifier returns ``ambiguous``. When
+        ``user`` is given, matches are filtered by manager scope.
+        """
         supplied = [
             value
             for value in (name, email, employee_id)

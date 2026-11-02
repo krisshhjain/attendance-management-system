@@ -1,4 +1,9 @@
-"""Local-only LLM runtime providers for the HR Copilot."""
+"""Local-only LLM runtime providers for the HR Copilot.
+
+Only loopback and Docker-host HTTP Ollama endpoints are accepted. HTTP
+redirects are rejected. Chat calls set ``think`` to false and strip
+``<think>`` tags from the returned content.
+"""
 
 import json
 import logging
@@ -25,6 +30,7 @@ class _RejectRedirectsHandler(HTTPRedirectHandler):
 
 
 def _open_local_request(request, timeout):
+    """Open an HTTP request using an opener that rejects any redirects."""
     opener = build_opener(_RejectRedirectsHandler())
     return opener.open(request, timeout=timeout)
 
@@ -39,6 +45,8 @@ class LLMProviderConfigurationError(LLMProviderError):
 
 @dataclass(frozen=True)
 class ProviderHealth:
+    """Serializable health snapshot for the configured local provider."""
+
     configured: bool
     available: bool
     provider: str | None
@@ -89,6 +97,7 @@ class LocalOllamaQwenProvider:
         self._validate_configuration()
 
     def _validate_configuration(self):
+        """Enforce strict localhost-only binding and valid timeout bounds."""
         parsed = urlparse(self.base_url)
         if (
             parsed.scheme != "http"
@@ -117,6 +126,7 @@ class LocalOllamaQwenProvider:
         return value
 
     def _request(self, path, payload=None):
+        """Execute a JSON request against the local Ollama instance."""
         data = (
             json.dumps(payload).encode("utf-8")
             if payload is not None
@@ -140,6 +150,7 @@ class LocalOllamaQwenProvider:
             ) from error
 
     def generate(self, prompt, *, options=None):
+        """Generate text using the local Ollama /api/generate endpoint."""
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("A prompt is required.")
         payload = {
@@ -162,6 +173,7 @@ class LocalOllamaQwenProvider:
     def chat(
         self, messages, *, response_format=None, options=None, think=None
     ):
+        """Send chat messages to local model, suppressing reasoning tokens."""
         if not isinstance(messages, list) or not messages:
             raise ValueError("At least one chat message is required.")
         payload = {
@@ -191,6 +203,7 @@ class LocalOllamaQwenProvider:
         return content
 
     def structured_output(self, messages, *, schema="json", options=None):
+        """Request structured JSON output parsed into a Python dictionary."""
         content = self.chat(messages, response_format=schema, options=options)
         try:
             result = json.loads(content)
@@ -205,6 +218,7 @@ class LocalOllamaQwenProvider:
         return result
 
     def health(self):
+        """Verify model availability against local Ollama /api/tags."""
         try:
             models = self._request("/api/tags").get("models", [])
         except LLMProviderError:
@@ -232,6 +246,11 @@ class LocalOllamaQwenProvider:
 
 
 def get_llm_provider():
+    """Return ``LocalOllamaQwenProvider`` from env, or ``None`` if disabled.
+
+    ``HR_COPILOT_LLM_PROVIDER`` must be empty/disabled, ``local_ollama_qwen``,
+    or ``ollama``. Any other name raises ``LLMProviderConfigurationError``.
+    """
     configured_provider = (
         os.environ.get("HR_COPILOT_LLM_PROVIDER", "").strip().casefold()
     )
@@ -249,6 +268,7 @@ def get_llm_provider():
 
 
 def provider_health():
+    """Return health status of the active local LLM runtime provider."""
     try:
         provider = get_llm_provider()
     except LLMProviderConfigurationError:

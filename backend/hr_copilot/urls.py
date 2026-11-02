@@ -1,3 +1,9 @@
+"""URL routing for HR Copilot, mounted at ``/api/hr-copilot/``.
+
+Paths cover provider health, chat queries, write approval, pending-action
+listing, and conversation history restore.
+"""
+
 from django.urls import path
 
 from .views import (

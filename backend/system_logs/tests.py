@@ -509,13 +509,21 @@ class AttendanceEventLoggingTests(TestCase):
         self.assertEqual(check_out.status_code, 200)
 
         with patch(
-            "attendance.views.find_closest_match",
-            return_value=(self.employee, 0.2),
+            "attendance.views.verify_employee_face",
+            return_value=(True, 0.2),
         ):
             verify = self.client.post(
-                "/api/attendance/verify-face/", {"image": "biometric-payload"}
+                "/api/attendance/verify-face/",
+                {
+                    "frames": [f"frame-{index}" for index in range(5)],
+                    "captured_at_ms": [0, 250, 500, 750, 1000],
+                },
+                format="json",
             )
         self.assertEqual(verify.status_code, 200)
+        self.assertEqual(
+            verify.data, {"message": "Face verified successfully."}
+        )
 
         logs = SystemLog.objects.filter(target_id=str(self.employee.pk))
         self.assertTrue(

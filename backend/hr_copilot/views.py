@@ -1,3 +1,11 @@
+"""HTTP API for the HR Copilot.
+
+All endpoints require an authenticated System Admin or superuser.
+Authorization scope is derived from the authenticated user via
+``derive_scope``; a client-supplied ``scope`` field is not read from the
+request body.
+"""
+
 import logging
 import time
 import uuid
@@ -63,6 +71,7 @@ def _audit_id(audit):
 
 
 def _copilot_action_target(action_id, action_type=""):
+    """Build the structured target payload used by system log events."""
     return {
         "type": "hr_copilot.CopilotPendingAction",
         "id": action_id,
@@ -80,6 +89,7 @@ def _record_copilot_action_event(
     severity="INFO",
     metadata=None,
 ):
+    """Emit structured audit log event for a copilot action lifecycle."""
     record_event(
         event_type=event_type,
         category="HR_COPILOT",
@@ -99,9 +109,16 @@ def _record_copilot_action_event(
 
 
 class HRCopilotHealthView(APIView):
+    """Report whether the configured local LLM provider is reachable.
+
+    Returns HTTP 200 when ``provider_health()`` marks the model available,
+    otherwise 503 with the same status dictionary.
+    """
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        """Return current provider health status dictionary."""
         if not (request.user.is_system_admin or request.user.is_superuser):
             return Response(
                 {"detail": "System Admin access is required."}, status=403
@@ -111,9 +128,12 @@ class HRCopilotHealthView(APIView):
 
 
 class HRCopilotConversationView(APIView):
+    """Return stored chat turns for one conversation owned by the caller."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request, conversation_id):
+        """Retrieve stored chat messages for the specified conversation."""
         user = request.user
         if not (user.is_system_admin or user.is_superuser):
             return Response(
@@ -128,9 +148,20 @@ class HRCopilotConversationView(APIView):
 
 
 class HRCopilotQueryView(APIView):
+    """Interpret a chat message and either stage a write or run a read.
+
+    Request body uses ``message`` and optional ``conversation_id``. The
+    handler, in order: continues an AWAITING_INFORMATION draft; honors
+    explicit approve/cancel phrases for a PENDING action in this
+    conversation; otherwise interprets a new question. Writes are planned
+    and stored, not executed here. Reads use typed intelligence tools or
+    the SQL pipeline. Answers are phrased from verified result rows.
+    """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        """Validate input, orchestrate draft/write/read paths, return JSON."""
         user = request.user
         if not (user.is_system_admin or user.is_superuser):
             return Response(
@@ -190,6 +221,8 @@ class HRCopilotQueryView(APIView):
         intent = None
         scope = None
         try:
+            # Complete an existing draft before interpreting a new question
+            # so follow-up field values stay on the same pending action.
             draft = pending_action_manager.get_awaiting_action(
                 session_id, conversation_id, user.id
             )
@@ -418,6 +451,8 @@ class HRCopilotQueryView(APIView):
                     }
                 )
 
+            # Chat-level approve/cancel for a PENDING action in this
+            # conversation, without using the dedicated approval endpoint.
             command = question.strip().casefold().rstrip(".!")
             active_actions = pending_action_manager.get_session_actions(
                 session_id, user.id
@@ -554,6 +589,7 @@ class HRCopilotQueryView(APIView):
             intent = analyze_question(question, context, session_id=session_id)
             intent = apply_context(question, intent, context)
             audit.intent = intent
+            # Scope always comes from the authenticated user, not the body.
             scope = derive_scope(user)
 
             # Check if this is a write action requiring approval
@@ -811,7 +847,7 @@ class HRCopilotQueryView(APIView):
                         400,
                     ) from write_error
 
-            # Handle read operations (existing logic)
+            # Read path: typed intelligence tools or templated SQL.
             plan = plan_query(intent, scope, user)
             audit.query_plan = plan
             sql, data, columns = "", [], []
@@ -1116,11 +1152,17 @@ class HRCopilotQueryView(APIView):
 
 
 class HRCopilotActionApprovalView(APIView):
-    """Handle approval/cancellation of pending write actions."""
+    """Approve or cancel a stored write via ``action_id`` and ``action``.
+
+    Approval re-loads the pending row, marks it approved, then runs
+    ``WriteActionExecutor`` in the same request. Cancellation never
+    executes product changes.
+    """
 
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        """Approve or cancel a staged write action with re-authorization."""
         user = request.user
         if not (user.is_system_admin or user.is_superuser):
             return Response(
@@ -1295,6 +1337,7 @@ class HRCopilotActionApprovalView(APIView):
 
     @staticmethod
     def _record_failure(user, action_id, session_id, message, request):
+        """Record action audit and security event for failed actions."""
         try:
             pending = CopilotPendingAction.objects.get(
                 action_id=action_id, user=user, session_id=session_id
@@ -1347,11 +1390,16 @@ class HRCopilotActionApprovalView(APIView):
 
 
 class HRCopilotPendingActionsView(APIView):
-    """List pending actions for the current session."""
+    """List PENDING write actions for the caller.
+
+    With ``conversation_id``, results are limited to that session key;
+    otherwise all of the user's pending actions are returned.
+    """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        """Return pending actions filtered by user and conversation."""
         user = request.user
         if not (user.is_system_admin or user.is_superuser):
             return Response(

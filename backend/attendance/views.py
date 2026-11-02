@@ -1,60 +1,36 @@
+import math
 from datetime import datetime
 
-from accounts.scope_service import (
-    employee_in_manager_scope,
-    filter_employees_by_manager_scope,
-)
 from django.db import IntegrityError, transaction
 from django.utils import timezone
-from employees.models import Employee
-from holidays.services import (
-    attendance_required,
-    get_day_classification,
-    get_day_classifications,
-    is_company_holiday,
-    is_working_day,
-)
-from leave_management.models import LeaveRequest
-from leave_management.permissions import (
-    IsAdminOrAppAdmin,
-    IsEmployee,
-    IsManagerOrAdmin,
-    IsSuperAdmin,
-)
-from notifications.services import (
-    queue_manager_notifications_after_commit,
-    queue_notification_after_commit,
-)
-from rest_framework.permissions import (
-    AllowAny,
-    BasePermission,
-    IsAuthenticated,
-)
+from rest_framework.permissions import (AllowAny, BasePermission,
+                                        IsAuthenticated)
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from accounts.scope_service import (employee_in_manager_scope,
+                                    filter_employees_by_manager_scope)
+from employees.models import Employee
+from holidays.services import (attendance_required, get_day_classification,
+                               get_day_classifications, is_company_holiday,
+                               is_working_day)
+from leave_management.models import LeaveRequest
+from leave_management.permissions import (IsAdminOrAppAdmin, IsEmployee,
+                                          IsManagerOrAdmin, IsSuperAdmin)
+from notifications.services import (queue_manager_notifications_after_commit,
+                                    queue_notification_after_commit)
 from system_logs.services import record_event
 
-from .face_service import (
-    FaceExtractionError,
-    FaceLivenessError,
-    find_closest_match,
-    verify_employee_face,
-)
+from .face_service import (FaceExtractionError, FaceLivenessError,
+                           find_closest_match, verify_employee_face)
 from .geofence import validate_attendance_geofence
-from .models import (
-    Attendance,
-    AttendanceAuditLog,
-    AttendanceEvent,
-    OfficeLocation,
-    RegularizationQuotaPolicy,
-    RegularizationRequest,
-    RegularizationRequestDay,
-    Shift,
-    attendance_day_end,
-    calculate_completed_working_duration,
-    calculate_working_duration,
-    get_effective_attendance_events,
-)
+from .models import (Attendance, AttendanceAuditLog, AttendanceEvent,
+                     OfficeLocation, RegularizationQuotaPolicy,
+                     RegularizationRequest, RegularizationRequestDay, Shift,
+                     attendance_day_end, calculate_completed_working_duration,
+                     calculate_working_duration, get_attendance_event_state,
+                     get_effective_attendance_events, resolve_checkout_shift,
+                     resolve_historical_correction_shift)
 
 
 def _regularization_created_message(request_obj):
@@ -86,6 +62,42 @@ def _attendance_log_state(attendance):
             else None
         ),
     }
+
+
+def _get_camera_sequence_payload(request):
+    """Return a valid frame sequence or a safe request error."""
+    frames = request.data.get("frames")
+    captured_at_ms = request.data.get("captured_at_ms")
+
+    if frames is None:
+        return None, None, "No camera frames provided"
+
+    if (
+        not isinstance(frames, list)
+        or not 3 <= len(frames) <= 7
+        or any(
+            not isinstance(frame, str) or not frame.strip()
+            for frame in frames
+        )
+    ):
+        return None, None, "Invalid camera frame sequence."
+
+    if (
+        not isinstance(captured_at_ms, list)
+        or len(captured_at_ms) != len(frames)
+        or any(
+            isinstance(timestamp, bool)
+            or not isinstance(timestamp, (int, float))
+            or (
+                isinstance(timestamp, float)
+                and not math.isfinite(timestamp)
+            )
+            for timestamp in captured_at_ms
+        )
+    ):
+        return None, None, "Invalid camera frame sequence."
+
+    return frames, captured_at_ms, None
 
 
 def _regularization_log_state(request_obj):
@@ -188,25 +200,7 @@ def _get_last_event_state(employee, date):
       - 'CHECKED_OUT'  : already checked out (has CHECK_OUT)
       - 'NOT_CHECKED_IN' : no check-in today
     """
-    event_rows = get_effective_attendance_events(employee, date)
-    last_event = event_rows[-1] if event_rows else None
-
-    if last_event:
-        if last_event.event_type == "CHECK_IN":
-            return "CHECKED_IN", last_event
-        else:  # CHECK_OUT
-            return "CHECKED_OUT", last_event
-
-    # Fallback: check Attendance record for backward compatibility
-    try:
-        attendance = Attendance.objects.get(employee=employee, date=date)
-        if attendance.check_out:
-            return "CHECKED_OUT", None
-        if attendance.check_in:
-            return "CHECKED_IN", None
-        return "NOT_CHECKED_IN", None
-    except Attendance.DoesNotExist:
-        return "NOT_CHECKED_IN", None
+    return get_attendance_event_state(employee, date)
 
 
 def _get_previous_incomplete_attendance(employee, target_date):
@@ -257,9 +251,7 @@ class CheckInView(APIView):
         )
         before_state = _attendance_log_state(attendance)
 
-        if attendance.status == "LEAVE" or (
-            attendance.status == "ABSENT" and is_working_day(today)
-        ):
+        if attendance.status in {"ABSENT", "LEAVE"}:
             return Response(
                 {
                     "error":
@@ -398,8 +390,9 @@ class CheckOutView(APIView):
         lat, lon, acc = coords
         now = timezone.now()
 
-        # Get effective shift for event recording
-        effective_shift = employee.get_effective_shift()
+        effective_shift = resolve_checkout_shift(
+            employee, today, "MOBILE", attendance
+        )
 
         with transaction.atomic():
             AttendanceEvent.objects.create(
@@ -1247,6 +1240,13 @@ class AdminEditAttendanceView(APIView):
                 .first()
                 or 0
             )
+            effective_shift = resolve_historical_correction_shift(
+                attendance.employee,
+                target_date,
+                original_check_in=attendance.check_in,
+                original_check_out=attendance.check_out,
+                source="ADMIN_EDIT",
+            )
             correction = AttendanceCorrection.objects.create(
                 attendance=attendance,
                 admin_user=request.user,
@@ -1258,8 +1258,6 @@ class AdminEditAttendanceView(APIView):
                     "effective_event_after_event_id": last_event_id,
                 },
             )
-
-            effective_shift = attendance.employee.get_effective_shift()
 
             if parsed_check_in:
                 AttendanceEvent.objects.create(
@@ -1319,9 +1317,11 @@ class AdminForceCheckoutView(APIView):
     permission_classes = [IsManagerOrAdmin]
 
     def post(self, request):
+        now = timezone.now()
+        attendance_date = timezone.localdate(now)
         date_param = request.data.get("date")
         if not date_param:
-            target_date = timezone.localdate()
+            target_date = attendance_date
         else:
             from datetime import date as date_type
 
@@ -1329,6 +1329,17 @@ class AdminForceCheckoutView(APIView):
                 target_date = date_type.fromisoformat(date_param)
             except ValueError:
                 return Response({"error": "Invalid date format"}, status=400)
+
+        if target_date != attendance_date:
+            return Response(
+                {
+                    "error":
+                    "Force checkout is available for today only. Use "
+                    "attendance regularization or an administrative "
+                    "attendance correction for historical dates."
+                },
+                status=400,
+            )
 
         is_all = request.data.get("all", False)
         employee_email = request.data.get("employee")
@@ -1394,11 +1405,11 @@ class AdminForceCheckoutView(APIView):
             )
 
         count = 0
-        now = timezone.now()
         for att in attendances:
             before_state = _attendance_log_state(att)
-            # Get effective shift for each employee
-            effective_shift = att.employee.get_effective_shift()
+            effective_shift = resolve_checkout_shift(
+                att.employee, target_date, "ADMIN", att
+            )
             with transaction.atomic():
                 AttendanceEvent.objects.create(
                     employee=att.employee,
@@ -1437,10 +1448,11 @@ class WebsiteFacialCheckInView(APIView):
         employee = request.user.employee
         today = timezone.localdate()
 
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         # Geofence verification
         is_valid, error_msg, distance_geo, coords = (
@@ -1484,9 +1496,7 @@ class WebsiteFacialCheckInView(APIView):
         )
         before_state = _attendance_log_state(attendance)
 
-        if attendance.status == "LEAVE" or (
-            attendance.status == "ABSENT" and is_working_day(today)
-        ):
+        if attendance.status in {"ABSENT", "LEAVE"}:
             return Response(
                 {
                     "error":
@@ -1521,11 +1531,19 @@ class WebsiteFacialCheckInView(APIView):
                 status=400,
             )
 
+        effective_shift = employee.get_effective_shift()
+        if effective_shift is None:
+            return Response(
+                {
+                    "error":
+                    "You must have a shift assigned before checking in. "
+                    "Please contact admin."
+                },
+                status=400,
+            )
+
         lat, lon, acc = coords
         now = timezone.now()
-
-        # Get effective shift for event recording
-        effective_shift = employee.get_effective_shift()
 
         with transaction.atomic():
             AttendanceEvent.objects.create(
@@ -1571,10 +1589,11 @@ class WebsiteFacialCheckOutView(APIView):
         employee = request.user.employee
         today = timezone.localdate()
 
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         # Geofence verification
         is_valid, error_msg, distance_geo, coords = (
@@ -1637,11 +1656,12 @@ class WebsiteFacialCheckOutView(APIView):
                 status=400,
             )
 
+        effective_shift = resolve_checkout_shift(
+            employee, today, "FACE_WEB", attendance
+        )
+
         lat, lon, acc = coords
         now = timezone.now()
-
-        # Get effective shift for event recording
-        effective_shift = employee.get_effective_shift()
 
         with transaction.atomic():
             AttendanceEvent.objects.create(
@@ -1686,10 +1706,11 @@ class KioskFaceCheckInView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         try:
             employee, distance = find_closest_match(
@@ -1737,6 +1758,17 @@ class KioskFaceCheckInView(APIView):
             employee, today
         )
 
+        if attendance.status in {"ABSENT", "LEAVE"}:
+            return Response(
+                {
+                    "error": (
+                        "Check-in is unavailable. Please contact an "
+                        "administrator."
+                    )
+                },
+                status=400,
+            )
+
         from leave_management.models import LeaveRequest
 
         has_approved_leave = LeaveRequest.objects.filter(
@@ -1750,8 +1782,8 @@ class KioskFaceCheckInView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you cannot check i"
-                        f"n because you are on approved leave today."
+                    "Check-in is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1774,8 +1806,8 @@ class KioskFaceCheckInView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you are already ch"
-                        f"ecked in today."
+                    "Check-in is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1814,7 +1846,7 @@ class KioskFaceCheckInView(APIView):
         )
         return Response(
             {
-                "message": f"Welcome, {employee.user.first_name}!",
+                "message": "Check-in successful.",
                 "check_in": attendance.check_in,
             },
             status=201,
@@ -1825,10 +1857,11 @@ class KioskFaceCheckOutView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         try:
             employee, distance = find_closest_match(
@@ -1881,8 +1914,8 @@ class KioskFaceCheckOutView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you have not check"
-                        f"ed in today."
+                    "Check-out is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1893,8 +1926,8 @@ class KioskFaceCheckOutView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you have not check"
-                        f"ed in today."
+                    "Check-out is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1902,16 +1935,17 @@ class KioskFaceCheckOutView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you are already ch"
-                        f"ecked out today."
+                    "Check-out is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
 
-        now = timezone.now()
+        effective_shift = resolve_checkout_shift(
+            employee, today, "KIOSK", attendance
+        )
 
-        # Get effective shift for event recording
-        effective_shift = employee.get_effective_shift()
+        now = timezone.now()
 
         with transaction.atomic():
             AttendanceEvent.objects.create(
@@ -1945,8 +1979,7 @@ class KioskFaceCheckOutView(APIView):
         )
         return Response(
             {
-                "message":
-                f"Goodbye, {employee.user.first_name}! Check-out successful.",
+                "message": "Check-out successful.",
                 "check_out": attendance.check_out,
             },
             status=200,
@@ -1954,15 +1987,38 @@ class KioskFaceCheckOutView(APIView):
 
 
 class FaceVerifyView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsEmployee]
+    app_access_key = "attendance"
 
     def post(self, request):
-        image_data = request.data.get("image")
-        if not image_data:
-            return Response({"error": "No image provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
+
+        employee = request.user.employee
 
         try:
-            employee, distance = find_closest_match(image_data)
+            is_match, _distance = verify_employee_face(
+                employee, frames, captured_at_ms=captured_at_ms
+            )
+        except FaceLivenessError as e:
+            record_event(
+                event_type="FACE_VERIFY",
+                category="ATTENDANCE",
+                severity="WARNING",
+                status="FAILED",
+                actor=request.user,
+                message="Face verification failed.",
+                source="FACE_SERVICE",
+                request=request,
+                metadata={"error_type": type(e).__name__},
+            )
+            status_code = 503 if e.status == "liveness_error" else 400
+            return Response(
+                {"status": e.status, "error": str(e)}, status=status_code
+            )
         except FaceExtractionError as e:
             record_event(
                 event_type="FACE_VERIFY",
@@ -1975,7 +2031,15 @@ class FaceVerifyView(APIView):
                 request=request,
                 metadata={"error_type": type(e).__name__},
             )
-            return Response({"error": str(e)}, status=400)
+            if "unavailable" in str(e).lower():
+                return Response(
+                    {"error": "Face verification is temporarily unavailable."},
+                    status=503,
+                )
+            return Response(
+                {"error": "Unable to verify the submitted camera frames."},
+                status=400,
+            )
         except Exception as e:
             record_event(
                 event_type="FACE_VERIFY",
@@ -1990,20 +2054,20 @@ class FaceVerifyView(APIView):
             )
             return Response({"error": "Internal server error"}, status=500)
 
-        if not employee:
+        if not is_match:
             record_event(
                 event_type="FACE_VERIFY",
                 category="ATTENDANCE",
                 severity="WARNING",
                 status="FAILED",
                 actor=request.user,
-                message="Face verification did not identify an employee.",
+                message="Face verification failed.",
                 source="FACE_SERVICE",
                 request=request,
             )
             return Response(
-                {"error": "Face not recognized.", "status": "unknown"},
-                status=404,
+                {"error": "Face verification failed."},
+                status=403,
             )
 
         record_event(
@@ -2019,10 +2083,7 @@ class FaceVerifyView(APIView):
         )
         return Response(
             {
-                "message": "Face verified successfully.",
-                "employee_id": employee.id,
-                "first_name": employee.user.first_name,
-                "last_name": employee.user.last_name,
+                "message": "Face verified successfully."
             },
             status=200,
         )
@@ -2266,9 +2327,8 @@ class AdminEmployeeShiftBulkAssignView(APIView):
             and not request.user.is_superuser
             and not request.user.is_staff
         ):
-            from accounts.scope_service import (
-                filter_employees_by_manager_scope,
-            )
+            from accounts.scope_service import \
+                filter_employees_by_manager_scope
 
             queryset = filter_employees_by_manager_scope(
                 request.user, queryset
@@ -3283,9 +3343,8 @@ class RegularizationRequestListView(APIView):
             "employee__user", "reviewed_by"
         )
         if manager:
-            from accounts.scope_service import (
-                filter_employees_by_manager_scope,
-            )
+            from accounts.scope_service import \
+                filter_employees_by_manager_scope
             from employees.models import Employee
 
             scoped_employees = filter_employees_by_manager_scope(
@@ -3639,7 +3698,13 @@ class RegularizationRequestApproveView(APIView):
                                 else None
                             ),
                         }
-                        shift = req.employee.get_effective_shift()
+                        shift = resolve_historical_correction_shift(
+                            req.employee,
+                            row.attendance_date,
+                            original_check_in=row.existing_check_in,
+                            original_check_out=row.existing_check_out,
+                            source="GROUPED_REGULARIZATION",
+                        )
                         from .models import AttendanceCorrection
 
                         correction = AttendanceCorrection.objects.create(

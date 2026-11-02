@@ -4,13 +4,11 @@ import uuid
 from datetime import datetime, time, timedelta
 from typing import Any, Dict
 
-from attendance.models import (
-    Attendance,
-    AttendanceEvent,
-    RegularizationRequest,
-    Shift,
-)
 from django.utils import timezone
+
+from attendance.models import (Attendance, AttendanceEvent,
+                               RegularizationRequest, Shift,
+                               get_attendance_event_state)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 
@@ -194,10 +192,8 @@ class WriteActionPlanner:
             )
 
         if target_status == "ABSENT":
-            from holidays.services import (
-                attendance_required,
-                get_day_classification,
-            )
+            from holidays.services import (attendance_required,
+                                           get_day_classification)
 
             if not attendance_required(target_date):
                 day = get_day_classification(target_date)
@@ -677,6 +673,7 @@ class WriteActionPlanner:
         warning=None,
         missing=None,
     ):
+        """Construct standard pending action dictionary with expiry."""
         return {
             "action_id": str(uuid.uuid4()),
             "session_id": session_id,
@@ -698,19 +695,30 @@ class WriteActionPlanner:
         }
 
     def _plan_force_checkout(self, intent, user, scope, session_id):
+        """Plan administrative forced checkout for an active check-in."""
         entities = intent.get("entities", {})
         employee = self._resolve_target_employee(entities, user, scope)
         target_date = self._resolve_target_date(entities)
+        planned_at = timezone.now()
+        if target_date != timezone.localdate(planned_at):
+            raise CopilotError(
+                "force_checkout_today_only",
+                "Force checkout is available for today only. Use attendance "
+                "regularization or an administrative attendance correction "
+                "for historical dates.",
+            )
         attendance = Attendance.objects.filter(
             employee_id=employee["employee_id"], date=target_date
-        ).first()
-        events = list(
-            AttendanceEvent.objects.filter(
-                employee_id=employee["employee_id"],
-                timestamp__date=target_date,
-            ).order_by("timestamp", "id")
+        ).select_related("employee").first()
+        target_employee = (
+            attendance.employee
+            if attendance
+            else Employee.objects.get(pk=employee["employee_id"])
         )
-        if not events or events[-1].event_type != "CHECK_IN":
+        state, last_event = get_attendance_event_state(
+            target_employee, target_date, attendance=attendance
+        )
+        if state != "CHECKED_IN":
             raise CopilotError(
                 "no_active_checkin",
                 "No active check-in was found for that employee on that date.",
@@ -728,7 +736,13 @@ class WriteActionPlanner:
             {"operation": "force_checkout"},
             {
                 "status": attendance.status if attendance else None,
-                "last_event": events[-1].timestamp.isoformat(),
+                "last_event": (
+                    last_event.timestamp.isoformat()
+                    if last_event
+                    else attendance.check_in.isoformat()
+                    if attendance and attendance.check_in
+                    else None
+                ),
             },
             f"Force check-out for {employee['employee_name']} on "
             f"{target_date:%B %d, %Y} at the current time.",
@@ -738,6 +752,7 @@ class WriteActionPlanner:
         )
 
     def _plan_regularization_create(self, intent, user, scope, session_id):
+        """Plan submission of a new attendance regularization request."""
         entities = intent.get("entities", {})
         employee = self._resolve_target_employee(entities, user, scope)
         target_date = self._resolve_target_date(entities)
@@ -805,6 +820,7 @@ class WriteActionPlanner:
         )
 
     def _plan_regularization_review(self, intent, user, scope, session_id):
+        """Plan approval or rejection of a pending regularization."""
         entities = intent.get("entities", {})
         employee_id = entities.get("employee_id")
         qs = RegularizationRequest.objects.select_related(
@@ -893,6 +909,7 @@ class WriteActionPlanner:
         )
 
     def _plan_shift_assignment(self, intent, user, scope, session_id):
+        """Plan assigning a configured shift to a scoped employee."""
         entities = intent.get("entities", {})
         employee = self._resolve_target_employee(entities, user, scope)
         shift = None
@@ -942,6 +959,7 @@ class WriteActionPlanner:
         )
 
     def _plan_employee_status(self, intent, user, scope, session_id):
+        """Plan activation or deactivation of an employee record."""
         entities = intent.get("entities", {})
         employee = self._resolve_target_employee(entities, user, scope)
         if "is_active" not in entities:
@@ -1035,6 +1053,7 @@ class WriteActionPlanner:
 
     @staticmethod
     def _normalize_time(value, checkout=False):
+        """Parse raw time string into a 24-hour HH:MM format."""
         if not value:
             return None
         text = str(value).strip().upper().replace(".", "")
@@ -1052,6 +1071,7 @@ class WriteActionPlanner:
 
     @staticmethod
     def _missing_question(employee_name, missing):
+        """Generate conversational prompt asking for missing parameters."""
         if {"check_in_time", "check_out_time"}.issubset(missing):
             return (
                 f"Sure. What check-in and check-out times should I use for "
@@ -1079,6 +1099,7 @@ class WriteActionPlanner:
         )
 
     def _plan_missing_employee(self, intent, user, scope, session_id):
+        """Prepare draft action awaiting clarification of missing fields."""
         entities = intent.get("entities", {})
         intent_name = intent["intent"]
         target_date = self._resolve_target_date(entities)
@@ -1166,6 +1187,7 @@ class WriteActionPlanner:
     def _attendance_description(
         employee_name, target_date, status, check_in, check_out, reason
     ):
+        """Format human-readable description for attendance modification."""
         details = f"Status: {status}"
         if status == "PRESENT":
             details += f"; check-in {check_in}; check-out {check_out}"

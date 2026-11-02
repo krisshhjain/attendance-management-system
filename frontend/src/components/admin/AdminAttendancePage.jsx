@@ -28,16 +28,11 @@ import {
   getAdminAttendance,
   resetAdminAttendance,
 } from "../../lib/attendance.js";
-import { formatDuration, formatTime } from "../../lib/date.js";
+import { attendanceDateISO, formatDuration, formatTime } from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { useFeedback } from "../../feedback/useFeedback.js";
 
 const EMPTY_RECORDS = [];
-
-function todayISO() {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
 
 function friendlyDate(value) {
   const [year, month, day] = value.split("-").map(Number);
@@ -90,7 +85,8 @@ async function exportToExcel(records, date) {
 }
 
 export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
-  const [selectedDate, setSelectedDate] = useState(todayISO());
+  const [selectedDate, setSelectedDate] = useState(attendanceDateISO());
+  const isTodaySelected = selectedDate === attendanceDateISO();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [editRecord, setEditRecord] = useState(null);
@@ -253,13 +249,22 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
             variant="outlined"
             color="warning"
             onClick={handleCheckoutAll}
-            disabled={!filteredRecords.some((record) => record.status === "INCOMPLETE")}
+            disabled={
+              !isTodaySelected || !filteredRecords.some((record) => record.status === "INCOMPLETE")
+            }
             sx={{ textTransform: "none" }}
           >
             Checkout All
           </Button>
         </Box>
       </Box>
+
+      {!isTodaySelected && (
+        <Typography role="status" variant="body2" color="text.secondary">
+          Force checkout is available for today only. Use regularization or admin correction for
+          historical dates.
+        </Typography>
+      )}
 
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5 }}>
         <TextField
@@ -354,12 +359,12 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
                         variant="outlined"
                         color="warning"
                         onClick={() => handleCheckout(record)}
-                        disabled={record.status !== "INCOMPLETE"}
+                        disabled={!isTodaySelected || record.status !== "INCOMPLETE"}
                         sx={{ textTransform: "none" }}
                       >
                         Checkout
                       </Button>
-                      {allowReset && record.date === todayISO() && (
+                      {allowReset && record.date === attendanceDateISO() && (
                         <Button
                           size="small"
                           variant="outlined"

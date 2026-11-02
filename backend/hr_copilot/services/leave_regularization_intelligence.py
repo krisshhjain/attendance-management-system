@@ -63,7 +63,10 @@ def _date_range(filters, default_year=False):
 
 
 class LeaveRegularizationIntelligence:
+    """Typed, read-only tools for leave balances and regularization."""
+
     def _employees(self, user, scope, employee_id=None):
+        """Resolve active employees permitted under the caller's scope."""
         qs = Employee.objects.select_related("user").filter(
             is_active=True, user__is_active=True
         )
@@ -86,6 +89,7 @@ class LeaveRegularizationIntelligence:
 
     @staticmethod
     def _request_row(req):
+        """Serialize a LeaveRequest instance to an audit dictionary row."""
         return {
             "id": req.id,
             "employee_id": req.employee_id,
@@ -103,6 +107,7 @@ class LeaveRegularizationIntelligence:
 
     @staticmethod
     def _regularization_row(req):
+        """Serialize a RegularizationRequest to an audit dictionary row."""
         return {
             "id": req.id,
             "employee_id": req.employee_id,
@@ -137,6 +142,7 @@ class LeaveRegularizationIntelligence:
         }
 
     def execute(self, *, metric, scope, user, filters, employee_id=None):
+        """Dispatch query to the target leave or regularization metric tool."""
         if metric not in METRICS:
             raise CopilotError(
                 "invalid_intelligence_metric",

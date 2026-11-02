@@ -26,6 +26,8 @@ def _name(employee):
 
 
 class WorkforceIntelligence:
+    """Typed, read-only tools for workforce, shifts, and organization."""
+
     @staticmethod
     def _manager_team_count(manager, requester):
         """Count employees visible to both the requester and this manager."""
@@ -37,6 +39,7 @@ class WorkforceIntelligence:
         return employees.count()
 
     def _employees(self, user, scope, employee_id=None, filters=None):
+        """Query active employees filtered by caller scope and criteria."""
         filters = filters or {}
         qs = Employee.objects.select_related("user", "shift").prefetch_related(
             "face_profile"
@@ -69,6 +72,7 @@ class WorkforceIntelligence:
 
     @staticmethod
     def _employee_row(employee, include_access=True):
+        """Format an Employee instance into a standardized summary row."""
         profile = getattr(employee, "face_profile", None)
         shift = employee.get_effective_shift()
         row = {
@@ -93,6 +97,7 @@ class WorkforceIntelligence:
         return row
 
     def execute(self, *, metric, scope, user, filters, employee_id=None):
+        """Dispatch query to the target workforce administration tool."""
         if metric not in METRICS:
             raise CopilotError(
                 "invalid_intelligence_metric",

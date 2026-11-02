@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""\nRobust bulk embedding regeneration script.\n\nThis script safely regenera\
-tes all cached embeddings using the fixed face extraction\nlogic, handling \
-failures gracefully and providing detailed reports.\n\nKey features:\n- Bac\
-ks up existing embeddings before regeneration\n- Catches and logs FaceExtra\
-ctionError exceptions without aborting\n- Reports detailed failure informat\
-ion (face areas, ratios, reasons)\n- Validates minimum enrollment counts pe\
-r identity\n- Generates comprehensive success/failure statistics\n- Can res\
-ume from partial runs\n"""
+"""
+Bulk face embedding regeneration utility.
+
+Safely regenerates cached .npy embeddings across entire dataset splits
+(train, val) using RetinaFace detection and ArcFace 512-d feature extraction:
+  - Cache safety: Full timestamped backup created prior to regeneration.
+  - Fault tolerance: Per-identity failures (e.g. multi-face ambiguity or low
+    confidence) are logged without halting the entire batch.
+  - Atomic promotion: Extracts into an isolated staging folder per identity;
+    swaps into active cache only when minimum enrollment thresholds are met.
+  - Crash recovery: Restores the previous cache snapshot on unexpected
+    exceptions or KeyboardInterrupt.
+  - Audit telemetry: Emits a comprehensive JSON report categorizing errors
+    (detection failures, ambiguous faces, insufficient enrollments).
+"""
 
 import json
 import logging
@@ -45,7 +52,10 @@ VAL_CACHE = CACHE_DIR / "val"
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
-# Quality thresholds
+# Quality thresholds for enrollment dataset validation:
+# - MIN_ENROLLMENT_IMAGES: 3 usable single-face images required for templates.
+# - MIN_QUERY_IMAGES: 3 separate images reserved for test queries.
+# - REQUIRED_TOTAL_IMAGES: 6 total images required to process an identity.
 MIN_ENROLLMENT_IMAGES = 3
 MIN_QUERY_IMAGES = 3
 REQUIRED_TOTAL_IMAGES = MIN_ENROLLMENT_IMAGES + MIN_QUERY_IMAGES
@@ -270,11 +280,18 @@ def safe_extract_embedding(
 def regenerate_identity_embeddings(
     identity_dir: Path, cache_dir: Path, stats: RegenerationStats
 ) -> bool:
-    """
-    Regenerate embeddings for a single identity.
+    """Regenerate embeddings for a single identity using atomic cache swap.
+
+    Workflow:
+      1. Verifies that identity has >= REQUIRED_TOTAL_IMAGES (6).
+      2. Creates an isolated temporary staging folder: .<identity>.staging-*
+      3. Extracts embeddings for each image into the staging folder.
+      4. Requires at least MIN_ENROLLMENT_IMAGES (3) successful extractions.
+      5. Atomically promotes staging to active identity cache via a two-phase
+         directory rename with rollback protection on failure.
 
     Returns:
-        bool: True if identity has sufficient usable images, False otherwise
+        bool: True if identity met enrollment criteria and was updated.
     """
     identity = identity_dir.name
     images = get_images(identity_dir)
@@ -286,9 +303,8 @@ def regenerate_identity_embeddings(
 
     logger.info(f"Processing identity {identity}: {len(images)} images")
 
-    # Build this identity in an isolated directory. Failed/incomplete
-    # extraction
-    # must not erase a previously usable cache.
+    # Build this identity in an isolated staging directory so that incomplete
+    # or failed extractions do not erase a previously usable cache.
     cache_dir.mkdir(parents=True, exist_ok=True)
     identity_cache_dir = cache_dir / identity
     staging_dir = Path(
@@ -298,8 +314,7 @@ def regenerate_identity_embeddings(
     try:
         successful_embeddings = 0
 
-        # Process all images for this identity into the isolated staging
-        # directory.
+        # Process all images for this identity into isolated staging directory
         for img_path in images:
             embedding = safe_extract_embedding(img_path, identity, stats)
             if embedding is not None:
@@ -312,6 +327,7 @@ def regenerate_identity_embeddings(
             )
             return False
 
+        # Two-phase atomic directory promotion with rollback protection
         backup_dir = None
         committed = False
         try:
