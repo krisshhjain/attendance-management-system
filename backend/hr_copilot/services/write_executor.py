@@ -502,9 +502,9 @@ class WriteActionExecutor:
             attendance, _ = Attendance.get_or_create_for_date(
                 employee, target_date
             )
-            attendance = Attendance.objects.select_for_update().get(
-                pk=attendance.pk
-            )
+            # get_or_create_for_date selects the summary row for update. Keep
+            # this state recheck and event write in the same transaction so
+            # concurrent Copilot checkouts cannot both close the interval.
             state, _ = get_attendance_event_state(
                 employee, target_date, attendance=attendance
             )

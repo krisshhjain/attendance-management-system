@@ -2150,7 +2150,9 @@ def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
     attendance_result.first.return_value = attendance
     event_create = MagicMock()
     monkeypatch.setattr(
-        write_executor_module.timezone, "localdate", lambda: target_date
+        write_executor_module.timezone,
+        "localdate",
+        lambda *_args: target_date,
     )
     monkeypatch.setattr(
         write_executor_module,
@@ -2165,7 +2167,20 @@ def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
     monkeypatch.setattr(
         write_executor_module,
         "Attendance",
-        SimpleNamespace(objects=attendance_query),
+        SimpleNamespace(
+            get_or_create_for_date=MagicMock(return_value=(attendance, False)),
+            objects=attendance_query,
+        ),
+    )
+    monkeypatch.setattr(
+        write_executor_module,
+        "Employee",
+        SimpleNamespace(
+            objects=SimpleNamespace(get=MagicMock(return_value=employee))
+        ),
+    )
+    monkeypatch.setattr(
+        write_executor_module.transaction, "atomic", lambda: nullcontext()
     )
     monkeypatch.setattr(
         write_executor_module,
@@ -2205,7 +2220,9 @@ def test_force_checkout_appends_event_only_for_an_open_interval(monkeypatch):
     event_create = MagicMock(return_value=created_event)
     state = SimpleNamespace(event_type="CHECK_IN")
     monkeypatch.setattr(
-        write_executor_module.timezone, "localdate", lambda: target_date
+        write_executor_module.timezone,
+        "localdate",
+        lambda *_args: target_date,
     )
     monkeypatch.setattr(
         write_executor_module,
@@ -2219,7 +2236,20 @@ def test_force_checkout_appends_event_only_for_an_open_interval(monkeypatch):
     monkeypatch.setattr(
         write_executor_module,
         "Attendance",
-        SimpleNamespace(objects=attendance_query),
+        SimpleNamespace(
+            get_or_create_for_date=MagicMock(return_value=(attendance, False)),
+            objects=attendance_query,
+        ),
+    )
+    monkeypatch.setattr(
+        write_executor_module,
+        "Employee",
+        SimpleNamespace(
+            objects=SimpleNamespace(get=MagicMock(return_value=employee))
+        ),
+    )
+    monkeypatch.setattr(
+        write_executor_module.transaction, "atomic", lambda: nullcontext()
     )
     monkeypatch.setattr(
         write_executor_module,
