@@ -699,7 +699,8 @@ class WriteActionPlanner:
         entities = intent.get("entities", {})
         employee = self._resolve_target_employee(entities, user, scope)
         target_date = self._resolve_target_date(entities)
-        if target_date != timezone.localdate():
+        planned_at = timezone.now()
+        if target_date != timezone.localdate(planned_at):
             raise CopilotError(
                 "force_checkout_today_only",
                 "Force checkout is available for today only. Use attendance "

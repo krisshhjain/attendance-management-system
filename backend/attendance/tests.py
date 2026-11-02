@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from datetime import time as datetime_time
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import requests
@@ -2811,7 +2812,20 @@ class KioskLivenessAttendanceTests(APITestCase):
         kiosk_check_out = AttendanceEvent.objects.get(
             employee=self.employee, event_type="CHECK_OUT"
         )
-        self.assertEqual(kiosk_check_out.shift_id, kiosk_check_in.shift_id)
+        self.assertEqual(kiosk_check_in.shift_id, self.shift.id)
+        self.assertEqual(kiosk_check_out.shift_id, self.shift.id)
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_IN"
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_OUT"
+            ).count(),
+            1,
+        )
 
     @patch("attendance.face_service.requests.post")
     def test_kiosk_unknown_recognition_contract_is_unchanged(self, mock_post):
@@ -4975,6 +4989,7 @@ class AdminForceCheckoutTests(APITestCase):
             checkout.timestamp, ZoneInfo("Asia/Kolkata")
         ).date()
         self.assertEqual(local_checkout_date, local_date)
+        self.assertEqual(checkout.timestamp, fixed_utc_now)
 
     def test_force_checkout_all_processes_only_currently_open_intervals(self):
         check_in = self._timestamp(9)
@@ -5046,16 +5061,39 @@ class AdminForceCheckoutTests(APITestCase):
                 event_type="CHECK_IN",
             )
 
-        response = self.client.post(
-            "/api/admin/force-checkout/",
-            {"all": True, "date": self.target_date.isoformat()},
-            format="json",
+        before_local_midnight = timezone.make_aware(
+            datetime.combine(
+                self.target_date, datetime_time(23, 59, 0)
+            )
         )
+        after_local_midnight = before_local_midnight + timedelta(minutes=2)
+        mocked_timezone = SimpleNamespace(
+            now=Mock(return_value=before_local_midnight),
+            localdate=Mock(
+                side_effect=[
+                    self.target_date,
+                    timezone.localdate(after_local_midnight),
+                ]
+            ),
+        )
+        with (
+            patch("attendance.views.timezone", mocked_timezone),
+            patch("attendance.views.record_event"),
+        ):
+            response = self.client.post(
+                "/api/admin/force-checkout/",
+                {"all": True, "date": self.target_date.isoformat()},
+                format="json",
+            )
 
         self.assertEqual(
             response.status_code, status.HTTP_200_OK, response.data
         )
         self.assertEqual(response.data["count"], 2)
+        mocked_timezone.now.assert_called_once_with()
+        mocked_timezone.localdate.assert_called_once_with(
+            before_local_midnight
+        )
         for employee, shift in (
             (self.employee, self.shift),
             (other_employee, second_shift),
@@ -5064,6 +5102,10 @@ class AdminForceCheckoutTests(APITestCase):
                 employee=employee, event_type="CHECK_OUT"
             ).latest("id")
             self.assertEqual(checkout.shift_id, shift.id)
+            self.assertEqual(checkout.timestamp, before_local_midnight)
+            self.assertEqual(
+                timezone.localtime(checkout.timestamp).date(), self.target_date
+            )
 
 
 class AttendanceAdminScopeAndLocationTests(APITestCase):

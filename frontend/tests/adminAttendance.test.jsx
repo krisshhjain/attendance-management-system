@@ -3,7 +3,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { test, expect, vi } from "vitest";
-import { AdminAttendancePage } from "../src/components/admin/AdminAttendancePage.jsx";
+import {
+  AdminAttendancePage,
+  todayISO,
+} from "../src/components/admin/AdminAttendancePage.jsx";
 import { FeedbackProvider } from "../src/feedback/FeedbackProvider.jsx";
 import { API_BASE_URL } from "../src/lib/api.js";
 import { server } from "./mocks/server.js";
@@ -217,9 +220,10 @@ test("keeps historical attendance visible but disables force checkout", async ()
   renderPage();
   expect(await screen.findByText("Alice Employee")).toBeInTheDocument();
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayISO = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+  const [year, month, day] = todayISO().split("-").map(Number);
+  const yesterdayISO = new Date(
+    Date.UTC(year, month - 1, day - 1),
+  ).toISOString().slice(0, 10);
   fireEvent.change(screen.getByLabelText("Select date"), {
     target: { value: yesterdayISO },
   });
@@ -229,6 +233,10 @@ test("keeps historical attendance visible but disables force checkout", async ()
   expect(screen.getByRole("button", { name: "Checkout All" })).toBeDisabled();
   const aliceRow = screen.getByText("Alice Employee").closest("tr");
   expect(within(aliceRow).getByRole("button", { name: "Checkout" })).toBeDisabled();
+});
+
+test("uses the configured attendance timezone for today's date", () => {
+  expect(todayISO(new Date("2026-11-01T19:00:00.000Z"))).toBe("2026-11-02");
 });
 
 test("requires an edit reason and saves attendance corrections", async () => {

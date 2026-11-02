@@ -488,7 +488,8 @@ class WriteActionExecutor:
         """Create admin checkout event and recompute attendance."""
         target = pending_action["target_data"]
         target_date = datetime.fromisoformat(target["date"]).date()
-        if target_date != timezone.localdate():
+        checkout_at = timezone.now()
+        if target_date != timezone.localdate(checkout_at):
             raise CopilotError(
                 "force_checkout_today_only",
                 "Force checkout is available for today only. Use attendance "
@@ -496,32 +497,31 @@ class WriteActionExecutor:
                 "for historical dates.",
             )
 
-        attendance = Attendance.objects.filter(
-            employee_id=target["employee_id"], date=target_date
-        ).select_related("employee").first()
-        employee = (
-            attendance.employee
-            if attendance is not None
-            else Employee.objects.get(pk=target["employee_id"])
-        )
-        state, _ = get_attendance_event_state(
-            employee, target_date, attendance=attendance
-        )
-        if state != "CHECKED_IN":
-            raise CopilotError(
-                "no_active_checkin",
-                "No active check-in remains for this employee and date.",
+        employee = Employee.objects.get(pk=target["employee_id"])
+        with transaction.atomic():
+            attendance, _ = Attendance.get_or_create_for_date(
+                employee, target_date
             )
-        event = AttendanceEvent.objects.create(
-            employee=employee,
-            shift=resolve_checkout_shift(
-                employee, target_date, "HR_COPILOT", attendance
-            ),
-            timestamp=timezone.now(),
-            event_type="CHECK_OUT",
-            source="ADMIN",
-        )
-        if attendance is not None:
+            attendance = Attendance.objects.select_for_update().get(
+                pk=attendance.pk
+            )
+            state, _ = get_attendance_event_state(
+                employee, target_date, attendance=attendance
+            )
+            if state != "CHECKED_IN":
+                raise CopilotError(
+                    "no_active_checkin",
+                    "No active check-in remains for this employee and date.",
+                )
+            event = AttendanceEvent.objects.create(
+                employee=employee,
+                shift=resolve_checkout_shift(
+                    employee, target_date, "HR_COPILOT", attendance
+                ),
+                timestamp=checkout_at,
+                event_type="CHECK_OUT",
+                source="ADMIN",
+            )
             attendance.recompute_from_events()
         return {
             "success": True,

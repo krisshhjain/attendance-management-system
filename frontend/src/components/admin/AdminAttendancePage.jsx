@@ -34,9 +34,17 @@ import { useFeedback } from "../../feedback/useFeedback.js";
 
 const EMPTY_RECORDS = [];
 
-function todayISO() {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+export function todayISO(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const dateParts = Object.fromEntries(
+    parts.map(({ type, value }) => [type, value]),
+  );
+  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
 }
 
 function friendlyDate(value) {

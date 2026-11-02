@@ -1282,9 +1282,11 @@ class AdminForceCheckoutView(APIView):
     permission_classes = [IsManagerOrAdmin]
 
     def post(self, request):
+        now = timezone.now()
+        attendance_date = timezone.localdate(now)
         date_param = request.data.get("date")
         if not date_param:
-            target_date = timezone.localdate()
+            target_date = attendance_date
         else:
             from datetime import date as date_type
 
@@ -1293,7 +1295,7 @@ class AdminForceCheckoutView(APIView):
             except ValueError:
                 return Response({"error": "Invalid date format"}, status=400)
 
-        if target_date != timezone.localdate():
+        if target_date != attendance_date:
             return Response(
                 {
                     "error":
@@ -1368,7 +1370,6 @@ class AdminForceCheckoutView(APIView):
             )
 
         count = 0
-        now = timezone.now()
         for att in attendances:
             before_state = _attendance_log_state(att)
             effective_shift = resolve_checkout_shift(
