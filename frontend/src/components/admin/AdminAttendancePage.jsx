@@ -255,8 +255,7 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
             color="warning"
             onClick={handleCheckoutAll}
             disabled={
-              !isTodaySelected ||
-              !filteredRecords.some((record) => record.status === "INCOMPLETE")
+              !isTodaySelected || !filteredRecords.some((record) => record.status === "INCOMPLETE")
             }
             sx={{ textTransform: "none" }}
           >
