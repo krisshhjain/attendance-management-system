@@ -214,9 +214,7 @@ class CheckInView(APIView):
         )
         before_state = _attendance_log_state(attendance)
 
-        if attendance.status == "LEAVE" or (
-            attendance.status == "ABSENT" and is_working_day(today)
-        ):
+        if attendance.status in {"ABSENT", "LEAVE"}:
             return Response(
                 {
                     "error":
@@ -1460,9 +1458,7 @@ class WebsiteFacialCheckInView(APIView):
         )
         before_state = _attendance_log_state(attendance)
 
-        if attendance.status == "LEAVE" or (
-            attendance.status == "ABSENT" and is_working_day(today)
-        ):
+        if attendance.status in {"ABSENT", "LEAVE"}:
             return Response(
                 {
                     "error":
@@ -1722,6 +1718,17 @@ class KioskFaceCheckInView(APIView):
             employee, today
         )
 
+        if attendance.status in {"ABSENT", "LEAVE"}:
+            return Response(
+                {
+                    "error": (
+                        "Check-in is unavailable. Please contact an "
+                        "administrator."
+                    )
+                },
+                status=400,
+            )
+
         from leave_management.models import LeaveRequest
 
         has_approved_leave = LeaveRequest.objects.filter(
@@ -1735,8 +1742,8 @@ class KioskFaceCheckInView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you cannot check i"
-                        f"n because you are on approved leave today."
+                    "Check-in is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1759,8 +1766,8 @@ class KioskFaceCheckInView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you are already ch"
-                        f"ecked in today."
+                    "Check-in is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1799,7 +1806,7 @@ class KioskFaceCheckInView(APIView):
         )
         return Response(
             {
-                "message": f"Welcome, {employee.user.first_name}!",
+                "message": "Check-in successful.",
                 "check_in": attendance.check_in,
             },
             status=201,
@@ -1866,8 +1873,8 @@ class KioskFaceCheckOutView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you have not check"
-                        f"ed in today."
+                    "Check-out is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1878,8 +1885,8 @@ class KioskFaceCheckOutView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you have not check"
-                        f"ed in today."
+                    "Check-out is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1887,8 +1894,8 @@ class KioskFaceCheckOutView(APIView):
             return Response(
                 {
                     "error":
-                    f"Hello {employee.user.first_name}, you are already ch"
-                        f"ecked out today."
+                    "Check-out is unavailable. Please contact an "
+                    "administrator."
                 },
                 status=400,
             )
@@ -1931,8 +1938,7 @@ class KioskFaceCheckOutView(APIView):
         )
         return Response(
             {
-                "message":
-                f"Goodbye, {employee.user.first_name}! Check-out successful.",
+                "message": "Check-out successful.",
                 "check_out": attendance.check_out,
             },
             status=200,
@@ -1940,15 +1946,37 @@ class KioskFaceCheckOutView(APIView):
 
 
 class FaceVerifyView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsEmployee]
+    app_access_key = "attendance"
 
     def post(self, request):
-        image_data = request.data.get("image")
-        if not image_data:
-            return Response({"error": "No image provided"}, status=400)
+        frames = request.data.get("frames")
+        captured_at_ms = request.data.get("captured_at_ms")
+        if not frames:
+            return Response({"error": "No camera frames provided"}, status=400)
+
+        employee = request.user.employee
 
         try:
-            employee, distance = find_closest_match(image_data)
+            is_match, _distance = verify_employee_face(
+                employee, frames, captured_at_ms=captured_at_ms
+            )
+        except FaceLivenessError as e:
+            record_event(
+                event_type="FACE_VERIFY",
+                category="ATTENDANCE",
+                severity="WARNING",
+                status="FAILED",
+                actor=request.user,
+                message="Face verification failed.",
+                source="FACE_SERVICE",
+                request=request,
+                metadata={"error_type": type(e).__name__},
+            )
+            status_code = 503 if e.status == "liveness_error" else 400
+            return Response(
+                {"status": e.status, "error": str(e)}, status=status_code
+            )
         except FaceExtractionError as e:
             record_event(
                 event_type="FACE_VERIFY",
@@ -1961,7 +1989,15 @@ class FaceVerifyView(APIView):
                 request=request,
                 metadata={"error_type": type(e).__name__},
             )
-            return Response({"error": str(e)}, status=400)
+            if "unavailable" in str(e).lower():
+                return Response(
+                    {"error": "Face verification is temporarily unavailable."},
+                    status=503,
+                )
+            return Response(
+                {"error": "Unable to verify the submitted camera frames."},
+                status=400,
+            )
         except Exception as e:
             record_event(
                 event_type="FACE_VERIFY",
@@ -1976,20 +2012,20 @@ class FaceVerifyView(APIView):
             )
             return Response({"error": "Internal server error"}, status=500)
 
-        if not employee:
+        if not is_match:
             record_event(
                 event_type="FACE_VERIFY",
                 category="ATTENDANCE",
                 severity="WARNING",
                 status="FAILED",
                 actor=request.user,
-                message="Face verification did not identify an employee.",
+                message="Face verification failed.",
                 source="FACE_SERVICE",
                 request=request,
             )
             return Response(
-                {"error": "Face not recognized.", "status": "unknown"},
-                status=404,
+                {"error": "Face verification failed."},
+                status=403,
             )
 
         record_event(
@@ -2005,10 +2041,7 @@ class FaceVerifyView(APIView):
         )
         return Response(
             {
-                "message": "Face verified successfully.",
-                "employee_id": employee.id,
-                "first_name": employee.user.first_name,
-                "last_name": employee.user.last_name,
+                "message": "Face verified successfully."
             },
             status=200,
         )

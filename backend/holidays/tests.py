@@ -458,7 +458,7 @@ class HolidayAttendanceIntegrationTests(APITestCase):
             RegularizationRequest.objects.get(pk=request_id).status, "PENDING"
         )
 
-    def test_employee_can_check_in_on_holiday_with_stale_absence(
+    def test_employee_cannot_check_in_on_holiday_with_explicit_absence(
         self,
     ):
         Holiday.objects.create(date=self.holiday_date, name="Company Day")
@@ -470,7 +470,7 @@ class HolidayAttendanceIntegrationTests(APITestCase):
         )
         self.employee.shift = shift
         self.employee.save(update_fields=["shift"])
-        Attendance.objects.create(
+        attendance = Attendance.objects.create(
             employee=self.employee, date=self.holiday_date, status="ABSENT"
         )
         self.client.force_authenticate(self.employee_user)
@@ -493,14 +493,16 @@ class HolidayAttendanceIntegrationTests(APITestCase):
                 {"latitude": 0, "longitude": 0, "accuracy": 5},
                 format="json",
             )
-        self.assertEqual(response.status_code, 201, response.data)
-        self.assertTrue(
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertFalse(
             AttendanceEvent.objects.filter(
                 employee=self.employee,
                 timestamp=timestamp,
                 event_type="CHECK_IN",
             ).exists()
         )
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.status, "ABSENT")
 
 
 class HolidayLeaveIntegrationTests(TestCase):
