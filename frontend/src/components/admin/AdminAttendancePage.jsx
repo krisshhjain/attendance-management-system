@@ -28,11 +28,7 @@ import {
   getAdminAttendance,
   resetAdminAttendance,
 } from "../../lib/attendance.js";
-import {
-  attendanceDateISO,
-  formatDuration,
-  formatTime,
-} from "../../lib/date.js";
+import { attendanceDateISO, formatDuration, formatTime } from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { useFeedback } from "../../feedback/useFeedback.js";
 

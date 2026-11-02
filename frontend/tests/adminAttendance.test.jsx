@@ -219,9 +219,7 @@ test("keeps historical attendance visible but disables force checkout", async ()
   expect(await screen.findByText("Alice Employee")).toBeInTheDocument();
 
   const [year, month, day] = attendanceDateISO().split("-").map(Number);
-  const yesterdayISO = new Date(Date.UTC(year, month - 1, day - 1))
-    .toISOString()
-    .slice(0, 10);
+  const yesterdayISO = new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
   fireEvent.change(screen.getByLabelText("Select date"), {
     target: { value: yesterdayISO },
   });
