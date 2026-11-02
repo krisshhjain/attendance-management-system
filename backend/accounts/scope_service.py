@@ -32,6 +32,11 @@ def get_manager_scope(manager):
 
 
 def employee_in_manager_scope(manager, employee):
+    """Check whether an employee belongs to the manager's active scope.
+
+    Interns use section scope. Permanent and contractual employees
+    use department scope. Unknown employment types are denied.
+    """
     scope = get_manager_scope(manager)
     if scope["unrestricted"]:
         return True
@@ -39,12 +44,13 @@ def employee_in_manager_scope(manager, employee):
         return False
     if employee.employment_type == "INTERN":
         return employee.section in scope["sections"]
-    if employee.employment_type == "PERMANENT":
+    if employee.employment_type in {"PERMANENT", "CONTRACT"}:
         return employee.department in scope["departments"]
     return False
 
 
 def filter_employees_by_manager_scope(manager, queryset):
+    """Filter employees using the same manager-scope authorization rules."""
     scope = get_manager_scope(manager)
     if scope["unrestricted"]:
         return queryset
@@ -54,7 +60,10 @@ def filter_employees_by_manager_scope(manager, queryset):
 
     return queryset.filter(
         Q(employment_type="INTERN", section__in=scope["sections"])
-        | Q(employment_type="PERMANENT", department__in=scope["departments"])
+        | Q(
+            employment_type__in=["PERMANENT", "CONTRACT"],
+            department__in=scope["departments"],
+        )
     )
 
 
