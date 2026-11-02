@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime, time, timedelta
 
 from django.conf import settings
 from django.db import models
+
+logger = logging.getLogger(__name__)
 
 
 def attendance_day_end(target_date):
@@ -213,11 +216,9 @@ class Attendance(models.Model):
 
         if not attendance_required(self.date):
             return None
-        effective_shift = self.employee.get_effective_shift()
-        if not effective_shift or not effective_shift.is_active:
+        shift = self.get_shift_for_adherence()
+        if shift is None:
             return None
-
-        shift = effective_shift
         first_check_in = self.check_in
 
         if not first_check_in:
@@ -244,6 +245,35 @@ class Attendance(models.Model):
             return "ON_TIME"
         else:
             return "LATE"
+
+    def get_shift_for_adherence(self):
+        """Return the shift used to assess this date's first check-in.
+
+        Effective check-in events retain their recorded shift attribution even
+        if the shift is now inactive. Legacy summary-only rows use the current
+        effective active shift because no historical event attribution exists.
+        Shift-time edits are not historically versioned by the data model.
+        """
+        if not self.check_in:
+            return None
+
+        check_in_event = next(
+            (
+                event
+                for event in get_effective_attendance_events(
+                    self.employee, self.date
+                )
+                if event.event_type == "CHECK_IN"
+            ),
+            None,
+        )
+        if check_in_event is not None:
+            return check_in_event.shift if check_in_event.shift_id else None
+
+        legacy_shift = self.employee.get_effective_shift()
+        if legacy_shift and legacy_shift.is_active:
+            return legacy_shift
+        return None
 
     @classmethod
     def get_or_create_for_date(cls, employee, date):
@@ -357,7 +387,7 @@ def get_effective_attendance_events(employee, target_date):
     """
     event_rows = list(
         employee.attendance_events.filter(timestamp__date=target_date)
-        .select_related("correction")
+        .select_related("correction", "shift")
         .order_by("timestamp", "id")
     )
     corrections = list(
@@ -436,6 +466,192 @@ def get_effective_attendance_events(employee, target_date):
         for event in event_rows
         if event.source == "ADMIN" or event.event_type not in admin_event_types
     ]
+
+
+def get_attendance_event_state(employee, target_date, attendance=None):
+    """Return attendance state from effective events or the legacy summary."""
+    events = get_effective_attendance_events(employee, target_date)
+    last_event = events[-1] if events else None
+    if last_event is not None:
+        state = (
+            "CHECKED_IN"
+            if last_event.event_type == "CHECK_IN"
+            else "CHECKED_OUT"
+        )
+        return state, last_event
+
+    if attendance is None:
+        attendance = Attendance.objects.filter(
+            employee=employee, date=target_date
+        ).first()
+    if attendance is None:
+        return "NOT_CHECKED_IN", None
+    if attendance.check_out:
+        return "CHECKED_OUT", None
+    if attendance.check_in:
+        return "CHECKED_IN", None
+    return "NOT_CHECKED_IN", None
+
+
+def resolve_checkout_shift(employee, target_date, source, attendance=None):
+    """Resolve a checkout shift from the opening event of its active interval.
+
+    A recorded null shift stays null. Only legacy summary-only open attendance
+    falls back to the employee's current effective shift.
+    """
+    events = get_effective_attendance_events(employee, target_date)
+    opening_event = (
+        events[-1]
+        if events and events[-1].event_type == "CHECK_IN"
+        else None
+    )
+    if opening_event is not None:
+        if opening_event.shift_id:
+            return opening_event.shift
+        logger.error(
+            "Checkout opening event has no recorded shift; preserving null.",
+            extra={
+                "employee_id": employee.pk,
+                "attendance_date": target_date.isoformat(),
+                "checkout_source": source,
+                "opening_event_id": opening_event.pk,
+            },
+        )
+        return None
+
+    if (
+        not events
+        and attendance is not None
+        and attendance.check_in is not None
+        and attendance.check_out is None
+    ):
+        logger.warning(
+            "No effective check-in event; using legacy summary shift "
+            "fallback.",
+            extra={
+                "employee_id": employee.pk,
+                "attendance_date": target_date.isoformat(),
+                "checkout_source": source,
+            },
+        )
+        shift = employee.get_effective_shift()
+        if shift is not None:
+            return shift
+
+    logger.error(
+        "No shift could be resolved for attendance checkout.",
+        extra={
+            "employee_id": employee.pk,
+            "attendance_date": target_date.isoformat(),
+            "checkout_source": source,
+        },
+    )
+    return None
+
+
+def resolve_historical_correction_shift(
+    employee,
+    target_date,
+    *,
+    original_check_in=None,
+    original_check_out=None,
+    events=None,
+    source="ATTENDANCE_CORRECTION",
+):
+    """Find a historical interval's recorded opening shift for a correction.
+
+    This deliberately never falls back to today's employee shift. If the
+    original interval cannot be identified, the caller should preserve null.
+    """
+    effective_events = (
+        list(events)
+        if events is not None
+        else get_effective_attendance_events(employee, target_date)
+    )
+    intervals = []
+    opening_event = None
+    for event in effective_events:
+        if event.event_type == "CHECK_IN":
+            if opening_event is None:
+                opening_event = event
+        elif event.event_type == "CHECK_OUT" and opening_event is not None:
+            if event.timestamp >= opening_event.timestamp:
+                intervals.append((opening_event, event))
+            opening_event = None
+
+    matches = []
+    if original_check_in is not None and original_check_out is not None:
+        matches = [
+            pair
+            for pair in intervals
+            if pair[0].timestamp == original_check_in
+            and pair[1].timestamp == original_check_out
+        ]
+    elif original_check_out is not None:
+        matches = [
+            pair
+            for pair in intervals
+            if pair[1].timestamp == original_check_out
+        ]
+    elif original_check_in is not None:
+        matches = [
+            pair
+            for pair in intervals
+            if pair[0].timestamp == original_check_in
+        ]
+    if (
+        not matches
+        and original_check_in is None
+        and original_check_out is None
+        and len(intervals) == 1
+        and opening_event is None
+    ):
+        matches = intervals
+    has_both_original_times = (
+        original_check_in is not None and original_check_out is not None
+    )
+    if (
+        not matches
+        and opening_event is not None
+        and not has_both_original_times
+        and not intervals
+    ):
+        matches = [(opening_event, None)]
+    if (
+        not matches
+        and original_check_in is not None
+        and opening_event is not None
+        and opening_event.timestamp == original_check_in
+        and not has_both_original_times
+    ):
+        matches = [(opening_event, None)]
+
+    if len(matches) == 1:
+        opening_event = matches[0][0]
+        if opening_event.shift_id:
+            return opening_event.shift
+        logger.warning(
+            "Matched historical interval has no recorded shift; "
+            "preserving null.",
+            extra={
+                "employee_id": employee.pk,
+                "attendance_date": target_date.isoformat(),
+                "correction_source": source,
+                "opening_event_id": opening_event.pk,
+            },
+        )
+        return None
+
+    logger.warning(
+        "Could not identify a recorded shift for historical correction.",
+        extra={
+            "employee_id": employee.pk,
+            "attendance_date": target_date.isoformat(),
+            "correction_source": source,
+            "candidate_interval_count": len(matches),
+        },
+    )
+    return None
 
 
 class AttendanceAuditLog(models.Model):
@@ -853,6 +1069,14 @@ class RegularizationRequest(models.Model):
                 ),
             }
 
+            historical_shift = resolve_historical_correction_shift(
+                self.employee,
+                self.attendance_date,
+                original_check_in=attendance.check_in,
+                original_check_out=attendance.check_out,
+                source="REGULARIZATION",
+            )
+
             # Create audit record
             correction = AttendanceCorrection.objects.create(
                 attendance=attendance,
@@ -869,6 +1093,7 @@ class RegularizationRequest(models.Model):
                 correction=correction,
                 correction_check_in=correction_check_in,
                 correction_check_out=correction_check_out,
+                historical_shift=historical_shift,
             )
 
             # Recompute attendance from effective events.
@@ -887,6 +1112,7 @@ class RegularizationRequest(models.Model):
         correction,
         correction_check_in=None,
         correction_check_out=None,
+        historical_shift=None,
     ):
         """
         Create corrective AttendanceEvents based on the regularization request.
@@ -894,14 +1120,11 @@ class RegularizationRequest(models.Model):
         This preserves the event-based architecture by creating new events
         with source='ADMIN' instead of modifying attendance summaries directly.
         """
-        # Get employee's effective shift for the date
-        shift = self.employee.get_effective_shift()
-
         # Create check-in event if requested
         if correction_check_in:
             AttendanceEvent.objects.create(
                 employee=self.employee,
-                shift=shift,
+                shift=historical_shift,
                 timestamp=correction_check_in,
                 event_type="CHECK_IN",
                 source="ADMIN",
@@ -912,7 +1135,7 @@ class RegularizationRequest(models.Model):
         if correction_check_out:
             AttendanceEvent.objects.create(
                 employee=self.employee,
-                shift=shift,
+                shift=historical_shift,
                 timestamp=correction_check_out,
                 event_type="CHECK_OUT",
                 source="ADMIN",

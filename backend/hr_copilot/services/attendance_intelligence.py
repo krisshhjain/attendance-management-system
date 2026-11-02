@@ -2,18 +2,14 @@
 
 from datetime import date, timedelta
 
-from attendance.models import (
-    Attendance,
-    calculate_completed_working_duration,
-    get_effective_attendance_events,
-)
 from django.utils import timezone
+
+from attendance.models import (Attendance,
+                               calculate_completed_working_duration,
+                               get_effective_attendance_events)
 from employees.models import Employee
-from holidays.services import (
-    get_day_classification,
-    get_day_classifications,
-    is_working_day,
-)
+from holidays.services import (get_day_classification, get_day_classifications,
+                               is_working_day)
 from leave_management.models import LeaveRequest
 
 from .pipeline import CopilotError
@@ -195,6 +191,9 @@ class AttendanceIntelligence:
             attendance = state["attendance"]
             if not attendance or not attendance.check_in:
                 continue
+            shift = attendance.get_shift_for_adherence()
+            if shift is None:
+                continue
             # Reuse the existing domain adherence rule, including its five
             # minute grace period and assigned-shift semantics.
             if attendance.get_shift_adherence() == "LATE":
@@ -204,9 +203,7 @@ class AttendanceIntelligence:
                         "employee_name": self._employee_name(employee),
                         "email": employee.user.email,
                         "check_in": attendance.check_in.isoformat(),
-                        "shift": (
-                            employee.shift.name if employee.shift else None
-                        ),
+                        "shift": shift.name,
                     }
                 )
         return self._base(

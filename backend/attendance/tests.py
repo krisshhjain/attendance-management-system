@@ -1,42 +1,31 @@
 from datetime import date, datetime
 from datetime import time as datetime_time
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import requests
-from accounts.models import ManagerScope
-from attendance.face_service import (
-    FaceExtractionError,
-    FaceLivenessError,
-    _recognize_payload,
-    find_closest_match,
-    process_enrollment,
-)
-from attendance.geofence import (
-    GEOFENCE_RADIUS_METERS,
-    WORKPLACE_LATITUDE,
-    WORKPLACE_LONGITUDE,
-    calculate_haversine_distance,
-)
-from attendance.models import (
-    Attendance,
-    AttendanceCorrection,
-    AttendanceEvent,
-    OfficeLocation,
-    RegularizationQuotaPolicy,
-    RegularizationRequest,
-    Shift,
-    attendance_day_end,
-    calculate_working_duration,
-    get_effective_attendance_events,
-)
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from employees.models import Employee, FaceProfile
 from rest_framework import status
 from rest_framework.test import APITestCase
+
+from accounts.models import ManagerScope
+from attendance.face_service import (FaceExtractionError, FaceLivenessError,
+                                     _recognize_payload, find_closest_match,
+                                     process_enrollment)
+from attendance.geofence import (GEOFENCE_RADIUS_METERS, WORKPLACE_LATITUDE,
+                                 WORKPLACE_LONGITUDE,
+                                 calculate_haversine_distance)
+from attendance.models import (Attendance, AttendanceCorrection,
+                               AttendanceEvent, OfficeLocation,
+                               RegularizationQuotaPolicy,
+                               RegularizationRequest, Shift,
+                               attendance_day_end, calculate_working_duration,
+                               get_effective_attendance_events)
+from employees.models import Employee, FaceProfile
 
 User = get_user_model()
 ATTENDANCE_TEST_WORKDAY = date(2026, 10, 12)  # Monday
@@ -285,6 +274,14 @@ class RegularizationWorkflowTests(APITestCase):
             date_joined=self.attendance_date - timedelta(days=30),
             is_active=True,
         )
+        self.shift = Shift.objects.create(
+            name="Regularization Historical Shift",
+            code="REG-HIST-SHIFT",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
         self.admin_user = User.objects.create_user(
             email="regularization.admin@example.com",
             password="password123",
@@ -315,12 +312,14 @@ class RegularizationWorkflowTests(APITestCase):
         )
         self.original_check_in_event = AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=self.check_in,
             event_type="CHECK_IN",
             source="MOBILE",
         )
         self.original_check_out_event = AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=self.check_out,
             event_type="CHECK_OUT",
             source="MOBILE",
@@ -513,6 +512,16 @@ class RegularizationWorkflowTests(APITestCase):
         self.check_out = timezone.make_aware(
             datetime.combine(self.attendance_date, datetime_time(17, 0))
         )
+        prior_check_in = timezone.make_aware(
+            datetime.combine(second_date, datetime_time(9, 0))
+        )
+        self.attendance.check_in = prior_check_in
+        self.attendance.check_out = None
+        self.attendance.status = "INCOMPLETE"
+        self.attendance.save(
+            update_fields=["check_in", "check_out", "status"]
+        )
+        self.original_check_out_event.delete()
         self.client.force_authenticate(user=self.employee_user)
         with (
             patch("attendance.views.timezone.localdate", return_value=anchor),
@@ -596,6 +605,28 @@ class RegularizationWorkflowTests(APITestCase):
         self.assertEqual(
             RegularizationRequest.objects.get(id=request_id).status, "APPROVED"
         )
+        approved_request = RegularizationRequest.objects.get(pk=request_id)
+        historical_day = approved_request.days.get(
+            attendance_date=second_date
+        )
+        historical_checkout = (
+            historical_day.attendance_correction.attendance_events.get(
+                event_type="CHECK_OUT"
+            )
+        )
+        self.assertEqual(
+            historical_checkout.shift_id, self.shift.id
+        )
+        new_pair_day = approved_request.days.get(
+            attendance_date=self.attendance_date
+        )
+        self.assertEqual(
+            set(
+                new_pair_day.attendance_correction.attendance_events
+                .values_list("shift_id", flat=True)
+            ),
+            {None},
+        )
 
     def test_admin_approval_applies_final_times_and_audits_correction(self):
         self.client.force_authenticate(user=self.admin_user)
@@ -631,6 +662,74 @@ class RegularizationWorkflowTests(APITestCase):
                 self.request.attendance_correction.previous_data["check_in"]
             ),
             self.check_in,
+        )
+
+    def test_regularization_uses_original_interval_shift_after_reassignment(
+        self,
+    ):
+        replacement = Shift.objects.create(
+            name="Current replacement shift",
+            code="REG-CURRENT-SHIFT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+
+        self.request.approve(
+            self.admin_user,
+            approved_check_in=self.request.requested_check_in,
+            approved_check_out=self.request.requested_check_out,
+        )
+
+        correction_events = list(
+            self.request.attendance_correction.attendance_events.order_by(
+                "timestamp", "id"
+            )
+        )
+        self.assertEqual(len(correction_events), 2)
+        self.assertEqual(
+            {event.shift_id for event in correction_events}, {self.shift.id}
+        )
+
+    def test_regularization_does_not_invent_shift_without_historical_evidence(
+        self,
+    ):
+        target_date = self.attendance_date - timedelta(days=1)
+        current_shift = Shift.objects.create(
+            name="Current only shift",
+            code="REG-NO-HISTORY-SHIFT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = current_shift
+        self.employee.save(update_fields=["shift"])
+        corrected_in = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(9, 0))
+        )
+        corrected_out = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(17, 0))
+        )
+        request_row = RegularizationRequest.objects.create(
+            employee=self.employee,
+            attendance_date=target_date,
+            request_type="INCORRECT_ATTENDANCE",
+            requested_check_in=corrected_in,
+            requested_check_out=corrected_out,
+            reason="Historical times have no original shift evidence.",
+        )
+
+        correction = request_row.approve(
+            self.admin_user,
+            approved_check_in=corrected_in,
+            approved_check_out=corrected_out,
+        )
+
+        self.assertEqual(
+            set(
+                correction.attendance_events.values_list("shift_id", flat=True)
+            ),
+            {None},
         )
 
     def _approve_request(
@@ -1983,6 +2082,14 @@ class WebsiteFacialCheckInViewTests(APITestCase):
             employment_type="PERMANENT",
             date_joined="2023-01-01",
         )
+        self.shift = Shift.objects.create(
+            name="Website Shift",
+            code="WEB-CHECKIN-SHIFT",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
         self.profile = FaceProfile.objects.create(
             employee=self.employee, face_template=[0.5] * 512, status="ACTIVE"
         )
@@ -2033,6 +2140,28 @@ class WebsiteFacialCheckInViewTests(APITestCase):
             request_payload["captured_at_ms"], [0, 250, 500, 750, 1000]
         )
         self.assertTrue(request_call.args[0].endswith("/recognize-sequence"))
+
+    @patch("attendance.views.verify_employee_face", return_value=(True, 0.3))
+    def test_facial_check_in_rejects_missing_shift_after_validation(
+        self, _mock_verify
+    ):
+        self.employee.shift = None
+        self.employee.save(update_fields=["shift"])
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            self.url,
+            camera_sequence_payload(**self.valid_location),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("shift assigned", response.data["error"])
+        self.assertFalse(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_IN"
+            ).exists()
+        )
 
     @patch("attendance.face_service.requests.post")
     def test_single_image_direct_request_cannot_bypass_sequence_gate(
@@ -2102,8 +2231,9 @@ class WebsiteFacialCheckInViewTests(APITestCase):
     @patch("attendance.face_service.requests.post")
     def test_facial_check_in_duplicate(self, mock_post):
         # Create a check-in for today
-        from attendance.models import Attendance
         from django.utils import timezone
+
+        from attendance.models import Attendance
 
         Attendance.objects.create(
             employee=self.employee,
@@ -2134,6 +2264,7 @@ class WebsiteFacialCheckInViewTests(APITestCase):
     @patch("attendance.face_service.requests.post")
     def test_facial_check_in_on_leave(self, mock_post):
         from django.utils import timezone
+
         from leave_management.models import LeaveRequest, LeaveType
 
         today = timezone.localdate()
@@ -2280,8 +2411,9 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_success(self, mock_post):
         import datetime
 
-        from attendance.models import Attendance
         from django.utils import timezone
+
+        from attendance.models import Attendance
 
         # Check in 6 minutes ago
         check_in_time = timezone.now() - datetime.timedelta(minutes=6)
@@ -2310,6 +2442,63 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], "Check-out successful")
+
+    @patch("attendance.views.verify_employee_face", return_value=(True, 0.3))
+    def test_facial_checkout_uses_shift_recorded_at_opening_event(
+        self, _mock_verify
+    ):
+        target_date = ATTENDANCE_TEST_WORKDAY
+        fixed_now = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(15, 0))
+        )
+        original_shift = Shift.objects.create(
+            name="Original Web Shift",
+            code="WEB-ORIGINAL",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        replacement = Shift.objects.create(
+            name="Replacement Web Shift",
+            code="WEB-REPLACEMENT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+        check_in = fixed_now - timedelta(minutes=10)
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=original_shift,
+            timestamp=check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=target_date,
+            check_in=check_in,
+            status="INCOMPLETE",
+        )
+        self.client.force_authenticate(user=self.user)
+
+        with (
+            patch(
+                "attendance.views.timezone.localdate",
+                return_value=target_date,
+            ),
+            patch("attendance.views.timezone.now", return_value=fixed_now),
+        ):
+            response = self.client.post(
+                self.url,
+                camera_sequence_payload(**self.valid_location),
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, original_shift.id)
 
     @patch("attendance.face_service.requests.post")
     def test_facial_check_out_no_check_in(self, mock_post):
@@ -2371,8 +2560,9 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_duplicate(self, mock_post):
         import datetime
 
-        from attendance.models import Attendance
         from django.utils import timezone
+
+        from attendance.models import Attendance
 
         check_in_time = timezone.now() - datetime.timedelta(minutes=10)
         check_out_time = timezone.now() - datetime.timedelta(minutes=2)
@@ -2407,8 +2597,9 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
     def test_facial_check_out_mismatch(self, mock_post):
         import datetime
 
-        from attendance.models import Attendance
         from django.utils import timezone
+
+        from attendance.models import Attendance
 
         user2 = User.objects.create_user(
             email="other2@example.com", password="password123"
@@ -2597,6 +2788,15 @@ class KioskLivenessAttendanceTests(APITestCase):
             ).exists()
         )
 
+        replacement = Shift.objects.create(
+            name="Kiosk Replacement",
+            code="KIOSK-REPLACEMENT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+
         check_out = self.client.post(
             self.check_out_url, camera_sequence_payload(), format="json"
         )
@@ -2605,6 +2805,26 @@ class KioskLivenessAttendanceTests(APITestCase):
             AttendanceEvent.objects.filter(
                 employee=self.employee, event_type="CHECK_OUT"
             ).exists()
+        )
+        kiosk_check_in = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_IN"
+        )
+        kiosk_check_out = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(kiosk_check_in.shift_id, self.shift.id)
+        self.assertEqual(kiosk_check_out.shift_id, self.shift.id)
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_IN"
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_OUT"
+            ).count(),
+            1,
         )
 
     @patch("attendance.face_service.requests.post")
@@ -3640,6 +3860,187 @@ class EventBasedAttendanceTests(APITestCase):
         self.assertEqual(events.count(), 1)
         self.assertEqual(events.first().event_type, "CHECK_OUT")
 
+    def open_mobile_interval(self, shift):
+        target_date = ATTENDANCE_TEST_WORKDAY
+        fixed_now = timezone.make_aware(
+            datetime.combine(target_date, datetime_time(15, 0))
+        )
+        check_in = fixed_now - timedelta(minutes=10)
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=shift,
+            timestamp=check_in,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        attendance = Attendance.objects.create(
+            employee=self.employee,
+            date=target_date,
+            check_in=check_in,
+            status="INCOMPLETE",
+        )
+        return attendance
+
+    def mobile_checkout(self, location):
+        fixed_now = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(15, 0))
+        )
+        with (
+            patch(
+                "attendance.views.timezone.localdate",
+                return_value=ATTENDANCE_TEST_WORKDAY,
+            ),
+            patch("attendance.views.timezone.now", return_value=fixed_now),
+        ):
+            return self.client.post(
+                "/api/attendance/check-out/", location, format="json"
+            )
+
+    def test_mobile_checkout_uses_shift_recorded_at_checkin(self):
+        self.open_mobile_interval(self.shift)
+        replacement = Shift.objects.create(
+            name="Replacement",
+            code="MOBILE-REPLACEMENT",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+
+        response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+
+    def test_mobile_checkout_uses_opening_shift_after_removal(self):
+        self.open_mobile_interval(self.shift)
+        self.employee.shift = None
+        self.employee.save(update_fields=["shift"])
+
+        response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+
+    def test_mobile_checkout_does_not_use_shift_assigned_after_checkin(self):
+        self.employee.shift = None
+        self.employee.save(update_fields=["shift"])
+        self.open_mobile_interval(self.shift)
+        replacement = Shift.objects.create(
+            name="Late Assignment",
+            code="MOBILE-LATE-ASSIGN",
+            start_time=datetime_time(11, 0),
+            end_time=datetime_time(19, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+
+        response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+
+    def test_mobile_checkout_preserves_null_shift_and_logs_it(self):
+        self.open_mobile_interval(None)
+
+        with self.assertLogs("attendance.models", level="ERROR") as logs:
+            response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertIsNone(checkout.shift_id)
+        self.assertIn("preserving null", logs.output[0])
+
+    def test_mobile_checkout_falls_back_for_legacy_summary_only_attendance(
+        self,
+    ):
+        Attendance.objects.create(
+            employee=self.employee,
+            date=ATTENDANCE_TEST_WORKDAY,
+            check_in=timezone.make_aware(
+                datetime.combine(
+                    ATTENDANCE_TEST_WORKDAY,
+                    datetime_time(14, 50),
+                )
+            ),
+            status="INCOMPLETE",
+        )
+
+        with self.assertLogs("attendance.models", level="WARNING") as logs:
+            response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee, event_type="CHECK_OUT"
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+        self.assertIn("legacy summary shift fallback", logs.output[0])
+
+    def test_mobile_checkout_uses_shift_of_latest_open_interval(self):
+        start = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(9, 0))
+        )
+        second_start = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(14, 50))
+        )
+        second_shift = Shift.objects.create(
+            name="Second Interval",
+            code="MOBILE-SECOND",
+            start_time=datetime_time(12, 0),
+            end_time=datetime_time(20, 0),
+        )
+        for timestamp, kind, shift in (
+            (start, "CHECK_IN", self.shift),
+            (start + timedelta(hours=1), "CHECK_OUT", self.shift),
+            (second_start, "CHECK_IN", second_shift),
+        ):
+            AttendanceEvent.objects.create(
+                employee=self.employee,
+                shift=shift,
+                timestamp=timestamp,
+                event_type=kind,
+            )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=ATTENDANCE_TEST_WORKDAY,
+            check_in=start,
+            check_out=start + timedelta(hours=1),
+            status="INCOMPLETE",
+        )
+
+        response = self.mobile_checkout(self.valid_location)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkout = AttendanceEvent.objects.latest("id")
+        self.assertEqual(checkout.event_type, "CHECK_OUT")
+        self.assertEqual(checkout.shift_id, second_shift.id)
+
+    def test_mobile_checkout_still_rejects_out_of_geofence(self):
+        self.open_mobile_interval(self.shift)
+        outside = {
+            "latitude": WORKPLACE_LATITUDE + 0.2,
+            "longitude": WORKPLACE_LONGITUDE,
+            "accuracy": 10.0,
+        }
+        response = self.mobile_checkout(outside)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_OUT"
+            ).exists()
+        )
+
     @patch("attendance.views.timezone")
     def test_second_checkin_after_checkout(self, mock_view_timezone):
         """Second check-in after checkout is allowed and creates new event."""
@@ -4424,6 +4825,14 @@ class AdminForceCheckoutTests(APITestCase):
             date_joined=self.target_date,
             is_active=True,
         )
+        self.shift = Shift.objects.create(
+            name="Force Checkout Shift",
+            code="FORCE-CHECKOUT-SHIFT",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
         self.client.force_authenticate(user=self.admin)
 
     def _timestamp(self, hour):
@@ -4436,18 +4845,27 @@ class AdminForceCheckoutTests(APITestCase):
         first_check_in = self._timestamp(9)
         first_check_out = self._timestamp(12)
         second_check_in = self._timestamp(13)
+        second_shift = Shift.objects.create(
+            name="Later Assigned Shift",
+            code="FORCE-CHECKOUT-LATER",
+            start_time=datetime_time(12, 0),
+            end_time=datetime_time(20, 0),
+        )
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=first_check_in,
             event_type="CHECK_IN",
         )
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=first_check_out,
             event_type="CHECK_OUT",
         )
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=second_shift,
             timestamp=second_check_in,
             event_type="CHECK_IN",
         )
@@ -4458,6 +4876,8 @@ class AdminForceCheckoutTests(APITestCase):
             check_out=first_check_out,
             status="INCOMPLETE",
         )
+        self.employee.shift = second_shift
+        self.employee.save(update_fields=["shift"])
 
         with patch(
             "django.utils.timezone.now", return_value=self._timestamp(15)
@@ -4481,6 +4901,95 @@ class AdminForceCheckoutTests(APITestCase):
             AttendanceEvent.objects.filter(employee=self.employee).count(),
             4,
         )
+        checkout = AttendanceEvent.objects.latest("id")
+        self.assertEqual(checkout.shift_id, second_shift.id)
+
+    def test_force_checkout_rejects_past_and_future_dates(self):
+        for target_date in (
+            self.target_date - timedelta(days=1),
+            self.target_date + timedelta(days=1),
+        ):
+            with self.subTest(target_date=target_date):
+                response = self.client.post(
+                    "/api/admin/force-checkout/",
+                    {
+                        "employee": self.employee_user.email,
+                        "date": target_date.isoformat(),
+                    },
+                    format="json",
+                )
+                self.assertEqual(
+                    response.status_code, status.HTTP_400_BAD_REQUEST
+                )
+                self.assertIn("today only", response.data["error"])
+                self.assertIn("regularization", response.data["error"])
+        self.assertFalse(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_OUT"
+            ).exists()
+        )
+
+    def test_bulk_force_checkout_rejects_historical_date(self):
+        response = self.client.post(
+            "/api/admin/force-checkout/",
+            {
+                "all": True,
+                "date": (self.target_date - timedelta(days=1)).isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("today only", response.data["error"])
+
+    def test_force_checkout_uses_configured_local_date_at_utc_boundary(self):
+        from datetime import timezone as datetime_timezone
+        from zoneinfo import ZoneInfo
+
+        local_date = date(2026, 11, 1)
+        fixed_utc_now = datetime(
+            2026, 10, 31, 18, 45, tzinfo=datetime_timezone.utc
+        )
+        check_in = timezone.make_aware(
+            datetime.combine(local_date, datetime_time(0, 0)),
+            ZoneInfo("Asia/Kolkata"),
+        )
+        Attendance.objects.create(
+            employee=self.employee,
+            date=local_date,
+            check_in=check_in,
+            status="INCOMPLETE",
+        )
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=check_in,
+            event_type="CHECK_IN",
+        )
+
+        with (
+            timezone.override(ZoneInfo("Asia/Kolkata")),
+            patch("django.utils.timezone.now", return_value=fixed_utc_now),
+        ):
+            response = self.client.post(
+                "/api/admin/force-checkout/",
+                {
+                    "employee": self.employee_user.email,
+                    "date": local_date.isoformat(),
+                },
+                format="json",
+            )
+
+        self.assertEqual(
+            response.status_code, status.HTTP_200_OK, response.data
+        )
+        checkout = AttendanceEvent.objects.filter(
+            employee=self.employee, event_type="CHECK_OUT"
+        ).latest("id")
+        local_checkout_date = timezone.localtime(
+            checkout.timestamp, ZoneInfo("Asia/Kolkata")
+        ).date()
+        self.assertEqual(local_checkout_date, local_date)
+        self.assertEqual(checkout.timestamp, fixed_utc_now)
 
     def test_force_checkout_all_processes_only_currently_open_intervals(self):
         check_in = self._timestamp(9)
@@ -4516,6 +5025,87 @@ class AdminForceCheckoutTests(APITestCase):
             AttendanceEvent.objects.filter(employee=self.employee).count(),
             2,
         )
+
+    def test_bulk_force_checkout_preserves_each_opening_shift(self):
+        other_user = User.objects.create_user(
+            email="force-checkout.second@example.com",
+            password="password123",
+        )
+        other_employee = Employee.objects.create(
+            user=other_user,
+            department="Engineering",
+            employment_type="PERMANENT",
+            date_joined=self.target_date,
+        )
+        second_shift = Shift.objects.create(
+            name="Second Employee Shift",
+            code="FORCE-CHK-SECOND",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        for employee, shift, hour in (
+            (self.employee, self.shift, 9),
+            (other_employee, second_shift, 10),
+        ):
+            check_in = self._timestamp(hour)
+            Attendance.objects.create(
+                employee=employee,
+                date=self.target_date,
+                check_in=check_in,
+                status="INCOMPLETE",
+            )
+            AttendanceEvent.objects.create(
+                employee=employee,
+                shift=shift,
+                timestamp=check_in,
+                event_type="CHECK_IN",
+            )
+
+        before_local_midnight = timezone.make_aware(
+            datetime.combine(
+                self.target_date, datetime_time(23, 59, 0)
+            )
+        )
+        after_local_midnight = before_local_midnight + timedelta(minutes=2)
+        mocked_timezone = SimpleNamespace(
+            now=Mock(return_value=before_local_midnight),
+            localdate=Mock(
+                side_effect=[
+                    self.target_date,
+                    timezone.localdate(after_local_midnight),
+                ]
+            ),
+        )
+        with (
+            patch("attendance.views.timezone", mocked_timezone),
+            patch("attendance.views.record_event"),
+        ):
+            response = self.client.post(
+                "/api/admin/force-checkout/",
+                {"all": True, "date": self.target_date.isoformat()},
+                format="json",
+            )
+
+        self.assertEqual(
+            response.status_code, status.HTTP_200_OK, response.data
+        )
+        self.assertEqual(response.data["count"], 2)
+        mocked_timezone.now.assert_called_once_with()
+        mocked_timezone.localdate.assert_called_once_with(
+            before_local_midnight
+        )
+        for employee, shift in (
+            (self.employee, self.shift),
+            (other_employee, second_shift),
+        ):
+            checkout = AttendanceEvent.objects.filter(
+                employee=employee, event_type="CHECK_OUT"
+            ).latest("id")
+            self.assertEqual(checkout.shift_id, shift.id)
+            self.assertEqual(checkout.timestamp, before_local_midnight)
+            self.assertEqual(
+                timezone.localtime(checkout.timestamp).date(), self.target_date
+            )
 
 
 class AttendanceAdminScopeAndLocationTests(APITestCase):
@@ -4932,6 +5522,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -4959,6 +5550,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -4987,6 +5579,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -5014,6 +5607,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -5042,6 +5636,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -5069,6 +5664,7 @@ class ShiftAdherenceTests(APITestCase):
 
         AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -5081,6 +5677,33 @@ class ShiftAdherenceTests(APITestCase):
 
         adherence = attendance.get_shift_adherence()
         self.assertEqual(adherence, "LATE")
+
+    def test_historical_adherence_uses_recorded_checkin_shift(self):
+        check_in_time = timezone.make_aware(
+            datetime.combine(ATTENDANCE_TEST_WORKDAY, datetime_time(9, 30))
+        )
+        AttendanceEvent.objects.create(
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=check_in_time,
+            event_type="CHECK_IN",
+            source="MOBILE",
+        )
+        replacement = Shift.objects.create(
+            name="Current Later Shift",
+            code="ADHERENCE-LATER",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
+        attendance = Attendance.objects.create(
+            employee=self.employee, date=ATTENDANCE_TEST_WORKDAY
+        )
+        attendance.recompute_from_events()
+
+        self.assertEqual(attendance.get_shift_adherence(), "LATE")
+        self.assertEqual(attendance.get_shift_for_adherence(), self.shift)
 
     def test_no_shift_returns_none_adherence(self):
         """Employee without shift returns None for adherence."""
@@ -5737,6 +6360,14 @@ class AdminEditAttendanceTests(APITestCase):
             date_joined=self.attendance_date - timedelta(days=30),
             is_active=True,
         )
+        self.shift = Shift.objects.create(
+            name="Admin Edit Original Shift",
+            code="ADMIN-EDIT-ORIGINAL",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+        )
+        self.employee.shift = self.shift
+        self.employee.save(update_fields=["shift"])
         self.manager_user = User.objects.create_user(
             email="manager@example.com",
             password="password123",
@@ -5768,6 +6399,7 @@ class AdminEditAttendanceTests(APITestCase):
         )
         self.event_check_in = AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=self.check_in_time,
             event_type="CHECK_IN",
             source="MOBILE",
@@ -5803,6 +6435,7 @@ class AdminEditAttendanceTests(APITestCase):
 
         old_admin_event = AttendanceEvent.objects.create(
             employee=self.employee,
+            shift=self.shift,
             timestamp=timezone.make_aware(
                 datetime.combine(self.attendance_date, datetime_time(8, 45))
             ),
@@ -5816,6 +6449,14 @@ class AdminEditAttendanceTests(APITestCase):
         new_check_out = timezone.make_aware(
             datetime.combine(self.attendance_date, datetime_time(17, 0))
         )
+        replacement = Shift.objects.create(
+            name="Admin Edit Replacement Shift",
+            code="ADMIN-EDIT-REPLACE",
+            start_time=datetime_time(10, 0),
+            end_time=datetime_time(18, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
 
         response = self.client.post(
             "/api/admin/attendance/edit/",
@@ -5851,12 +6492,57 @@ class AdminEditAttendanceTests(APITestCase):
         )
         self.assertEqual(correction.attendance_events.count(), 2)
         self.assertEqual(
+            set(
+                correction.attendance_events.values_list(
+                    "shift_id", flat=True
+                )
+            ),
+            {self.shift.id},
+        )
+        self.assertEqual(
             list(
                 get_effective_attendance_events(
                     self.employee, self.attendance_date
                 )
             ),
             list(correction.attendance_events.order_by("timestamp", "id")),
+        )
+
+    def test_superuser_edit_preserves_missing_historical_shift(self):
+        self.event_check_in.shift = None
+        self.event_check_in.save(update_fields=["shift"])
+        self.client.force_authenticate(user=self.superuser)
+        new_check_in = timezone.make_aware(
+            datetime.combine(self.attendance_date, datetime_time(9, 30))
+        )
+        new_check_out = timezone.make_aware(
+            datetime.combine(self.attendance_date, datetime_time(17, 30))
+        )
+
+        response = self.client.post(
+            "/api/admin/attendance/edit/",
+            {
+                "employee": self.employee_user.email,
+                "date": self.attendance_date.isoformat(),
+                "reason": "Correct historical times.",
+                "status": "PRESENT",
+                "check_in": new_check_in.isoformat(),
+                "check_out": new_check_out.isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        correction = AttendanceCorrection.objects.get(
+            attendance=self.attendance, correction_type="EDIT"
+        )
+        self.assertEqual(
+            set(
+                correction.attendance_events.values_list(
+                    "shift_id", flat=True
+                )
+            ),
+            {None},
         )
 
 

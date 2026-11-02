@@ -4,13 +4,11 @@ import uuid
 from datetime import datetime, time, timedelta
 from typing import Any, Dict
 
-from attendance.models import (
-    Attendance,
-    AttendanceEvent,
-    RegularizationRequest,
-    Shift,
-)
 from django.utils import timezone
+
+from attendance.models import (Attendance, AttendanceEvent,
+                               RegularizationRequest, Shift,
+                               get_attendance_event_state)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 
@@ -194,10 +192,8 @@ class WriteActionPlanner:
             )
 
         if target_status == "ABSENT":
-            from holidays.services import (
-                attendance_required,
-                get_day_classification,
-            )
+            from holidays.services import (attendance_required,
+                                           get_day_classification)
 
             if not attendance_required(target_date):
                 day = get_day_classification(target_date)
@@ -703,16 +699,26 @@ class WriteActionPlanner:
         entities = intent.get("entities", {})
         employee = self._resolve_target_employee(entities, user, scope)
         target_date = self._resolve_target_date(entities)
+        planned_at = timezone.now()
+        if target_date != timezone.localdate(planned_at):
+            raise CopilotError(
+                "force_checkout_today_only",
+                "Force checkout is available for today only. Use attendance "
+                "regularization or an administrative attendance correction "
+                "for historical dates.",
+            )
         attendance = Attendance.objects.filter(
             employee_id=employee["employee_id"], date=target_date
-        ).first()
-        events = list(
-            AttendanceEvent.objects.filter(
-                employee_id=employee["employee_id"],
-                timestamp__date=target_date,
-            ).order_by("timestamp", "id")
+        ).select_related("employee").first()
+        target_employee = (
+            attendance.employee
+            if attendance
+            else Employee.objects.get(pk=employee["employee_id"])
         )
-        if not events or events[-1].event_type != "CHECK_IN":
+        state, last_event = get_attendance_event_state(
+            target_employee, target_date, attendance=attendance
+        )
+        if state != "CHECKED_IN":
             raise CopilotError(
                 "no_active_checkin",
                 "No active check-in was found for that employee on that date.",
@@ -730,7 +736,13 @@ class WriteActionPlanner:
             {"operation": "force_checkout"},
             {
                 "status": attendance.status if attendance else None,
-                "last_event": events[-1].timestamp.isoformat(),
+                "last_event": (
+                    last_event.timestamp.isoformat()
+                    if last_event
+                    else attendance.check_in.isoformat()
+                    if attendance and attendance.check_in
+                    else None
+                ),
             },
             f"Force check-out for {employee['employee_name']} on "
             f"{target_date:%B %d, %Y} at the current time.",
