@@ -2,23 +2,18 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
-from accounts.models import ManagerScope
-from attendance.models import (
-    Attendance,
-    AttendanceEvent,
-    RegularizationRequest,
-    Shift,
-)
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
+
+from accounts.models import ManagerScope
+from attendance.models import (Attendance, AttendanceEvent,
+                               RegularizationRequest, Shift)
 from employees.models import Employee
 from hr_copilot.services.pipeline import CopilotError
 from hr_copilot.services.write_actions import write_action_planner
-from hr_copilot.services.write_executor import (
-    pending_action_manager,
-    write_action_executor,
-)
+from hr_copilot.services.write_executor import (pending_action_manager,
+                                                write_action_executor)
 from leave_management.models import LeavePolicy, LeaveRequest, LeaveType
 
 
@@ -110,8 +105,20 @@ class Phase6WriteTests(TestCase):
         target = timezone.localdate()
         original = timezone.make_aware(datetime.combine(target, time(8, 30)))
         AttendanceEvent.objects.create(
-            employee=self.employee, timestamp=original, event_type="CHECK_IN"
+            employee=self.employee,
+            shift=self.shift,
+            timestamp=original,
+            event_type="CHECK_IN",
         )
+        replacement = Shift.objects.create(
+            name="Replacement historical shift",
+            code="PHASE6-HIST-REPLACE",
+            start_time=time(10),
+            end_time=time(19),
+            employment_type="PERMANENT",
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
         Attendance.objects.create(
             employee=self.employee, date=target, status="INCOMPLETE"
         )
@@ -140,6 +147,15 @@ class Phase6WriteTests(TestCase):
             AttendanceEvent.objects.filter(
                 employee=self.employee, correction__isnull=False
             ).exists()
+        )
+        self.assertEqual(
+            set(
+                AttendanceEvent.objects.filter(
+                    employee=self.employee,
+                    correction__isnull=False,
+                ).values_list("shift_id", flat=True)
+            ),
+            {self.shift.id},
         )
 
     def test_attendance_update_creates_missing_record_and_audited_events(self):
@@ -451,6 +467,15 @@ class Phase6WriteTests(TestCase):
             timestamp=timezone.make_aware(datetime.combine(target, time(9))),
             event_type="CHECK_IN",
         )
+        replacement = Shift.objects.create(
+            name="Reassigned before checkout",
+            code="PHASE6-FORCE-NEW",
+            start_time=time(10),
+            end_time=time(19),
+            employment_type="PERMANENT",
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
         result = self.execute(
             self.intent(
                 "attendance_force_checkout",
@@ -464,13 +489,70 @@ class Phase6WriteTests(TestCase):
             )
         )
         self.assertEqual(result["operation"], "force_checkout")
-        self.assertTrue(
+        checkout = AttendanceEvent.objects.get(
+            employee=self.employee,
+            timestamp__date=target,
+            event_type="CHECK_OUT",
+            source="ADMIN",
+        )
+        self.assertEqual(checkout.shift_id, self.shift.id)
+
+    def test_force_checkout_plan_rejects_past_and_future_dates(self):
+        today = timezone.localdate()
+        for target in (today - timedelta(days=1), today + timedelta(days=1)):
+            with self.subTest(target=target):
+                with self.assertRaises(CopilotError) as error:
+                    write_action_planner.plan_write_action(
+                        self.intent(
+                            "attendance_force_checkout",
+                            {
+                                "employee_id": self.employee.id,
+                                "date_range": {
+                                    "start": target.isoformat(),
+                                    "end": target.isoformat(),
+                                },
+                            },
+                        ),
+                        self.admin,
+                        f"phase6-force-checkout-date-{target}",
+                    )
+                self.assertEqual(
+                    error.exception.code, "force_checkout_today_only"
+                )
+
+    def test_force_checkout_execution_rejects_action_crossing_local_midnight(
+        self,
+    ):
+        target = timezone.localdate()
+        Attendance.objects.create(
+            employee=self.employee, date=target, status="INCOMPLETE"
+        )
+        before_count = AttendanceEvent.objects.filter(
+            employee=self.employee, event_type="CHECK_OUT"
+        ).count()
+
+        with patch(
+            "hr_copilot.services.write_executor.timezone.localdate",
+            return_value=target + timedelta(days=1),
+        ):
+            with self.assertRaises(CopilotError) as error:
+                write_action_executor._execute_force_checkout(
+                    {
+                        "target_data": {
+                            "employee_id": self.employee.id,
+                            "employee_name": "Employee",
+                            "date": target.isoformat(),
+                        }
+                    },
+                    self.admin,
+                )
+
+        self.assertEqual(error.exception.code, "force_checkout_today_only")
+        self.assertEqual(
             AttendanceEvent.objects.filter(
-                employee=self.employee,
-                timestamp__date=target,
-                event_type="CHECK_OUT",
-                source="ADMIN",
-            ).exists()
+                employee=self.employee, event_type="CHECK_OUT"
+            ).count(),
+            before_count,
         )
 
     def test_leave_create_uses_exact_leave_type_and_service_rules(self):
@@ -711,6 +793,28 @@ class Phase6WriteTests(TestCase):
             )
 
         self.assertEqual(error.exception.code, "no_active_checkin")
+
+        before_count = AttendanceEvent.objects.filter(
+            employee=self.employee, event_type="CHECK_OUT"
+        ).count()
+        with self.assertRaises(CopilotError) as execution_error:
+            write_action_executor._execute_force_checkout(
+                {
+                    "target_data": {
+                        "employee_id": self.employee.id,
+                        "employee_name": "Employee",
+                        "date": target.isoformat(),
+                    }
+                },
+                self.admin,
+            )
+        self.assertEqual(execution_error.exception.code, "no_active_checkin")
+        self.assertEqual(
+            AttendanceEvent.objects.filter(
+                employee=self.employee, event_type="CHECK_OUT"
+            ).count(),
+            before_count,
+        )
 
     def test_leave_review_requires_scoped_pending_request_and_denial_reason(
         self,

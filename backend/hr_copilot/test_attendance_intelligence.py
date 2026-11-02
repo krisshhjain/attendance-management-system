@@ -3,19 +3,17 @@ from datetime import time as datetime_time
 from datetime import timedelta
 from unittest.mock import patch
 
-from accounts.models import ManagerScope
-from attendance.models import Attendance, AttendanceEvent, Shift
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
+
+from accounts.models import ManagerScope
+from attendance.models import Attendance, AttendanceEvent, Shift
 from employees.models import Employee
 from holidays.models import Holiday
 from hr_copilot.services.attendance_intelligence import attendance_intelligence
-from hr_copilot.services.pipeline import (
-    CopilotError,
-    analyze_question,
-    build_sql,
-)
+from hr_copilot.services.pipeline import (CopilotError, analyze_question,
+                                          build_sql)
 
 
 class AttendanceIntelligenceTests(TestCase):
@@ -78,14 +76,17 @@ class AttendanceIntelligenceTests(TestCase):
             "unrestricted": False,
         }
 
-    def event(self, employee, target_date, hour, event_type):
+    def event(self, employee, target_date, hour, event_type, shift=None):
         timestamp = timezone.make_aware(
             datetime.combine(target_date, datetime.min.time()).replace(
                 hour=hour
             )
         )
         return AttendanceEvent.objects.create(
-            employee=employee, timestamp=timestamp, event_type=event_type
+            employee=employee,
+            shift=shift,
+            timestamp=timestamp,
+            event_type=event_type,
         )
 
     def recompute(self, employee, target_date):
@@ -115,7 +116,17 @@ class AttendanceIntelligenceTests(TestCase):
         )
 
     def test_late_employees_reuses_shift_adherence(self):
-        self.event(self.employee, self.today, 10, "CHECK_IN")
+        self.event(
+            self.employee, self.today, 10, "CHECK_IN", shift=self.shift
+        )
+        replacement = Shift.objects.create(
+            name="Current later shift",
+            code="INT-CURRENT-LATER",
+            start_time=datetime_time(11, 0),
+            end_time=datetime_time(20, 0),
+        )
+        self.employee.shift = replacement
+        self.employee.save(update_fields=["shift"])
         self.recompute(self.employee, self.today)
         result = attendance_intelligence.late_employees(
             user=self.admin, scope=self.scope, target_date=self.today
@@ -123,6 +134,7 @@ class AttendanceIntelligenceTests(TestCase):
         self.assertEqual(
             [row["employee_id"] for row in result["rows"]], [self.employee.id]
         )
+        self.assertEqual(result["rows"][0]["shift"], self.shift.name)
 
     def test_working_hours_uses_effective_closed_intervals(self):
         target = self.today - timedelta(days=1)

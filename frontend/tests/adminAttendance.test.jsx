@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { test, expect, vi } from "vitest";
@@ -207,6 +207,29 @@ test("checks out every incomplete employee in the selected date", async () => {
   await waitFor(() => expect(payload).toEqual({ all: true, date: expect.any(String) }));
   expect(await screen.findByText("Employees checked out successfully.")).toBeInTheDocument();
 }, 15_000);
+
+test("keeps historical attendance visible but disables force checkout", async () => {
+  server.use(
+    http.get(`${API_BASE_URL}/admin/attendance/`, ({ request }) =>
+      HttpResponse.json(attendanceFor(request)),
+    ),
+  );
+  renderPage();
+  expect(await screen.findByText("Alice Employee")).toBeInTheDocument();
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayISO = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+  fireEvent.change(screen.getByLabelText("Select date"), {
+    target: { value: yesterdayISO },
+  });
+
+  expect(await screen.findByText(/Force checkout is available for today only/)).toBeInTheDocument();
+  expect(screen.getByText("Alice Employee")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Checkout All" })).toBeDisabled();
+  const aliceRow = screen.getByText("Alice Employee").closest("tr");
+  expect(within(aliceRow).getByRole("button", { name: "Checkout" })).toBeDisabled();
+});
 
 test("requires an edit reason and saves attendance corrections", async () => {
   let payload;

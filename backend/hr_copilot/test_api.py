@@ -4,8 +4,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from accounts.models import ManagerScope
 from django.utils import timezone
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from accounts.models import ManagerScope
 from hr_copilot import views
 from hr_copilot.services import conversation, pipeline
 from hr_copilot.services import write_actions as write_action_module
@@ -13,7 +15,6 @@ from hr_copilot.services import write_executor as write_executor_module
 from hr_copilot.services.pipeline import CopilotError
 from hr_copilot.services.write_actions import write_action_planner
 from hr_copilot.services.write_executor import write_action_executor
-from rest_framework.test import APIRequestFactory, force_authenticate
 
 
 class FakeAudit:
@@ -2140,13 +2141,27 @@ def test_attendance_update_rejects_checkout_before_checkin(monkeypatch):
 
 
 def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
-    employee = SimpleNamespace(get_effective_shift=lambda: None)
+    target_date = timezone.localdate()
+    employee = SimpleNamespace(id=42)
     attendance = SimpleNamespace(employee=employee)
     attendance_query = MagicMock()
-    attendance_query.select_related.return_value.get.return_value = attendance
-    events_query = MagicMock()
-    events_query.order_by.return_value = []
+    attendance_lookup = attendance_query.filter.return_value
+    attendance_result = attendance_lookup.select_related.return_value
+    attendance_result.first.return_value = attendance
     event_create = MagicMock()
+    monkeypatch.setattr(
+        write_executor_module.timezone, "localdate", lambda: target_date
+    )
+    monkeypatch.setattr(
+        write_executor_module,
+        "get_attendance_event_state",
+        lambda *_args, **_kwargs: ("CHECKED_OUT", None),
+    )
+    monkeypatch.setattr(
+        write_executor_module,
+        "resolve_checkout_shift",
+        MagicMock(return_value=None),
+    )
     monkeypatch.setattr(
         write_executor_module,
         "Attendance",
@@ -2156,9 +2171,7 @@ def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
         write_executor_module,
         "AttendanceEvent",
         SimpleNamespace(
-            objects=SimpleNamespace(
-                filter=lambda **_: events_query, create=event_create
-            )
+            objects=SimpleNamespace(create=event_create)
         ),
     )
 
@@ -2168,7 +2181,7 @@ def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
                 "target_data": {
                     "employee_id": 42,
                     "employee_name": "Asha Rao",
-                    "date": "2026-10-14",
+                    "date": target_date.isoformat(),
                 }
             },
             system_admin(),
@@ -2179,18 +2192,30 @@ def test_force_checkout_requires_a_current_open_checkin(monkeypatch):
 
 
 def test_force_checkout_appends_event_only_for_an_open_interval(monkeypatch):
-    target_date = date(2026, 10, 14)
-    employee = SimpleNamespace(get_effective_shift=lambda: "morning-shift")
+    target_date = timezone.localdate()
+    employee = SimpleNamespace(id=42)
     attendance = SimpleNamespace(
         employee=employee, recompute_from_events=MagicMock()
     )
     attendance_query = MagicMock()
-    attendance_query.select_related.return_value.get.return_value = attendance
-    open_event = SimpleNamespace(event_type="CHECK_IN")
-    events_query = MagicMock()
-    events_query.order_by.return_value = [open_event]
+    attendance_lookup = attendance_query.filter.return_value
+    attendance_result = attendance_lookup.select_related.return_value
+    attendance_result.first.return_value = attendance
     created_event = SimpleNamespace(id=91)
     event_create = MagicMock(return_value=created_event)
+    state = SimpleNamespace(event_type="CHECK_IN")
+    monkeypatch.setattr(
+        write_executor_module.timezone, "localdate", lambda: target_date
+    )
+    monkeypatch.setattr(
+        write_executor_module,
+        "get_attendance_event_state",
+        lambda *_args, **_kwargs: ("CHECKED_IN", state),
+    )
+    resolve_shift = MagicMock(return_value="morning-shift")
+    monkeypatch.setattr(
+        write_executor_module, "resolve_checkout_shift", resolve_shift
+    )
     monkeypatch.setattr(
         write_executor_module,
         "Attendance",
@@ -2200,9 +2225,7 @@ def test_force_checkout_appends_event_only_for_an_open_interval(monkeypatch):
         write_executor_module,
         "AttendanceEvent",
         SimpleNamespace(
-            objects=SimpleNamespace(
-                filter=lambda **_: events_query, create=event_create
-            )
+            objects=SimpleNamespace(create=event_create)
         ),
     )
 
@@ -2220,6 +2243,11 @@ def test_force_checkout_appends_event_only_for_an_open_interval(monkeypatch):
     assert result["success"] is True
     assert result["event_id"] == 91
     event_create.assert_called_once()
+    self_shift = event_create.call_args.kwargs["shift"]
+    assert self_shift == "morning-shift"
+    resolve_shift.assert_called_once_with(
+        employee, target_date, "HR_COPILOT", attendance
+    )
     assert event_create.call_args.kwargs["event_type"] == "CHECK_OUT"
     assert event_create.call_args.kwargs["source"] == "ADMIN"
     attendance.recompute_from_events.assert_called_once_with()

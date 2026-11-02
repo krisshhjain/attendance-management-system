@@ -1,60 +1,35 @@
 from datetime import datetime
 
-from accounts.scope_service import (
-    employee_in_manager_scope,
-    filter_employees_by_manager_scope,
-)
 from django.db import IntegrityError, transaction
 from django.utils import timezone
-from employees.models import Employee
-from holidays.services import (
-    attendance_required,
-    get_day_classification,
-    get_day_classifications,
-    is_company_holiday,
-    is_working_day,
-)
-from leave_management.models import LeaveRequest
-from leave_management.permissions import (
-    IsAdminOrAppAdmin,
-    IsEmployee,
-    IsManagerOrAdmin,
-    IsSuperAdmin,
-)
-from notifications.services import (
-    queue_manager_notifications_after_commit,
-    queue_notification_after_commit,
-)
-from rest_framework.permissions import (
-    AllowAny,
-    BasePermission,
-    IsAuthenticated,
-)
+from rest_framework.permissions import (AllowAny, BasePermission,
+                                        IsAuthenticated)
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from accounts.scope_service import (employee_in_manager_scope,
+                                    filter_employees_by_manager_scope)
+from employees.models import Employee
+from holidays.services import (attendance_required, get_day_classification,
+                               get_day_classifications, is_company_holiday,
+                               is_working_day)
+from leave_management.models import LeaveRequest
+from leave_management.permissions import (IsAdminOrAppAdmin, IsEmployee,
+                                          IsManagerOrAdmin, IsSuperAdmin)
+from notifications.services import (queue_manager_notifications_after_commit,
+                                    queue_notification_after_commit)
 from system_logs.services import record_event
 
-from .face_service import (
-    FaceExtractionError,
-    FaceLivenessError,
-    find_closest_match,
-    verify_employee_face,
-)
+from .face_service import (FaceExtractionError, FaceLivenessError,
+                           find_closest_match, verify_employee_face)
 from .geofence import validate_attendance_geofence
-from .models import (
-    Attendance,
-    AttendanceAuditLog,
-    AttendanceEvent,
-    OfficeLocation,
-    RegularizationQuotaPolicy,
-    RegularizationRequest,
-    RegularizationRequestDay,
-    Shift,
-    attendance_day_end,
-    calculate_completed_working_duration,
-    calculate_working_duration,
-    get_effective_attendance_events,
-)
+from .models import (Attendance, AttendanceAuditLog, AttendanceEvent,
+                     OfficeLocation, RegularizationQuotaPolicy,
+                     RegularizationRequest, RegularizationRequestDay, Shift,
+                     attendance_day_end, calculate_completed_working_duration,
+                     calculate_working_duration, get_attendance_event_state,
+                     get_effective_attendance_events, resolve_checkout_shift,
+                     resolve_historical_correction_shift)
 
 
 def _regularization_created_message(request_obj):
@@ -188,25 +163,7 @@ def _get_last_event_state(employee, date):
       - 'CHECKED_OUT'  : already checked out (has CHECK_OUT)
       - 'NOT_CHECKED_IN' : no check-in today
     """
-    event_rows = get_effective_attendance_events(employee, date)
-    last_event = event_rows[-1] if event_rows else None
-
-    if last_event:
-        if last_event.event_type == "CHECK_IN":
-            return "CHECKED_IN", last_event
-        else:  # CHECK_OUT
-            return "CHECKED_OUT", last_event
-
-    # Fallback: check Attendance record for backward compatibility
-    try:
-        attendance = Attendance.objects.get(employee=employee, date=date)
-        if attendance.check_out:
-            return "CHECKED_OUT", None
-        if attendance.check_in:
-            return "CHECKED_IN", None
-        return "NOT_CHECKED_IN", None
-    except Attendance.DoesNotExist:
-        return "NOT_CHECKED_IN", None
+    return get_attendance_event_state(employee, date)
 
 
 def _get_previous_incomplete_attendance(employee, target_date):
@@ -398,8 +355,9 @@ class CheckOutView(APIView):
         lat, lon, acc = coords
         now = timezone.now()
 
-        # Get effective shift for event recording
-        effective_shift = employee.get_effective_shift()
+        effective_shift = resolve_checkout_shift(
+            employee, today, "MOBILE", attendance
+        )
 
         with transaction.atomic():
             AttendanceEvent.objects.create(
@@ -1247,6 +1205,13 @@ class AdminEditAttendanceView(APIView):
                 .first()
                 or 0
             )
+            effective_shift = resolve_historical_correction_shift(
+                attendance.employee,
+                target_date,
+                original_check_in=attendance.check_in,
+                original_check_out=attendance.check_out,
+                source="ADMIN_EDIT",
+            )
             correction = AttendanceCorrection.objects.create(
                 attendance=attendance,
                 admin_user=request.user,
@@ -1258,8 +1223,6 @@ class AdminEditAttendanceView(APIView):
                     "effective_event_after_event_id": last_event_id,
                 },
             )
-
-            effective_shift = attendance.employee.get_effective_shift()
 
             if parsed_check_in:
                 AttendanceEvent.objects.create(
@@ -1330,6 +1293,17 @@ class AdminForceCheckoutView(APIView):
             except ValueError:
                 return Response({"error": "Invalid date format"}, status=400)
 
+        if target_date != timezone.localdate():
+            return Response(
+                {
+                    "error":
+                    "Force checkout is available for today only. Use "
+                    "attendance regularization or an administrative "
+                    "attendance correction for historical dates."
+                },
+                status=400,
+            )
+
         is_all = request.data.get("all", False)
         employee_email = request.data.get("employee")
 
@@ -1397,8 +1371,9 @@ class AdminForceCheckoutView(APIView):
         now = timezone.now()
         for att in attendances:
             before_state = _attendance_log_state(att)
-            # Get effective shift for each employee
-            effective_shift = att.employee.get_effective_shift()
+            effective_shift = resolve_checkout_shift(
+                att.employee, target_date, "ADMIN", att
+            )
             with transaction.atomic():
                 AttendanceEvent.objects.create(
                     employee=att.employee,
@@ -1521,11 +1496,19 @@ class WebsiteFacialCheckInView(APIView):
                 status=400,
             )
 
+        effective_shift = employee.get_effective_shift()
+        if effective_shift is None:
+            return Response(
+                {
+                    "error":
+                    "You must have a shift assigned before checking in. "
+                    "Please contact admin."
+                },
+                status=400,
+            )
+
         lat, lon, acc = coords
         now = timezone.now()
-
-        # Get effective shift for event recording
-        effective_shift = employee.get_effective_shift()
 
         with transaction.atomic():
             AttendanceEvent.objects.create(
@@ -1637,11 +1620,12 @@ class WebsiteFacialCheckOutView(APIView):
                 status=400,
             )
 
+        effective_shift = resolve_checkout_shift(
+            employee, today, "FACE_WEB", attendance
+        )
+
         lat, lon, acc = coords
         now = timezone.now()
-
-        # Get effective shift for event recording
-        effective_shift = employee.get_effective_shift()
 
         with transaction.atomic():
             AttendanceEvent.objects.create(
@@ -1908,10 +1892,11 @@ class KioskFaceCheckOutView(APIView):
                 status=400,
             )
 
-        now = timezone.now()
+        effective_shift = resolve_checkout_shift(
+            employee, today, "KIOSK", attendance
+        )
 
-        # Get effective shift for event recording
-        effective_shift = employee.get_effective_shift()
+        now = timezone.now()
 
         with transaction.atomic():
             AttendanceEvent.objects.create(
@@ -2266,9 +2251,8 @@ class AdminEmployeeShiftBulkAssignView(APIView):
             and not request.user.is_superuser
             and not request.user.is_staff
         ):
-            from accounts.scope_service import (
-                filter_employees_by_manager_scope,
-            )
+            from accounts.scope_service import \
+                filter_employees_by_manager_scope
 
             queryset = filter_employees_by_manager_scope(
                 request.user, queryset
@@ -3283,9 +3267,8 @@ class RegularizationRequestListView(APIView):
             "employee__user", "reviewed_by"
         )
         if manager:
-            from accounts.scope_service import (
-                filter_employees_by_manager_scope,
-            )
+            from accounts.scope_service import \
+                filter_employees_by_manager_scope
             from employees.models import Employee
 
             scoped_employees = filter_employees_by_manager_scope(
@@ -3639,7 +3622,13 @@ class RegularizationRequestApproveView(APIView):
                                 else None
                             ),
                         }
-                        shift = req.employee.get_effective_shift()
+                        shift = resolve_historical_correction_shift(
+                            req.employee,
+                            row.attendance_date,
+                            original_check_in=row.existing_check_in,
+                            original_check_out=row.existing_check_out,
+                            source="GROUPED_REGULARIZATION",
+                        )
                         from .models import AttendanceCorrection
 
                         correction = AttendanceCorrection.objects.create(

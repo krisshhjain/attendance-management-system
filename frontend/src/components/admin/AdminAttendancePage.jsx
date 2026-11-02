@@ -91,6 +91,7 @@ async function exportToExcel(records, date) {
 
 export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
   const [selectedDate, setSelectedDate] = useState(todayISO());
+  const isTodaySelected = selectedDate === todayISO();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [editRecord, setEditRecord] = useState(null);
@@ -253,13 +254,22 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
             variant="outlined"
             color="warning"
             onClick={handleCheckoutAll}
-            disabled={!filteredRecords.some((record) => record.status === "INCOMPLETE")}
+            disabled={!isTodaySelected ||
+              !filteredRecords.some((record) => record.status === "INCOMPLETE")
+            }
             sx={{ textTransform: "none" }}
           >
             Checkout All
           </Button>
         </Box>
       </Box>
+
+      {!isTodaySelected && (
+        <Typography role="status" variant="body2" color="text.secondary">
+          Force checkout is available for today only. Use regularization or admin correction
+          for historical dates.
+        </Typography>
+      )}
 
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5 }}>
         <TextField
@@ -354,7 +364,7 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
                         variant="outlined"
                         color="warning"
                         onClick={() => handleCheckout(record)}
-                        disabled={record.status !== "INCOMPLETE"}
+                        disabled={!isTodaySelected || record.status !== "INCOMPLETE"}
                         sx={{ textTransform: "none" }}
                       >
                         Checkout

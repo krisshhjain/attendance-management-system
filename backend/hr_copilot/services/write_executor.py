@@ -3,16 +3,16 @@
 from datetime import datetime, time
 from typing import Any, Dict
 
-from attendance.models import (
-    Attendance,
-    AttendanceCorrection,
-    AttendanceEvent,
-    RegularizationRequest,
-    Shift,
-)
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
+
+from attendance.models import (Attendance, AttendanceCorrection,
+                               AttendanceEvent, RegularizationRequest, Shift,
+                               get_attendance_event_state,
+                               get_effective_attendance_events,
+                               resolve_checkout_shift,
+                               resolve_historical_correction_shift)
 from employees.models import Employee
 from leave_management.models import LeaveRequest, LeaveType
 from system_logs.services import record_event
@@ -220,6 +220,25 @@ class WriteActionExecutor:
                 }
             )
 
+        historical_shift = None
+        if target_status == "PRESENT":
+            employee = (
+                existing.employee
+                if existing is not None
+                else Employee.objects.get(pk=employee_id)
+            )
+            effective_events = get_effective_attendance_events(
+                employee, target_date
+            )
+            historical_shift = resolve_historical_correction_shift(
+                employee,
+                target_date,
+                original_check_in=existing.check_in if existing else None,
+                original_check_out=existing.check_out if existing else None,
+                events=effective_events,
+                source="HR_COPILOT_ATTENDANCE_UPDATE",
+            )
+
         # Get or create attendance record
         attendance, created = Attendance.objects.get_or_create(
             employee_id=employee_id,
@@ -272,6 +291,7 @@ class WriteActionExecutor:
             )
             AttendanceEvent.objects.create(
                 employee_id=employee_id,
+                shift=historical_shift,
                 timestamp=check_in,
                 event_type="CHECK_IN",
                 source="ADMIN",
@@ -279,6 +299,7 @@ class WriteActionExecutor:
             )
             AttendanceEvent.objects.create(
                 employee_id=employee_id,
+                shift=historical_shift,
                 timestamp=check_out,
                 event_type="CHECK_OUT",
                 source="ADMIN",
@@ -368,11 +389,9 @@ class WriteActionExecutor:
             reason=reason,
             status="PENDING",
         )
-        from leave_management.services import (
-            calculate_working_days,
-            get_active_policy,
-            validate_leave_request,
-        )
+        from leave_management.services import (calculate_working_days,
+                                               get_active_policy,
+                                               validate_leave_request)
 
         leave_type = LeaveType.objects.get(pk=leave_type_id)
         # Use the authoritative validator whenever a policy exists. Legacy
@@ -469,27 +488,41 @@ class WriteActionExecutor:
         """Create admin checkout event and recompute attendance."""
         target = pending_action["target_data"]
         target_date = datetime.fromisoformat(target["date"]).date()
-        attendance = Attendance.objects.select_related("employee").get(
+        if target_date != timezone.localdate():
+            raise CopilotError(
+                "force_checkout_today_only",
+                "Force checkout is available for today only. Use attendance "
+                "regularization or an administrative attendance correction "
+                "for historical dates.",
+            )
+
+        attendance = Attendance.objects.filter(
             employee_id=target["employee_id"], date=target_date
+        ).select_related("employee").first()
+        employee = (
+            attendance.employee
+            if attendance is not None
+            else Employee.objects.get(pk=target["employee_id"])
         )
-        events = list(
-            AttendanceEvent.objects.filter(
-                employee_id=target["employee_id"], timestamp__date=target_date
-            ).order_by("timestamp", "id")
+        state, _ = get_attendance_event_state(
+            employee, target_date, attendance=attendance
         )
-        if not events or events[-1].event_type != "CHECK_IN":
+        if state != "CHECKED_IN":
             raise CopilotError(
                 "no_active_checkin",
                 "No active check-in remains for this employee and date.",
             )
         event = AttendanceEvent.objects.create(
-            employee=attendance.employee,
-            shift=attendance.employee.get_effective_shift(),
+            employee=employee,
+            shift=resolve_checkout_shift(
+                employee, target_date, "HR_COPILOT", attendance
+            ),
             timestamp=timezone.now(),
             event_type="CHECK_OUT",
             source="ADMIN",
         )
-        attendance.recompute_from_events()
+        if attendance is not None:
+            attendance.recompute_from_events()
         return {
             "success": True,
             "operation": "force_checkout",
@@ -648,10 +681,8 @@ class WriteActionExecutor:
                 "This leave request is no longer pending review",
             )
 
-        from leave_management.services import (
-            approve_leave_request,
-            deny_leave_request,
-        )
+        from leave_management.services import (approve_leave_request,
+                                               deny_leave_request)
 
         try:
             if pending_action["action_type"] == "leave_approve":
