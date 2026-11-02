@@ -8,6 +8,18 @@
  * across environments.
  */
 
+/** Return the current date key in the attendance timezone. */
+export function attendanceDateISO(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const dateParts = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+}
+
 /**
  * Formats an ISO date-time string or Date-constructible value as a locale time
  * string (e.g. "09:30 AM").

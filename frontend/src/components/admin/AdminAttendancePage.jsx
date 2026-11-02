@@ -28,24 +28,15 @@ import {
   getAdminAttendance,
   resetAdminAttendance,
 } from "../../lib/attendance.js";
-import { formatDuration, formatTime } from "../../lib/date.js";
+import {
+  attendanceDateISO,
+  formatDuration,
+  formatTime,
+} from "../../lib/date.js";
 import { StatusBadge } from "../StatusBadge.jsx";
 import { useFeedback } from "../../feedback/useFeedback.js";
 
 const EMPTY_RECORDS = [];
-
-export function todayISO(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const dateParts = Object.fromEntries(
-    parts.map(({ type, value }) => [type, value]),
-  );
-  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-}
 
 function friendlyDate(value) {
   const [year, month, day] = value.split("-").map(Number);
@@ -98,8 +89,8 @@ async function exportToExcel(records, date) {
 }
 
 export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
-  const [selectedDate, setSelectedDate] = useState(todayISO());
-  const isTodaySelected = selectedDate === todayISO();
+  const [selectedDate, setSelectedDate] = useState(attendanceDateISO());
+  const isTodaySelected = selectedDate === attendanceDateISO();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [editRecord, setEditRecord] = useState(null);
@@ -377,7 +368,7 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
                       >
                         Checkout
                       </Button>
-                      {allowReset && record.date === todayISO() && (
+                      {allowReset && record.date === attendanceDateISO() && (
                         <Button
                           size="small"
                           variant="outlined"
