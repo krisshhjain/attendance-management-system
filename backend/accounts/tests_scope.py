@@ -99,6 +99,143 @@ class ManagerScopeFoundationTests(TestCase):
         )
         self.assertFalse(employee_in_manager_scope(self.manager, employee))
 
+    def test_contract_department_scope_and_queryset_consistency(self):
+        ManagerScope.objects.create(
+            manager=self.manager,
+            scope_type="DEPARTMENT",
+            value="Engineering",
+        )
+        allowed = self.employee(
+            "contract-eng@example.com", "CONTRACT", department="Engineering"
+        )
+        denied = self.employee(
+            "contract-fin@example.com", "CONTRACT", department="Finance"
+        )
+        intern = self.employee(
+            "intern-eng@example.com",
+            "INTERN",
+            section="C",
+            department="Engineering",
+        )
+
+        self.assertTrue(employee_in_manager_scope(self.manager, allowed))
+        self.assertFalse(employee_in_manager_scope(self.manager, denied))
+        self.assertFalse(employee_in_manager_scope(self.manager, intern))
+
+        queryset = Employee.objects.filter(
+            pk__in=[allowed.pk, denied.pk, intern.pk]
+        )
+        visible_ids = set(
+            filter_employees_by_manager_scope(
+                self.manager, queryset
+            ).values_list("pk", flat=True)
+        )
+        expected_ids = {
+            employee.pk
+            for employee in [allowed, denied, intern]
+            if employee_in_manager_scope(self.manager, employee)
+        }
+        self.assertEqual(visible_ids, {allowed.pk})
+        self.assertEqual(visible_ids, expected_ids)
+
+    def test_contract_not_authorized_by_section_only(self):
+        ManagerScope.objects.create(
+            manager=self.manager, scope_type="SECTION", value="C"
+        )
+        contract = self.employee(
+            "contract-section@example.com",
+            "CONTRACT",
+            section="C",
+            department="Engineering",
+        )
+        self.assertFalse(employee_in_manager_scope(self.manager, contract))
+        self.assertFalse(
+            filter_employees_by_manager_scope(
+                self.manager,
+                Employee.objects.filter(pk=contract.pk),
+            ).exists()
+        )
+
+    def test_inactive_manager_cannot_access_contract_employees(self):
+        ManagerScope.objects.create(
+            manager=self.manager,
+            scope_type="DEPARTMENT",
+            value="Engineering",
+        )
+        contract = self.employee(
+            "inactive-contract@example.com",
+            "CONTRACT",
+            department="Engineering",
+        )
+        self.manager.is_active = False
+        self.manager.save(update_fields=["is_active"])
+        self.assertFalse(employee_in_manager_scope(self.manager, contract))
+        self.assertFalse(
+            filter_employees_by_manager_scope(
+                self.manager, Employee.objects.filter(pk=contract.pk)
+            ).exists()
+        )
+
+    def test_unscoped_manager_cannot_access_contract_employees(self):
+        contract = self.employee(
+            "unscoped-contract@example.com",
+            "CONTRACT",
+            department="Engineering",
+        )
+        self.assertFalse(employee_in_manager_scope(self.manager, contract))
+        self.assertFalse(
+            filter_employees_by_manager_scope(
+                self.manager, Employee.objects.filter(pk=contract.pk)
+            ).exists()
+        )
+
+    def test_superuser_can_access_contract_employees_without_scope(self):
+        contract = self.employee(
+            "root-contract@example.com",
+            "CONTRACT",
+            department="Engineering",
+        )
+        self.assertTrue(employee_in_manager_scope(self.superuser, contract))
+        visible_ids = filter_employees_by_manager_scope(
+            self.superuser, Employee.objects.all()
+        ).values_list("pk", flat=True)
+        self.assertIn(contract.pk, visible_ids)
+
+    def test_department_scope_does_not_authorize_intern_by_department(self):
+        ManagerScope.objects.create(
+            manager=self.manager,
+            scope_type="DEPARTMENT",
+            value="Engineering",
+        )
+        intern = self.employee(
+            "department-intern@example.com",
+            "INTERN",
+            section="C",
+            department="Engineering",
+        )
+        self.assertFalse(employee_in_manager_scope(self.manager, intern))
+        self.assertFalse(
+            filter_employees_by_manager_scope(
+                self.manager, Employee.objects.filter(pk=intern.pk)
+            ).exists()
+        )
+
+    def test_unknown_employment_type_is_denied_by_both_scope_paths(self):
+        ManagerScope.objects.create(
+            manager=self.manager,
+            scope_type="DEPARTMENT",
+            value="Engineering",
+        )
+        unknown = self.employee(
+            "unknown-type@example.com", "UNKNOWN", department="Engineering"
+        )
+        self.assertFalse(employee_in_manager_scope(self.manager, unknown))
+        self.assertFalse(
+            filter_employees_by_manager_scope(
+                self.manager, Employee.objects.filter(pk=unknown.pk)
+            ).exists()
+        )
+
     def test_superuser_is_unrestricted(self):
         employee = self.employee("x@example.com", "INTERN", section="X")
         self.assertTrue(employee_in_manager_scope(self.superuser, employee))

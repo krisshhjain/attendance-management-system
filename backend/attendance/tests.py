@@ -3335,6 +3335,65 @@ class EmployeeShiftRelationTests(TestCase):
         # Reverse relation
         self.assertIn(emp, self.shift.employees.all())
 
+    def test_effective_shift_has_a_function_docstring(self):
+        self.assertIsNotNone(Employee.get_effective_shift.__doc__)
+        self.assertIn(
+            "effective shift", Employee.get_effective_shift.__doc__
+        )
+
+    def test_effective_shift_resolution_behavior(self):
+        assigned_user = User.objects.create_user(
+            email="assigned-emp@example.com", password="x"
+        )
+        assigned_employee = Employee.objects.create(
+            user=assigned_user,
+            department="Eng",
+            employment_type="PERMANENT",
+            date_joined=date(2026, 1, 1),
+            shift=self.shift,
+        )
+        self.assertEqual(assigned_employee.get_effective_shift(), self.shift)
+
+        configured_user = User.objects.create_user(
+            email="configured-emp@example.com", password="x"
+        )
+        configured_employee = Employee.objects.create(
+            user=configured_user,
+            department="Eng",
+            employment_type="CONTRACT",
+            date_joined=date(2026, 1, 1),
+        )
+        configured = Shift.objects.create(
+            name="Contract Day",
+            code="CONTRACT-DAY",
+            start_time=datetime_time(9, 0),
+            end_time=datetime_time(17, 0),
+            employment_type="CONTRACT",
+            is_active=True,
+        )
+        self.assertEqual(configured_employee.get_effective_shift(), configured)
+
+        no_shift_user = User.objects.create_user(
+            email="no-shift-emp@example.com", password="x"
+        )
+        no_shift_employee = Employee.objects.create(
+            user=no_shift_user,
+            department="Eng",
+            employment_type="INTERN",
+            date_joined=date(2026, 1, 1),
+        )
+        self.assertIsNone(no_shift_employee.get_effective_shift())
+
+        Shift.objects.create(
+            name="Contract Evening",
+            code="CONTRACT-EVE",
+            start_time=datetime_time(17, 0),
+            end_time=datetime_time(23, 0),
+            employment_type="CONTRACT",
+            is_active=True,
+        )
+        self.assertIsNone(configured_employee.get_effective_shift())
+
 
 class AttendanceEventModelTests(TestCase):
     """Tests for the AttendanceEvent model."""
