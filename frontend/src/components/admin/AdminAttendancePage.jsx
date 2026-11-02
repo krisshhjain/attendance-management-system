@@ -254,7 +254,8 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
             variant="outlined"
             color="warning"
             onClick={handleCheckoutAll}
-            disabled={!isTodaySelected ||
+            disabled={
+              !isTodaySelected ||
               !filteredRecords.some((record) => record.status === "INCOMPLETE")
             }
             sx={{ textTransform: "none" }}
@@ -266,8 +267,8 @@ export function AdminAttendancePage({ allowReset = false, allowEdit = false }) {
 
       {!isTodaySelected && (
         <Typography role="status" variant="body2" color="text.secondary">
-          Force checkout is available for today only. Use regularization or admin correction
-          for historical dates.
+          Force checkout is available for today only. Use regularization or admin correction for
+          historical dates.
         </Typography>
       )}
 
