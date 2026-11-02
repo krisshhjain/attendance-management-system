@@ -117,6 +117,69 @@ def camera_sequence_payload(**extra):
     }
 
 
+def invalid_camera_sequence_payloads():
+    """Return malformed liveness payloads shared by attendance endpoints."""
+    valid_frames = [f"frame-{index}" for index in range(5)]
+    valid_timestamps = [index * 250 for index in range(5)]
+    return (
+        ("scalar frame string", {"frames": "base64-image"}),
+        ("empty frame array", {"frames": [], "captured_at_ms": []}),
+        ("one frame", {"frames": ["single-frame"], "captured_at_ms": [0]}),
+        (
+            "two frames",
+            {"frames": ["frame-0", "frame-1"], "captured_at_ms": [0, 250]},
+        ),
+        (
+            "eight frames",
+            {
+                "frames": [f"frame-{index}" for index in range(8)],
+                "captured_at_ms": [index * 250 for index in range(8)],
+            },
+        ),
+        (
+            "missing timestamps",
+            {"frames": valid_frames},
+        ),
+        (
+            "mismatched timestamp count",
+            {"frames": valid_frames, "captured_at_ms": [0, 250]},
+        ),
+        (
+            "dictionary frames",
+            {"frames": {"image": "frame"}, "captured_at_ms": valid_timestamps},
+        ),
+        (
+            "numeric scalar frames",
+            {"frames": 123, "captured_at_ms": valid_timestamps},
+        ),
+        (
+            "empty frame string",
+            {
+                "frames": ["frame-0", "frame-1", "", "frame-3", "frame-4"],
+                "captured_at_ms": valid_timestamps,
+            },
+        ),
+        (
+            "scalar timestamps",
+            {"frames": valid_frames, "captured_at_ms": "0,250,500,750,1000"},
+        ),
+        (
+            "nonnumeric timestamps",
+            {
+                "frames": valid_frames,
+                "captured_at_ms": [0, 250, "500", 750, 1000],
+            },
+        ),
+        (
+            "boolean timestamp",
+            {
+                "frames": valid_frames,
+                "captured_at_ms": [0, 250, True, 750, 1000],
+            },
+        ),
+    )
+
+
 class ManagerEmployeeAttendanceScopeTests(APITestCase):
     def setUp(self):
         self.manager = User.objects.create_user(
@@ -2043,11 +2106,42 @@ class FaceVerifyViewTests(APITestCase):
         verify.assert_not_called()
 
     @patch("attendance.views.verify_employee_face")
+    def test_malformed_sequences_are_rejected_before_verification(
+        self, verify
+    ):
+        self.client.force_authenticate(user=self.user)
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                response = self.client.post(
+                    self.url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(self.employee.user.email, str(response.data))
+        verify.assert_not_called()
+
+    @patch("attendance.face_service.requests.post")
+    def test_valid_sequence_uses_recognize_sequence_endpoint(self, post):
+        result = Mock(status_code=200)
+        result.json.return_value = {
+            "status": "match",
+            "employee_id": self.employee.id,
+            "distance": 0.2,
+        }
+        post.return_value = result
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            self.url, self.payload(), format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        service_url = post.call_args.args[0]
+        self.assertTrue(service_url.endswith("/recognize-sequence"))
+        self.assertFalse(service_url.endswith("/recognize"))
+
+    @patch("attendance.views.verify_employee_face")
     def test_invalid_frame_sequence_returns_safe_error(self, verify):
         self.client.force_authenticate(user=self.user)
-        verify.side_effect = FaceExtractionError(
-            "A facial attendance check requires 3 to 7 camera frames."
-        )
         response = self.client.post(
             self.url,
             {"frames": ["frame-1", "frame-2"], "captured_at_ms": [0, 250]},
@@ -2056,8 +2150,9 @@ class FaceVerifyViewTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.data,
-            {"error": "Unable to verify the submitted camera frames."},
+            {"error": "Invalid camera frame sequence."},
         )
+        verify.assert_not_called()
 
     @patch("attendance.views.verify_employee_face")
     def test_liveness_and_service_failures_are_safe(self, verify):
@@ -2269,6 +2364,23 @@ class WebsiteFacialCheckInViewTests(APITestCase):
         self.assertFalse(
             AttendanceEvent.objects.filter(employee=self.employee).exists()
         )
+        mock_post.assert_not_called()
+
+    @patch("attendance.face_service.requests.post")
+    def test_malformed_frame_sequences_never_reach_facial_recognition(
+        self, mock_post
+    ):
+        self.client.force_authenticate(user=self.user)
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                payload = {**payload, **self.valid_location}
+                response = self.client.post(
+                    self.url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.data["error"], "Invalid camera frame sequence."
+                )
         mock_post.assert_not_called()
 
     @patch("attendance.face_service.requests.post")
@@ -2537,6 +2649,26 @@ class WebsiteFacialCheckOutViewTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], "Check-out successful")
+        self.assertTrue(
+            mock_post.call_args.args[0].endswith("/recognize-sequence")
+        )
+
+    @patch("attendance.face_service.requests.post")
+    def test_malformed_frame_sequences_never_reach_facial_recognition(
+        self, mock_post
+    ):
+        self.client.force_authenticate(user=self.user)
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                payload = {**payload, **self.valid_location}
+                response = self.client.post(
+                    self.url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.data["error"], "Invalid camera frame sequence."
+                )
+        mock_post.assert_not_called()
 
     @patch("attendance.views.verify_employee_face", return_value=(True, 0.3))
     def test_facial_checkout_uses_shift_recorded_at_opening_event(
@@ -2881,7 +3013,7 @@ class KioskLivenessAttendanceTests(APITestCase):
             check_in.data["message"], "Check-in successful."
         )
         self.assertNotIn(self.user.first_name, str(check_in.data))
-        self.assertNotIn(str(self.employee.id), str(check_in.data))
+        self.assertNotIn("employee_id", check_in.data)
         self.assertTrue(
             AttendanceEvent.objects.filter(
                 employee=self.employee, event_type="CHECK_IN"
@@ -2903,7 +3035,7 @@ class KioskLivenessAttendanceTests(APITestCase):
         self.assertEqual(check_out.status_code, 200)
         self.assertEqual(check_out.data["message"], "Check-out successful.")
         self.assertNotIn(self.user.first_name, str(check_out.data))
-        self.assertNotIn(str(self.employee.id), str(check_out.data))
+        self.assertNotIn("employee_id", check_out.data)
         self.assertTrue(
             AttendanceEvent.objects.filter(
                 employee=self.employee, event_type="CHECK_OUT"
@@ -2928,6 +3060,13 @@ class KioskLivenessAttendanceTests(APITestCase):
                 employee=self.employee, event_type="CHECK_OUT"
             ).count(),
             1,
+        )
+        self.assertEqual(len(mock_post.call_args_list), 2)
+        self.assertTrue(
+            all(
+                call.args[0].endswith("/recognize-sequence")
+                for call in mock_post.call_args_list
+            )
         )
 
     @patch("attendance.face_service.requests.post")
@@ -3129,6 +3268,32 @@ class KioskLivenessAttendanceTests(APITestCase):
         self.assertFalse(
             AttendanceEvent.objects.filter(employee=self.employee).exists()
         )
+        mock_post.assert_not_called()
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_malformed_checkin_sequences_never_reach_recognition(
+        self, mock_post
+    ):
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                response = self.client.post(
+                    self.check_in_url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(self.user.first_name, str(response.data))
+        mock_post.assert_not_called()
+
+    @patch("attendance.face_service.requests.post")
+    def test_kiosk_malformed_checkout_sequences_never_reach_recognition(
+        self, mock_post
+    ):
+        for case_name, payload in invalid_camera_sequence_payloads():
+            with self.subTest(payload=case_name):
+                response = self.client.post(
+                    self.check_out_url, payload, format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(self.user.first_name, str(response.data))
         mock_post.assert_not_called()
 
 

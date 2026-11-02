@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 
 from django.db import IntegrityError, transaction
@@ -61,6 +62,42 @@ def _attendance_log_state(attendance):
             else None
         ),
     }
+
+
+def _get_camera_sequence_payload(request):
+    """Return a valid frame sequence or a safe request error."""
+    frames = request.data.get("frames")
+    captured_at_ms = request.data.get("captured_at_ms")
+
+    if frames is None:
+        return None, None, "No camera frames provided"
+
+    if (
+        not isinstance(frames, list)
+        or not 3 <= len(frames) <= 7
+        or any(
+            not isinstance(frame, str) or not frame.strip()
+            for frame in frames
+        )
+    ):
+        return None, None, "Invalid camera frame sequence."
+
+    if (
+        not isinstance(captured_at_ms, list)
+        or len(captured_at_ms) != len(frames)
+        or any(
+            isinstance(timestamp, bool)
+            or not isinstance(timestamp, (int, float))
+            or (
+                isinstance(timestamp, float)
+                and not math.isfinite(timestamp)
+            )
+            for timestamp in captured_at_ms
+        )
+    ):
+        return None, None, "Invalid camera frame sequence."
+
+    return frames, captured_at_ms, None
 
 
 def _regularization_log_state(request_obj):
@@ -1411,10 +1448,11 @@ class WebsiteFacialCheckInView(APIView):
         employee = request.user.employee
         today = timezone.localdate()
 
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         # Geofence verification
         is_valid, error_msg, distance_geo, coords = (
@@ -1551,10 +1589,11 @@ class WebsiteFacialCheckOutView(APIView):
         employee = request.user.employee
         today = timezone.localdate()
 
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         # Geofence verification
         is_valid, error_msg, distance_geo, coords = (
@@ -1667,10 +1706,11 @@ class KioskFaceCheckInView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         try:
             employee, distance = find_closest_match(
@@ -1817,10 +1857,11 @@ class KioskFaceCheckOutView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         try:
             employee, distance = find_closest_match(
@@ -1950,10 +1991,11 @@ class FaceVerifyView(APIView):
     app_access_key = "attendance"
 
     def post(self, request):
-        frames = request.data.get("frames")
-        captured_at_ms = request.data.get("captured_at_ms")
-        if not frames:
-            return Response({"error": "No camera frames provided"}, status=400)
+        frames, captured_at_ms, payload_error = (
+            _get_camera_sequence_payload(request)
+        )
+        if payload_error:
+            return Response({"error": payload_error}, status=400)
 
         employee = request.user.employee
 
